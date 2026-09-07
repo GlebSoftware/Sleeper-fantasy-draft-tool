@@ -656,6 +656,15 @@ def create_app(session: Session | None = None) -> FastAPI:
             raise HTTPException(404, "index.html missing: the frontend has not been built")
         return FileResponse(str(page))
 
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon() -> Any:
+        from fastapi.responses import Response
+
+        svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#1f6f43"/>'
+               '<ellipse cx="32" cy="32" rx="22" ry="14" fill="#8b4a1f" stroke="#f3e9d2" stroke-width="3"/>'
+               '<path d="M22 32h20M27 27v10M32 26v12M37 27v10" stroke="#f3e9d2" stroke-width="3" stroke-linecap="round"/></svg>')
+        return Response(content=svg, media_type="image/svg+xml")
+
     @app.get("/api/status")
     async def status() -> dict:
         return {
