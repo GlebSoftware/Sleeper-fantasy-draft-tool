@@ -17,6 +17,8 @@ dependencies = [
     "rich>=13.7",
     "anthropic>=1.0",
     "sleeper-api-wrapper>=1.1",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
 ]
 
 [project.optional-dependencies]

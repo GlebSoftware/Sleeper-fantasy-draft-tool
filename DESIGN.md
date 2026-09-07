@@ -420,3 +420,62 @@ API: `capture_league(client, league_id=None, draft_id=None, *, username=None, us
 CLI: `draftadvisor capture --league ID [--draft ID] [--username U]`; `prep` and `draft` run the capture
 automatically (draft refreshes it at bootstrap because the draft order can change until the draft starts)
 and print the report once.
+
+### 3.8 `web/` — local web app  (owner: integrator + "frontend" agent)
+
+`python run.py` (or `draftadvisor web`) starts a FastAPI/uvicorn server on http://127.0.0.1:8787 and opens
+the browser. The page is a single file `draftadvisor/web/static/index.html` (vanilla HTML/CSS/JS, no build
+step) that polls `GET /api/state` every 2 s (1 s when it is my turn) and renders everything. The server
+(`draftadvisor/web/server.py`) holds one `Session` (live or mock) and wraps the existing engine; all heavy
+work runs in background tasks so the API always answers immediately.
+
+Tabs: **Setup** (readiness, prepare data/model, live-draft form, mock-draft form), **Draft** (the advisor
+dashboard), **Board** (projection table with search/filter/sort), **League** (capture report: scoring diff,
+flags, draft order), **Ask** (Claude Q&A, only when a key is set).
+
+API (all JSON; errors are `{"detail": "..."}` with 4xx/5xx):
+
+* `GET /api/status` → `{"mode": "idle|prepping|starting|live|mock", "busy": bool, "message": str,
+  "ready": {"data": bool, "model": bool, "claude": bool, "sleeper": bool|null}, "log": [str], "season": int,
+  "home": str, "session": null | {"mode", "league_name", "draft_id", "my_slot", "started_at"}}`
+* `POST /api/prep` `{"refresh": bool, "research": bool, "top": int}` → `{"ok": true}`; progress in `status.log`.
+* `POST /api/lookup` `{"username": str}` → `{"user": {"user_id","display_name","username"},
+  "leagues": [{"league_id","name","season","total_rosters","status","draft_id","scoring_type","roster_positions"}],
+  "drafts": [{"draft_id","league_id","status","type","season","start_time","teams","rounds","name"}]}`
+* `POST /api/live/start` `{"league_id"?, "draft_id"?, "username"?, "user_id"?, "slot"?, "use_claude"?: bool}`
+  → `{"ok": true}` (background: capture → build_context → poller; `mode` becomes `live`).
+* `POST /api/mock/start` `{"teams": 12, "rounds": 15, "slot": 5, "scoring": "half_ppr|ppr|std",
+  "superflex": false, "seed": int|null, "bot_delay": 1.0, "autopilot": false}` → `{"ok": true}` (`mode` → `mock`).
+  Bots pick automatically every `bot_delay` seconds until it is my turn; `POST /api/mock/pick {"player_id"}`
+  makes my pick, `POST /api/mock/auto` takes the top recommendation, `POST /api/mock/autopilot {"enabled"}`.
+* `POST /api/stop` → `{"ok": true}` (mode → `idle`).
+* `GET /api/state` → the render payload:
+  ```
+  {"mode", "version", "ts",
+   "draft": {"type","status","teams","rounds","pick_timer","current_round","next_pick_no","total_picks",
+             "on_the_clock": {"slot", "label"}|null, "is_my_turn", "my_slot", "my_next_pick_no",
+             "my_pick_after_next", "picks_until_my_turn", "is_complete", "turn_started_at", "seconds_left"},
+   "league": {"name","scoring_type","scoring_description","roster_positions","teams","season"},
+   "me": {"slots": [{"slot": "RB", "player": card|null}], "needs": [str], "bye_clashes": {"11": 2},
+          "lineup_points", "bench_points", "position_counts": {pos: n}},
+   "best": [card],                       // top 8 by score
+   "by_position": {pos: {"action","rationale","expected_next_available","drop_off","candidates": [card x3]}},
+   "available": [card],                  // top 250 undrafted by score (client filters/sorts)
+   "recent": [{"pick_no","round","slot","label","player_id","name","position","team","is_me"}],  // newest first, 12
+   "opponents": [{"slot","label","needs": [str],"next_pick","position_counts": {}, "players": [{"name","position"}]}],
+   "pressure": {pos: float}, "notes": [str],
+   "claude": {"status": "off|idle|thinking|ready|error|no answer", "advice": str|null},
+   "snapshot": null | {"flags": [str], "diff": {"scoring_type","rec_points","deltas": [{"key","label","base","league","kind"}]},
+                       "draft_order": [{"slot","display_name","team_name","roster_id","picks": [int],"is_me"}],
+                       "my_picks": [int], "captured_at": float, "league": {...}, "draft": {...}},
+   "status": {"latency_ms","compute_ms","poll_count","last_error","sources": {}}}
+  ```
+  A **card** is `{"player_id","name","position","team","bye","age","years_exp","injury_status","depth_chart_order",
+  "points","floor","ceiling","std","ppg","games","vorp","vona","marginal","score","tier","pos_rank","overall_rank",
+  "adp","ecr","availability_next","availability_after_next","reasons": [str],"warnings": [str],
+  "note": null|{"summary","injury_risk","role_certainty","upside","downside"}, "drafted_by": null|label}`.
+* `GET /api/player/{player_id}` → card + `{"projection": {"components","weights","flags","stat_line"}, "explain": str}`.
+* `GET /api/projections?position=RB&top=80&q=text` → `[card]` from the session's (or a default offline)
+  context sorted by points; `POST /api/board/load` builds the default context when there is no session.
+* `POST /api/ask` `{"question"}` → `{"answer"}` (503 when Claude is disabled).
+* `POST /api/research` `{"top": 150}` → `{"ok": true}` (background, progress in `status.log`).

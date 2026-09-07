@@ -142,6 +142,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--username", required=True)
     s.set_defaults(func=cmd_ids)
 
+    s = sub.add_parser("web", help="start the local web app (http://127.0.0.1:8787) and open the browser")
+    s.add_argument("--host", default="127.0.0.1")
+    s.add_argument("--port", type=int, default=8787)
+    s.add_argument("--no-browser", action="store_true")
+    s.set_defaults(func=cmd_web)
+
     s = sub.add_parser("capture", help="one-time league info capture (scoring diff, draft order, your picks)")
     _add_league_args(s)
     _add_identity_args(s)
@@ -1093,6 +1099,15 @@ def cmd_ids(args: argparse.Namespace) -> int:
                       str(d.get("draft_id")), str(d.get("status")), str(d.get("type")))
     console.print(t)
     return EXIT_OK
+
+
+def cmd_web(args: argparse.Namespace) -> int:
+    from .web.server import main as web_main
+
+    argv = ["--host", args.host, "--port", str(args.port)]
+    if args.no_browser:
+        argv.append("--no-browser")
+    return web_main(argv)
 
 
 def cmd_capture(args: argparse.Namespace) -> int:
