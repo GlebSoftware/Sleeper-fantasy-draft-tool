@@ -203,13 +203,17 @@ class ScoringEngine:
             rec = col("rec")
             for k in _POS_BONUS:
                 df[k] = rec
+        # Bracket indicators only where the source value exists: offensive players share the
+        # frame with team defenses and must NOT fall into the "0 points allowed" bracket.
         if "pts_allow" in df.columns:
-            br = col("pts_allow").map(_points_allowed_bracket)
+            raw = pd.to_numeric(df["pts_allow"], errors="coerce")
+            br = raw.map(lambda v: _points_allowed_bracket(v) if pd.notna(v) else None)
             for k in ("pts_allow_0", "pts_allow_1_6", "pts_allow_7_13", "pts_allow_14_20",
                       "pts_allow_21_27", "pts_allow_28_34", "pts_allow_35p"):
                 df[k] = (br == k).astype(float)
         if "yds_allow" in df.columns:
-            br = col("yds_allow").map(_yards_allowed_bracket)
+            raw = pd.to_numeric(df["yds_allow"], errors="coerce")
+            br = raw.map(lambda v: _yards_allowed_bracket(v) if pd.notna(v) else None)
             for k in ("yds_allow_0_100", "yds_allow_100_199", "yds_allow_200_299", "yds_allow_300_349",
                       "yds_allow_350_399", "yds_allow_400_449", "yds_allow_450_499", "yds_allow_500_549",
                       "yds_allow_550p"):
