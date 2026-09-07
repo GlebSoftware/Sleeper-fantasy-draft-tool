@@ -296,7 +296,13 @@ def build_state_payload(sess: Session) -> dict:
     key = (st.is_my_turn, st.next_pick_no)
     if st.is_my_turn and key != sess.turn_key:
         sess.turn_key = key
-        sess.turn_started_at = now
+        # Sleeper's clock started at the previous pick (draft.last_picked, epoch ms); if we
+        # noticed the turn late (restart, slow bootstrap) use the real start, not "now".
+        start = now
+        lp = st.draft.last_picked
+        if lp and st.picks and lp > 1e12:
+            start = min(now, lp / 1000.0)
+        sess.turn_started_at = start
     elif not st.is_my_turn:
         sess.turn_key = None
         sess.turn_started_at = None
@@ -558,6 +564,22 @@ async def _run_research(sess: Session, top: int) -> None:
         ctx.notes.update(notes)
         if sess.loop is not None:
             sess.loop.notes.update(notes)
+        err = getattr(ctx.researcher, "last_error", None)
+        if err:
+            sess.logbuf.say(f"research problem: {err}")
+        # re-blend projections so injury_risk / role_certainty change points, VORP and tiers
+        try:
+            from ..app import rebuild_projections
+
+            await asyncio.to_thread(rebuild_projections, ctx, ctx.notes)
+            if sess.loop is not None:
+                sess.loop.advisor = _TopN(ctx.advisor, AVAILABLE_TOP_N)
+                if sess.state is not None:
+                    async with sess.lock:
+                        await sess.loop.handle(sess.state)
+            sess.logbuf.say("projections re-blended with research notes")
+        except ImportError:
+            sess.logbuf.say("projections not re-blended (rebuild_projections unavailable)")
         sess.message = f"research done: {len(notes)} notes"
     finally:
         sess.busy = False
