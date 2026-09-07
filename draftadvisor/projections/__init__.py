@@ -8,13 +8,16 @@ from .blend import (  # noqa: F401
     MarketCurve,
     Projector,
     RankCurve,
+    def_bracket_rates,
     default_rank_curves,
     ecr_implied_points,
     fit_rank_curves,
     market_replacement_rank,
     rates_to_season,
     sleeper_stats_to_projection,
+    yds_bracket_rates,
 )
+from .features import ALL_TARGET_KEYS, FEATURE_COLUMNS, TARGETS  # noqa: F401  (constants; pandas optional)
 
 try:  # optional heavy dependencies
     from .blend import project_offline  # noqa: F401
@@ -27,6 +30,7 @@ except ImportError:  # pragma: no cover - pandas / scikit-learn not installed
     build_inference_table = build_training_table = season_aggregates = None  # type: ignore[assignment]
 
 __all__ = [
+    "ALL_TARGET_KEYS", "FEATURE_COLUMNS", "TARGETS", "def_bracket_rates", "yds_bracket_rates",
     "DEFAULT_WEIGHTS", "MarketCurve", "Projector", "RankCurve", "default_rank_curves", "ecr_implied_points",
     "fit_rank_curves", "market_replacement_rank", "rates_to_season", "sleeper_stats_to_projection",
     "ProjectionModel", "train_and_save", "project_offline", "build_inference_table", "build_training_table",
