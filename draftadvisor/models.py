@@ -534,6 +534,8 @@ class ResearchNote:
     sources: list[str] = field(default_factory=list)
     generated_at: float = field(default_factory=time.time)
     model: str | None = None
+    offfield_risk: float = 0.0          # 0..1: suspension / legal / holdout risk of missing games
+    red_flags: list[str] = field(default_factory=list)   # short, concrete concerns found in the news
 
     def to_dict(self) -> dict:
         return {
@@ -546,6 +548,8 @@ class ResearchNote:
             "sources": list(self.sources),
             "generated_at": self.generated_at,
             "model": self.model,
+            "offfield_risk": self.offfield_risk,
+            "red_flags": list(self.red_flags),
         }
 
     @classmethod
@@ -560,6 +564,8 @@ class ResearchNote:
             sources=list(d.get("sources", [])),
             generated_at=float(d.get("generated_at", 0.0)),
             model=d.get("model"),
+            offfield_risk=float(d.get("offfield_risk", 0.0) or 0.0),
+            red_flags=[str(x) for x in (d.get("red_flags") or []) if x],
         )
 
 

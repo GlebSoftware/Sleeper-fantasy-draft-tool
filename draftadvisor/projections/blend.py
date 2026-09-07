@@ -15,17 +15,19 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Mapping
+from typing import Any, Mapping
 
 import numpy as np
-import pandas as pd
-from sklearn.isotonic import IsotonicRegression
+try:
+    import pandas as pd
+except ImportError:  # pragma: no cover
+    pd = None  # type: ignore[assignment]
 
 from ..config import SLOT_ELIGIBILITY, FANTASY_WEEKS, GAMES_PER_TEAM, SKILL_POSITIONS, Settings
 from ..data.crosswalk import Crosswalk
 from ..models import LeagueSettings, Player, Projection, ResearchNote
 from ..scoring.engine import ScoringEngine
-from .features import ALL_TARGET_KEYS, PPR_SCORING, TARGETS, season_aggregates
+from .features import ALL_TARGET_KEYS, PPR_SCORING, TARGETS
 
 log = logging.getLogger(__name__)
 
@@ -229,6 +231,8 @@ class EcrCurve:
     """Monotone-decreasing map from ECR overall rank to season points (one position)."""
 
     def __init__(self, ecr: np.ndarray, points: np.ndarray):
+        from sklearn.isotonic import IsotonicRegression
+
         self.iso = IsotonicRegression(increasing=False, out_of_bounds="clip")
         self.iso.fit(ecr, points)
         self.lo, self.hi = float(np.min(ecr)), float(np.max(ecr))
@@ -503,16 +507,22 @@ class Projector:
                 "std_ppg": std_ppg, "rookie": rookie}
 
     # -- main ----------------------------------------------------------------------
-    def project(self, players: Mapping[str, Player], ml_pred: pd.DataFrame | None = None,
+    def project(self, players: Mapping[str, Player], ml_pred: Any = None,
                 sleeper_proj: Mapping[str, Mapping] | None = None, notes: Mapping[str, ResearchNote] | None = None,
                 byes: Mapping[str, int] | None = None, season_weeks: int = FANTASY_WEEKS) -> dict[str, Projection]:
         """Blend every source per player and apply injury / depth / research adjustments."""
-        ml_rows: dict[str, pd.Series] = {}
+        ml_rows: dict[str, Any] = {}
         if ml_pred is not None and len(ml_pred):
-            idx = ml_pred.index.astype(str)
-            for pid in players:
-                if pid in idx:
-                    ml_rows[pid] = ml_pred.loc[pid] if pid in ml_pred.index else ml_pred[idx == pid].iloc[0]
+            if isinstance(ml_pred, Mapping):                 # lean runtime: {player_id: {"pred_<key>": v, ...}}
+                for pid in players:
+                    row = ml_pred.get(pid)
+                    if row:
+                        ml_rows[pid] = row
+            else:
+                idx = ml_pred.index.astype(str)
+                for pid in players:
+                    if pid in idx:
+                        ml_rows[pid] = ml_pred.loc[pid] if pid in ml_pred.index else ml_pred[idx == pid].iloc[0]
         ml: dict[str, dict] = {}
         sl: dict[str, dict] = {}
         for pid, pl in players.items():
@@ -642,9 +652,13 @@ class Projector:
         if note is not None:
             r = float(np.clip(note.injury_risk, 0.0, 1.0))
             c = float(np.clip(note.role_certainty, 0.0, 1.0))
-            games *= (1.0 - 0.25 * r)
-            points *= (1.0 - 0.25 * r)
-            std *= (1.3 - 0.3 * c)
+            o = float(np.clip(getattr(note, "offfield_risk", 0.0) or 0.0, 0.0, 1.0))
+            # injury risk and off-field risk (suspension / legal / holdout) both cost expected games
+            games *= (1.0 - 0.25 * r) * (1.0 - 0.35 * o)
+            points *= (1.0 - 0.25 * r) * (1.0 - 0.35 * o)
+            std *= (1.3 - 0.3 * c) * (1.0 + 0.3 * o)
+            if o >= 0.5:
+                flags.append("offfield")
         games = float(np.clip(games, 0.0, GAMES_PER_TEAM))
         ppg = points / games if games > 0 else 0.0
         std = max(std, MIN_STD_FRACTION * points)
@@ -707,6 +721,8 @@ def project_offline(players: Mapping[str, Player], engine: ScoringEngine, canoni
     (always 0) and ``position``. Players with no last-season row are omitted (the
     Projector then uses ECR/Sleeper only).
     """
+    from .features import season_aggregates
+
     agg = season_aggregates(canonical[canonical["season"] == season - 1]) if len(canonical) else pd.DataFrame()
     if agg.empty:
         return pd.DataFrame(columns=[f"pred_{k}" for k in ALL_TARGET_KEYS] + ["pred_games", "pred_ppg_ppr", "ppg_std_ppr", "rookie_flag", "position"])

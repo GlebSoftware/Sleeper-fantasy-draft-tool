@@ -955,7 +955,13 @@ def test_f3_rostered_players_and_rookie_only_drafts_are_excluded(fixture_state, 
         assert all(v.player_id != top for v in rec1.best_overall)
         assert adv.value_of(st, top) is None
     if "player_type" in {f.name for f in dataclasses.fields(type(fixture_state.draft))}:
+        # mark a handful of undrafted players as rookies; a rookie-only draft must show only them
+        undrafted = [pid for pid in players if pid not in fixture_state.drafted_ids][:6]
+        for pid in undrafted:
+            players[pid].years_exp = 0
+        adv2 = Advisor(league, players, projections)
         d = dataclasses.replace(fixture_state.draft, player_type=1)
         st2 = dataclasses.replace(fixture_state.with_picks(fixture_state.picks), draft=d)
-        rec2 = adv.recommend(st2)
+        rec2 = adv2.recommend(st2)
         assert rec2.best_overall and all(v.player.years_exp == 0 for v in rec2.best_overall)
+        assert {v.player_id for v in rec2.best_overall} <= set(undrafted)

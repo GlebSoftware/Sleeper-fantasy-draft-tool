@@ -1,41 +1,34 @@
-"""ML projections and blending (DESIGN.md §3.3).
+"""ML projections and blending. See DESIGN.md §3.3.
 
-* :mod:`features` - season aggregates, training / inference tables (no target leakage).
-* :mod:`model`    - per-position HistGradientBoosting rate models, rookies, games, std.
-* :mod:`blend`    - :class:`Projector` blending ML / Sleeper / ECR into league points,
-  plus :func:`project_offline` when no trained model exists.
+The blend (pure Python + numpy) is always importable; the model/feature code needs pandas and
+scikit-learn and is exposed only when they are installed (the stateless web app runs without them).
 """
-from .blend import (
+from .blend import (  # noqa: F401
     DEFAULT_WEIGHTS,
+    MarketCurve,
     Projector,
-    def_bracket_rates,
+    RankCurve,
+    default_rank_curves,
     ecr_implied_points,
-    project_offline,
+    fit_rank_curves,
+    market_replacement_rank,
     rates_to_season,
     sleeper_stats_to_projection,
 )
-from .features import (
-    FEATURE_COLUMNS,
-    TARGETS,
-    build_inference_table,
-    build_training_table,
-    season_aggregates,
-)
-from .model import ProjectionModel, train_and_save
+
+try:  # optional heavy dependencies
+    from .blend import project_offline  # noqa: F401
+    from .features import build_inference_table, build_training_table, season_aggregates  # noqa: F401
+    from .model import ProjectionModel, train_and_save  # noqa: F401
+except ImportError:  # pragma: no cover - pandas / scikit-learn not installed
+    ProjectionModel = None  # type: ignore[assignment]
+    train_and_save = None  # type: ignore[assignment]
+    project_offline = None  # type: ignore[assignment]
+    build_inference_table = build_training_table = season_aggregates = None  # type: ignore[assignment]
 
 __all__ = [
-    "DEFAULT_WEIGHTS",
-    "FEATURE_COLUMNS",
-    "ProjectionModel",
-    "Projector",
-    "TARGETS",
-    "build_inference_table",
-    "build_training_table",
-    "def_bracket_rates",
-    "ecr_implied_points",
-    "project_offline",
-    "rates_to_season",
+    "DEFAULT_WEIGHTS", "MarketCurve", "Projector", "RankCurve", "default_rank_curves", "ecr_implied_points",
+    "fit_rank_curves", "market_replacement_rank", "rates_to_season", "sleeper_stats_to_projection",
+    "ProjectionModel", "train_and_save", "project_offline", "build_inference_table", "build_training_table",
     "season_aggregates",
-    "sleeper_stats_to_projection",
-    "train_and_save",
 ]

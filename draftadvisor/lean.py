@@ -65,6 +65,8 @@ def player_to_dict(pl: Player) -> dict:
         "depth_chart_position": pl.depth_chart_position, "bye_week": pl.bye_week, "search_rank": pl.search_rank,
         "gsis_id": pl.gsis_id, "fantasypros_id": pl.fantasypros_id, "draft_year": pl.draft_year,
         "draft_round": pl.draft_round, "draft_pick_overall": pl.draft_pick_overall,
+        # build-time market snapshot: used only when the live ECR fetch fails
+        "ecr": pl.ecr, "ecr_sd": pl.ecr_sd, "ecr_pos_rank": pl.ecr_pos_rank,
     }
 
 

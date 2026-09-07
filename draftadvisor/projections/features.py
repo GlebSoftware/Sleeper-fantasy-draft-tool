@@ -19,7 +19,10 @@ import logging
 from typing import Iterable, Mapping
 
 import numpy as np
-import pandas as pd
+try:
+    import pandas as pd
+except ImportError:  # pragma: no cover
+    pd = None  # type: ignore[assignment]
 
 from ..config import SKILL_POSITIONS
 from ..data.crosswalk import Crosswalk

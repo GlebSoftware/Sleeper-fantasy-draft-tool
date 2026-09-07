@@ -8,8 +8,14 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-import httpx
-import pandas as pd
+try:
+    import httpx
+except ImportError:  # pragma: no cover
+    httpx = None  # type: ignore[assignment]
+try:
+    import pandas as pd
+except ImportError:  # pragma: no cover
+    pd = None  # type: ignore[assignment]
 
 from ..config import cache_dir, ensure_dirs, raw_dir
 

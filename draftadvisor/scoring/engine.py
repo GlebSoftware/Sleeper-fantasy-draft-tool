@@ -15,7 +15,11 @@ from __future__ import annotations
 from typing import Iterable, Mapping
 
 import numpy as np
-import pandas as pd
+
+try:  # pandas is optional at runtime (the stateless web app runs without it)
+    import pandas as pd
+except ImportError:  # pragma: no cover
+    pd = None  # type: ignore[assignment]
 
 #: Reasonable default (Sleeper "half PPR" preset) used when a league has no
 #: scoring settings (e.g. offline mock drafts).

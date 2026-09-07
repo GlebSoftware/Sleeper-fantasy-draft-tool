@@ -9,7 +9,10 @@ from __future__ import annotations
 import logging
 from typing import Iterable, Mapping
 
-import pandas as pd
+try:
+    import pandas as pd
+except ImportError:  # pragma: no cover
+    pd = None  # type: ignore[assignment]
 
 from ..config import DEFAULT_SEASON, SKILL_POSITIONS
 from ..models import Player
@@ -22,7 +25,7 @@ _ACTIVE_STATUSES = {"Active", "Injured Reserve", "PUP", "Suspended", "Non Footba
 
 def _f(v) -> float | None:
     try:
-        if v is None or (isinstance(v, float) and pd.isna(v)):
+        if v is None or (isinstance(v, float) and v != v):
             return None
         return float(v)
     except (TypeError, ValueError):

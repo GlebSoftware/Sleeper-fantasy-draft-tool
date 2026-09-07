@@ -12,32 +12,24 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
-import pandas as pd
+try:
+    import pandas as pd
+except ImportError:  # pragma: no cover
+    pd = None  # type: ignore[assignment]
 
 from ..config import DEFAULT_SEASON
 from .cache import download, raw_path
 from .canonical import to_sleeper_team
-from .nflverse import load_roster
 
 log = logging.getLogger(__name__)
 
 PLAYERIDS_URL = "https://raw.githubusercontent.com/dynastyprocess/data/master/files/db_playerids.csv"
 
-_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
-
-
-def normalize_name(name: str | None) -> str:
-    """'Amon-Ra St. Brown Jr.' -> 'amonra st brown'."""
-    if not name or (isinstance(name, float)):
-        return ""
-    s = unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode()
-    s = s.lower().replace("-", "").replace("'", "").replace(".", "")
-    parts = [p for p in re.split(r"\s+", s.strip()) if p and p not in _SUFFIXES]
-    return " ".join(parts)
+from .names import normalize_name  # noqa: E402  (shared with the lean runtime)
 
 
 def _clean_id(v) -> str | None:
-    if v is None or (isinstance(v, float) and pd.isna(v)):
+    if v is None or (isinstance(v, float) and v != v):
         return None
     s = str(v).strip()
     if s in ("", "nan", "NA", "<NA>"):
@@ -110,7 +102,7 @@ class Crosswalk:
             self.fp_to_sleeper.setdefault(f, sid)
         a = self.attrs.setdefault(sid, {})
         for k, v in attrs.items():
-            if v is not None and not (isinstance(v, float) and pd.isna(v)) and k not in a:
+            if v is not None and not (isinstance(v, float) and v != v) and k not in a:
                 a[k] = v
         if name and "name" not in a:
             a["name"] = name
@@ -121,6 +113,8 @@ class Crosswalk:
 
 
 def build_crosswalk(season: int = DEFAULT_SEASON, roster_seasons: int = 3) -> Crosswalk:
+    from .nflverse import load_roster
+
     """Merge dynastyprocess ids with the last ``roster_seasons`` nflverse rosters."""
     cw = Crosswalk()
     try:

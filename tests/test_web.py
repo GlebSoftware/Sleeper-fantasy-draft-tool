@@ -1,4 +1,4 @@
-"""Web server API tests against a real uvicorn process (mock mode, offline)."""
+"""Stateless web API v2 tests against a real uvicorn process (mock mode, offline)."""
 from __future__ import annotations
 
 import os
@@ -12,7 +12,7 @@ import httpx
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-HAS_DATA = (ROOT / "data" / "raw" / "stats_player_week_2025.csv").exists()
+HAS_BUNDLE = (ROOT / "web_bundle" / "players.json").exists()
 
 
 def _free_port() -> int:
@@ -21,107 +21,130 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-@pytest.fixture(scope="module")
-def server():
-    if not HAS_DATA:
-        pytest.skip("needs data/raw for the offline universe")
+def _start(env_extra: dict | None = None):
     port = _free_port()
     env = dict(os.environ, DRAFTADVISOR_HOME=str(ROOT / "data"))
     env.pop("ANTHROPIC_API_KEY", None)
+    env.pop("DRAFTADVISOR_ACCESS_CODE", None)
+    env.update(env_extra or {})
     proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "draftadvisor.web.server:app", "--host", "127.0.0.1",
                              "--port", str(port), "--log-level", "warning"], cwd=str(ROOT), env=env,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     base = f"http://127.0.0.1:{port}"
+    for _ in range(150):
+        try:
+            httpx.get(base + "/api/status", timeout=1)
+            break
+        except Exception:  # noqa: BLE001
+            time.sleep(0.2)
+    else:
+        proc.kill()
+        raise RuntimeError("server did not start")
+    return proc, base
+
+
+def _stop(proc) -> None:
+    proc.terminate()
     try:
-        for _ in range(100):
-            try:
-                httpx.get(base + "/api/status", timeout=1)
-                break
-            except Exception:  # noqa: BLE001
-                time.sleep(0.2)
-        else:
-            raise RuntimeError("server did not start")
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
+@pytest.fixture(scope="module")
+def server():
+    if not HAS_BUNDLE:
+        pytest.skip("needs web_bundle/ (run scripts/build_bundle.py)")
+    proc, base = _start()
+    try:
         yield base
     finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+        _stop(proc)
 
 
-def _wait_my_turn(base: str, timeout: float = 120) -> dict:
-    t0 = time.time()
-    while time.time() - t0 < timeout:
-        st = httpx.get(base + "/api/state", timeout=5).json()
-        if st["mode"] == "mock" and st.get("draft") and (st["draft"]["is_my_turn"] or st["draft"]["is_complete"]):
-            return st
-        time.sleep(0.3)
-    raise AssertionError("mock draft never reached my turn")
+MOCK = {"mode": "mock", "use_claude": False,
+        "mock": {"teams": 8, "rounds": 6, "slot": 3, "scoring": "ppr", "superflex": False, "seed": 1}, "picks": []}
 
 
 def test_status_and_index(server):
-    r = httpx.get(server + "/api/status", timeout=5)
-    assert r.status_code == 200
+    body = httpx.get(server + "/api/status", timeout=10).json()
+    assert body["ok"] and body["bundle"]["present"] and body["bundle"]["players"] > 500
+    assert body["claude"]["server_key"] is False and body["access_code_required"] is False
+    assert body["notes"]["store"] in ("local", "memory", "blob")
+    assert httpx.get(server + "/", timeout=5).status_code == 200
+
+
+def test_mock_flow_is_stateless(server):
+    r = httpx.post(server + "/api/session/start", json={"session": MOCK}, timeout=60)
+    assert r.status_code == 200, r.text
     body = r.json()
-    assert body["mode"] == "idle" and set(body["ready"]) == {"data", "model", "claude", "sleeper"}
-    assert body["ready"]["claude"] is False
-    idx = httpx.get(server + "/", timeout=5)
-    assert idx.status_code in (200, 404)          # 404 only while the frontend file is absent
-
-
-def test_mock_draft_flow(server):
-    r = httpx.post(server + "/api/mock/start", json={"teams": 8, "rounds": 6, "slot": 3, "scoring": "ppr", "seed": 1,
-                                                     "bot_delay": 0.3}, timeout=5)
-    assert r.status_code == 200
-    st = _wait_my_turn(server)
-    d = st["draft"]
-    assert d["teams"] == 8 and d["rounds"] == 6 and d["my_slot"] == 3 and d["is_my_turn"]
-    assert st["league"]["scoring_type"] == "ppr" and "PPR" in st["league"]["scoring_description"]
-    assert len(st["best"]) >= 5 and st["best"][0]["score"] is not None and st["best"][0]["reasons"]
-    assert set(st["by_position"]) == {"QB", "RB", "WR", "TE", "K", "DEF"}
-    assert st["by_position"]["K"]["action"] in ("SKIP", "WAIT", "SOON", "TAKE NOW")
-    assert len(st["available"]) > 50 and st["me"] is not None and st["me"]["slots"][0]["slot"] == "QB"
-    assert st["snapshot"] and st["snapshot"]["diff"]["scoring_type"] == "ppr" and st["snapshot"]["draft_order"][2]["is_me"]
-    assert st["claude"]["status"] in ("off", "idle")
-    # busy guard
-    assert httpx.post(server + "/api/mock/start", json={"teams": 8, "rounds": 6, "slot": 1}, timeout=5).status_code == 409
-    # invalid pick, then the recommended pick
-    assert httpx.post(server + "/api/mock/pick", json={"player_id": "nope"}, timeout=5).status_code == 400
+    assert body["session"]["mode"] == "mock" and body["snapshot"]["diff"]["scoring_type"] == "ppr"
+    assert body["snapshot"]["draft_order"][2]["is_me"]
+    sess = dict(MOCK)
+    # bots advance until my turn (slot 3 -> pick 3)
+    st = httpx.post(server + "/api/mock/state", json={"session": sess, "action": "advance"}, timeout=60).json()
+    assert st["mode"] == "mock" and st["draft"]["is_my_turn"] and st["draft"]["next_pick_no"] == 3
+    assert len(st["picks"]) == 2 and len(st["last_picks"]) == 2 and st["last_picks"][0]["pick_no"] == 1
+    assert len(st["best"]) >= 5 and st["best"][0]["reasons"] and set(st["by_position"]) == {"QB", "RB", "WR", "TE", "K", "DEF"}
+    assert st["me"]["slots"][0]["slot"] == "QB" and len(st["available"]) > 50
+    assert st["draft"]["pick_timer"] in (None, 30) and "seconds_left" in st["draft"]
+    # the same request again (browser re-poll) gives the same board: nothing was stored server-side
+    st2 = httpx.get(server + "/api/state", params={"mode": "mock", "teams": 8, "rounds": 6, "slot": 3, "scoring": "ppr",
+                                                    "seed": 1, "picks": ",".join(st["picks"])}, timeout=60).json()
+    assert st2["draft"]["next_pick_no"] == 3 and st2["best"][0]["player_id"] == st["best"][0]["player_id"]
+    # my pick by id, then bots advance to my next turn (pick 14)
+    sess["picks"] = st["picks"]
     top = st["best"][0]["player_id"]
-    r = httpx.post(server + "/api/mock/pick", json={"player_id": top}, timeout=5)
-    assert r.status_code == 200 and r.json()["pick"]["player_id"] == top
-    # bots are picking now (0.3 s each): picking again must be refused as "not your turn"
-    assert httpx.post(server + "/api/mock/pick", json={"player_id": st["best"][1]["player_id"]}, timeout=5).status_code == 409
-    st2 = httpx.get(server + "/api/state", timeout=5).json()
-    assert st2["version"] > st["version"]
-    mine = [s["player"]["player_id"] for s in st2["me"]["slots"] if s["player"]]
-    assert top in mine
-    # auto pick at the next turn + player detail + projections
-    st3 = _wait_my_turn(server)
-    if not st3["draft"]["is_complete"]:
-        r = httpx.post(server + "/api/mock/auto", timeout=5)
-        assert r.status_code == 200
-    pid = top
-    detail = httpx.get(server + f"/api/player/{pid}", timeout=5).json()
-    assert detail["name"] and "projection" in detail
-    rows = httpx.get(server + "/api/projections", params={"position": "RB", "top": 5}, timeout=10).json()
-    assert len(rows) == 5 and all(c["position"] == "RB" for c in rows) and rows[0]["points"] >= rows[-1]["points"]
-    assert httpx.post(server + "/api/ask", json={"question": "hi"}, timeout=5).status_code == 503
-    # autopilot finishes the draft
-    httpx.post(server + "/api/mock/autopilot", json={"enabled": True}, timeout=5)
-    t0 = time.time()
-    while time.time() - t0 < 120:
-        stx = httpx.get(server + "/api/state", timeout=5).json()
+    assert httpx.post(server + "/api/mock/state", json={"session": sess, "action": "pick", "player_id": "nope"}, timeout=60).status_code == 400
+    st3 = httpx.post(server + "/api/mock/state", json={"session": sess, "action": "pick", "player_id": top}, timeout=60).json()
+    assert st3["picks"][2] == top and st3["draft"]["next_pick_no"] == 14 and st3["draft"]["is_my_turn"]
+    assert any(s["player"] and s["player"]["player_id"] == top for s in st3["me"]["slots"])
+    assert len(st3["last_picks"]) == 11 and st3["last_picks"][0]["is_me"]   # my pick #3 + bots #4-#13
+    # not my turn -> 409 when the pick list ends mid-round
+    sess["picks"] = st3["picks"][:5]
+    assert httpx.post(server + "/api/mock/state", json={"session": sess, "action": "pick", "player_id": st3["available"][0]["player_id"]},
+                      timeout=60).status_code == 409
+    # auto picks until complete
+    sess["picks"] = st3["picks"]
+    for _ in range(10):
+        stx = httpx.post(server + "/api/mock/state", json={"session": sess, "action": "auto"}, timeout=60).json()
+        sess["picks"] = stx["picks"]
         if stx["draft"]["is_complete"]:
             break
-        time.sleep(0.3)
-    assert stx["draft"]["is_complete"]
-    assert httpx.post(server + "/api/stop", timeout=10).json()["ok"]
-    assert httpx.get(server + "/api/status", timeout=5).json()["mode"] == "idle"
+    assert stx["draft"]["is_complete"] and len(stx["picks"]) == 48
+    # player detail + board
+    detail = httpx.get(server + f"/api/player/{top}", params={"mode": "mock", "teams": 8, "rounds": 6, "slot": 3, "scoring": "ppr",
+                                                              "seed": 1, "picks": ",".join(stx["picks"])}, timeout=60).json()
+    assert detail["name"] and detail["projection"] and "explain" in detail
+    rows = httpx.get(server + "/api/projections", params={"position": "RB", "top": 5}, timeout=60).json()
+    assert len(rows) == 5 and all(c["position"] == "RB" for c in rows) and rows[0]["points"] >= rows[-1]["points"]
 
 
-def test_lookup_without_network_reports_502(server):
-    r = httpx.post(server + "/api/lookup", json={"username": "someone"}, timeout=30)
+def test_claude_endpoints_without_key(server):
+    assert httpx.post(server + "/api/chat", json={"messages": [{"role": "user", "content": "hi"}]}, timeout=30).status_code == 503
+    assert httpx.post(server + "/api/research/next", json={"top": 5}, timeout=30).status_code == 503
+    assert httpx.post(server + "/api/research/player", json={"player_id": "x"}, timeout=30).status_code == 503
+    adv = httpx.get(server + "/api/advice", params={"mode": "mock", "teams": 8, "rounds": 6, "slot": 3, "scoring": "ppr", "seed": 1},
+                    timeout=60).json()
+    assert adv["status"] == "off" and adv["advice"] is None
+    assert httpx.get(server + "/api/notes", timeout=10).status_code == 200
+
+
+def test_live_requires_ids_and_reports_network(server):
+    assert httpx.get(server + "/api/state", timeout=30).status_code == 400
+    r = httpx.post(server + "/api/lookup", json={"username": "someone"}, timeout=60)
+    assert r.status_code in (502, 404) and "detail" in r.json()
+    r = httpx.post(server + "/api/session/start", json={"session": {"mode": "live", "draft_id": "123"}}, timeout=60)
     assert r.status_code in (502, 404)
-    assert "detail" in r.json()
+
+
+def test_access_code():
+    if not HAS_BUNDLE:
+        pytest.skip("needs web_bundle/")
+    proc, base = _start({"DRAFTADVISOR_ACCESS_CODE": "s3cret"})
+    try:
+        assert httpx.get(base + "/api/status", timeout=10).json()["access_code_required"] is True
+        assert httpx.get(base + "/api/notes", timeout=10).status_code == 401
+        assert httpx.get(base + "/api/notes", headers={"X-Access-Code": "s3cret"}, timeout=10).status_code == 200
+    finally:
+        _stop(proc)

@@ -278,7 +278,7 @@ def test_research_notes_cached_and_reused():
     # request shape
     call = client.messages.create_calls[0]
     assert call["model"] == "claude-sonnet-5"
-    assert call["tools"][0]["type"] == "web_search_20260209" and call["tools"][0]["max_uses"] == 3
+    assert call["tools"][0]["type"] == "web_search_20260209" and call["tools"][0]["max_uses"] == 4
     assert call["output_config"]["effort"] == "medium"
     assert call["output_config"]["format"]["type"] == "json_schema"
     assert call["max_tokens"] == RESEARCH_MAX_TOKENS
