@@ -81,3 +81,71 @@ def test_normal_helpers():
     assert abs(normal_cdf(0.0) - 0.5) < 1e-12
     assert abs(normal_ppf(0.8) - 0.8416) < 1e-3
     assert abs(normal_cdf(normal_ppf(0.3)) - 0.3) < 1e-6
+
+
+# ---------------------------------------------------------------------------
+# Review findings: keepers (F2/S1), rostered players (F3), traded picks (F5), rookies (PROJ-5)
+# ---------------------------------------------------------------------------
+
+
+def _picks(d: DraftSettings, numbers) -> list[Pick]:
+    return [Pick(pick_no=n, round=d.round_of(n), draft_slot=d.slot_for_pick(n), player_id=f"p{n}",
+                 roster_id=d.slot_for_pick(n)) for n in numbers]
+
+
+def test_keeper_pick_is_not_a_future_pick():
+    """F2/S1: a keeper pre-populated at one of my later pick numbers must not count as my next pick."""
+    d = _draft(slot_to_roster_id={s: s for s in range(1, 13)})
+    # slot 1 picks 1, 24, 25, 48, 49 ...; 46 picks made, keeper sitting at #48 (is_keeper)
+    picks = _picks(d, range(1, 47))
+    keeper = Pick(pick_no=48, round=4, draft_slot=1, player_id="keeper", roster_id=1, is_keeper=True)
+    st = DraftState(draft=d, picks=picks + [keeper], my_slot=1)
+    assert st.next_pick_no == 47
+    assert 48 in st.taken_pick_numbers and 48 in st.my_pick_numbers()
+    assert st.my_future_picks()[:2] == [49, 72]
+    assert st.my_next_pick_no == 49 and st.my_pick_after_next == 72
+    assert st.picks_until_my_turn == 2 and not st.is_my_turn
+    # at #47 (slot 11) and #48 skipped: after pick 47 it is *not* my turn, the board jumps to #49
+    st2 = st.with_picks(st.picks + _picks(d, [47]))
+    assert st2.next_pick_no == 49 and st2.is_my_turn and st2.picks_until_my_turn == 0
+    # my last real pick with a keeper behind it: no phantom future pick
+    picks3 = _picks(d, range(1, 168)) + [Pick(169, 15, 1, "keeper2", roster_id=1, is_keeper=True)]
+    st3 = DraftState(draft=d, picks=picks3, my_slot=1)
+    assert st3.next_pick_no == 168 and st3.is_my_turn
+    assert st3.my_future_picks() == [168]
+    assert st3.my_pick_after_next is None
+
+
+def test_rostered_ids_and_unavailable_ids():
+    """F3: players already on league rosters are unavailable alongside drafted ones and survive with_picks."""
+    d = _draft(slot_to_roster_id={s: s for s in range(1, 13)}, player_type=1)
+    st = DraftState(draft=d, picks=_picks(d, [1, 2]), my_slot=1, rostered_ids={"vet1", "vet2"})
+    assert st.drafted_ids == {"p1", "p2"}
+    assert st.unavailable_ids == {"p1", "p2", "vet1", "vet2"}
+    assert st.is_rookie_draft
+    st2 = st.with_picks(st.picks + _picks(d, [3]))
+    assert st2.rostered_ids == {"vet1", "vet2"} and st2.rostered_ids is not st.rostered_ids
+    assert "p3" in st2.unavailable_ids
+    assert DraftState(draft=_draft(), picks=[]).unavailable_ids == set()
+    assert not DraftState(draft=_draft(), picks=[]).is_rookie_draft
+
+
+def test_slot_of_pick_uses_roster_mapping_for_traded_picks():
+    """F5: a traded pick keeps the original draft_slot; the drafter is identified by roster_id."""
+    d = _draft(slot_to_roster_id={s: s + 100 for s in range(1, 13)}, traded_picks={(3, 102): 101})
+    traded = Pick(pick_no=d.pick_no_for(3, 2), round=3, draft_slot=2, player_id="x", roster_id=101)
+    plain = Pick(pick_no=1, round=1, draft_slot=1, player_id="y", roster_id=101)
+    no_roster = Pick(pick_no=2, round=1, draft_slot=2, player_id="z", roster_id=None)
+    st = DraftState(draft=d, picks=[plain, no_roster, traded], my_slot=1)
+    assert st.slot_of_pick(traded) == 1 and st.slot_of_pick(plain) == 1 and st.slot_of_pick(no_roster) == 2
+    assert [p.player_id for p in st.my_picks()] == ["y", "x"]
+    assert [p.player_id for p in st.picks_by_slot()[2]] == ["z"]
+
+
+def test_is_rookie_requires_years_exp_zero():
+    """PROJ-5: unknown years_exp (team defenses, some vets) is not a rookie."""
+    from draftadvisor.models import Player
+
+    assert Player("1", "X", "WR", years_exp=0).is_rookie
+    assert not Player("2", "Y", "WR", years_exp=3).is_rookie
+    assert not Player("SF", "SF Defense", "DEF", years_exp=None).is_rookie

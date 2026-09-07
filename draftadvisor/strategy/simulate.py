@@ -18,7 +18,7 @@ import numpy as np
 from ..config import SKILL_POSITIONS, SLOT_ELIGIBILITY
 from ..models import DraftState, Player, Projection
 from .availability import slot_for_pick
-from .lineup import bench_usefulness, optimal_lineup, phantom_starters, starter_thresholds
+from .lineup import bench_usefulness, bench_value, optimal_lineup, phantom_starters, starter_thresholds
 from .recommend import Advisor
 
 log = logging.getLogger(__name__)
@@ -105,7 +105,9 @@ class _Sim:
         thr_arr = np.array([thr[p] for p in SKILL_POSITIONS])
         bench_n = np.zeros(len(SKILL_POSITIONS))
         for pid in bench:
-            bench_n[_POS_INDEX[info[pid][0]]] += 1
+            pi = _POS_INDEX.get(info[pid][0])       # IDP / unknown positions are not tracked
+            if pi is not None:
+                bench_n[pi] += 1
         bw = bench_scale * self.useful * (0.7 ** bench_n)
         pos, pts = self.pos[idx], self.points[idx]
         t = thr_arr[pos]
@@ -121,9 +123,7 @@ class _Sim:
         _, starters, bench = optimal_lineup(roster, self.slots)
         pts = {pl.player_id: p for pl, p in roster}
         pos = {pl.player_id: pl.position for pl, _ in roster}
-        bench_v = sum(self.discount * bench_usefulness(pos[b], self.league) * max(0.0, pts[b] - self.rep.get(pos[b], 0.0))
-                      for b in bench)
-        return float(starters + bench_v)
+        return float(starters + bench_value(bench, pos, pts, self.league, self.discount, self.rep))
 
     def run_once(self, rng: np.random.Generator, cand_idx: int, my_picks_ahead: int) -> float:
         avail = self.avail0.copy()

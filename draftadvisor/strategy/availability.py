@@ -180,7 +180,10 @@ def position_pressure(
     market = _market_shares(available)
     pressure = {p: 0.0 for p in SKILL_POSITIONS}
     n_between = 0
+    taken = {p.pick_no for p in state.picks}          # keeper picks are already made
     for pick_no in range(state.next_pick_no, max(state.next_pick_no, until_pick)):
+        if pick_no in taken:
+            continue
         slot = slot_for_pick(state, pick_no)
         if state.my_slot is not None and slot == state.my_slot:
             continue

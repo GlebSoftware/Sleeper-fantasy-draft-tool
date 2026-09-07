@@ -46,17 +46,31 @@ from .availability import (
 from .lineup import (
     bench_depth_factor,
     bench_usefulness,
+    is_phantom,
     optimal_lineup,
     phantom_starters,
     player_from_pick,
-    starter_thresholds,
+    starter_displacements,
     summarize_roster,
 )
-from .replacement import starter_demand
+from .replacement import remaining_demand, starter_demand
 
 log = logging.getLogger(__name__)
 
-__all__ = ["Advisor", "ACTIONS"]
+__all__ = ["Advisor", "ACTIONS", "future_picks"]
+
+
+def future_picks(state: DraftState) -> list[int]:
+    """My pick numbers still to be made, in order.
+
+    Like :meth:`DraftState.my_future_picks` but never lists a pick number that is
+    already on the board (Sleeper pre-populates keeper picks at their pick number).
+    """
+    if state.my_slot is None:
+        return []
+    taken = {p.pick_no for p in state.picks}
+    n = state.next_pick_no
+    return [p for p in state.my_pick_numbers() if p >= n and p not in taken]
 
 ACTIONS = ("TAKE NOW", "SOON", "WAIT", "SKIP")
 _POS_INDEX = {p: i for i, p in enumerate(SKILL_POSITIONS)}
@@ -80,8 +94,9 @@ class _Context:
     key: tuple
     current_pick: int
     current_round: int
-    eval_pick: int
-    eval_after: int
+    eval_pick: int | None                   # my next pick after the current one (None: this is my last pick)
+    eval_after: int | None
+    on_clock: bool                          # the current pick is mine
     avail: np.ndarray                       # master indices, points descending
     pos: np.ndarray                         # position index per available player
     points: np.ndarray
@@ -93,6 +108,7 @@ class _Context:
     p_next: np.ndarray
     p_after: np.ndarray
     marginal: np.ndarray
+    enters: np.ndarray                      # bool: the candidate would start in my lineup right now
     vona: np.ndarray
     score: np.ndarray
     next_after: np.ndarray                  # expected marginal value of my next pick if I take this player now
@@ -115,6 +131,9 @@ class _Context:
     n_between: int
     open_slots: list[str]
     picks_spare: int
+    idp_open: int                           # open IDP/unprojected starting slots I must still fill myself
+    idp_slots: list[str]
+    remaining: int                          # picks I still have (including the current one when on the clock)
     my_ids: set[str] = field(default_factory=set)
 
 
@@ -134,6 +153,7 @@ class Advisor:
         self.settings = settings or Settings()
         self._slots = league.starting_slots
         self._demand = starter_demand(league)
+        self._has_kdef = league.dedicated_starters("K") > 0 or league.dedicated_starters("DEF") > 0
         self._useful = np.array([bench_usefulness(p, league) for p in SKILL_POSITIONS])
         self._ctx: _Context | None = None
         self._build_arrays()
@@ -167,9 +187,11 @@ class Advisor:
         self._sigma = pick_distribution_arrays(self._mu, np.array(ecr_sd, dtype=float))
         self._bye = np.array(bye, dtype=np.int64)
         self._team = np.array(team, dtype=object)
+        self._demand_arr = np.array([self._demand[p] for p in SKILL_POSITIONS])
         self._model_rank = self._value_rank()
         self._relevant = (np.arange(self.n) < _TOP_BY_POINTS) | (self._mu < _ADP_CUTOFF)
-        self._demand_arr = np.array([self._demand[p] for p in SKILL_POSITIONS])
+        # positions the league cannot start (no K or DEF slot) are worthless: keep them off the board
+        self._relevant &= self._demand_arr[self._pos] > 0
 
     def _value_rank(self) -> np.ndarray:
         """1-based rank by points over full-pool replacement (comparable to an overall ECR)."""
@@ -179,6 +201,7 @@ class Advisor:
             if ppts.size:
                 k = int(round(self._demand[pname]))
                 rep[pi] = ppts[min(max(k, 0), ppts.size - 1)]
+        self._full_rep = {p: float(rep[_POS_INDEX[p]]) for p in SKILL_POSITIONS}
         order = np.argsort(-(self._points - rep[self._pos]), kind="stable")
         rank = np.empty(self.n, dtype=np.int64)
         rank[order] = np.arange(1, self.n + 1)
@@ -233,7 +256,7 @@ class Advisor:
         if v is None:
             pl = self.players.get(player_id)
             name = pl.name if pl else player_id
-            if player_id in state.drafted_ids:
+            if player_id in (getattr(state, "unavailable_ids", None) or state.drafted_ids):
                 return f"{name} has already been drafted."
             return f"{name}: no projection available, cannot value."
         top = self._value(ctx, int(ctx.order[0])) if ctx.order.size else None
@@ -245,9 +268,11 @@ class Advisor:
         if v.warnings:
             parts.append("Warnings: " + "; ".join(v.warnings) + ".")
         if top is not None and top.player_id != player_id:
+            when = (f"{top.availability_next:.0%} available at #{ctx.eval_pick}" if ctx.eval_pick is not None
+                    else "this is your last pick")
             parts.append(
-                f"Top recommendation is {top.player.display()} (score {top.score:.1f}, "
-                f"{top.availability_next:.0%} available at #{ctx.eval_pick}): " + "; ".join(top.reasons[:2]) + "."
+                f"Top recommendation is {top.player.display()} (score {top.score:.1f}, {when}): "
+                + "; ".join(top.reasons[:2]) + "."
             )
             parts.append(f"Score gap {top.score - v.score:.1f} in favour of {top.player.name}.")
         elif top is not None:
@@ -267,20 +292,61 @@ class Advisor:
         self._ctx = self._build_context(state, key)
         return self._ctx
 
+    def _position_of(self, pk) -> str | None:
+        pr = self.projections.get(pk.player_id)
+        if pr is not None and pr.position in _POS_INDEX:
+            return pr.position
+        pl = self.players.get(pk.player_id)
+        if pl is not None:
+            return pl.position
+        return pk.position
+
     def _build_context(self, state: DraftState, key: tuple) -> _Context:
         s = self.settings
         current = state.next_pick_no
         rounds = max(1, state.draft.rounds)
         current_round = state.current_round
         kdef_round = max(1, rounds - int(s.kicker_def_min_round_from_end) + 1)
-        kdef_early = current_round < kdef_round
+        kdef_early = self._has_kdef and current_round < kdef_round
+        my_slot = state.my_slot
+        fut_all = future_picks(state)
+        on_clock = bool(fut_all) and fut_all[0] == current and not state.is_complete
+        fut = [p for p in fut_all if p > current]
+        if my_slot is None:
+            # unknown slot: judge availability a full round ahead
+            eval_pick: int | None = current + state.teams
+            eval_after: int | None = eval_pick + state.teams
+            remaining = rounds
+        else:
+            eval_pick = fut[0] if fut else None
+            eval_after = None if eval_pick is None else (fut[1] if len(fut) > 1 else eval_pick + state.teams)
+            remaining = len(fut_all)
 
-        # 1. available pool
+        # 1. available pool (+ how many players each position has already lost to the draft)
         mask = self._relevant.copy()
-        for pid in state.drafted_ids:
+        drafted_counts = {p: 0 for p in SKILL_POSITIONS}
+        for pk in state.picks:
+            i = self._index.get(pk.player_id)
+            if i is not None:
+                mask[i] = False
+                drafted_counts[SKILL_POSITIONS[int(self._pos[i])]] += 1
+            else:
+                pname = self._position_of(pk)
+                if pname in drafted_counts:
+                    drafted_counts[pname] += 1
+        # dynasty / keeper leagues: players already on a league roster cannot be drafted
+        for pid in getattr(state, "rostered_ids", None) or ():
             i = self._index.get(pid)
             if i is not None:
                 mask[i] = False
+        # rookie-only (1) / veterans-only (2) drafts (Sleeper draft.settings.player_type)
+        ptype = int(getattr(state.draft, "player_type", 0) or 0)
+        if ptype in (1, 2):
+            for i in np.flatnonzero(mask):
+                pl = self.players.get(self.ids[i])
+                rookie = bool(pl is not None and pl.years_exp == 0)
+                if (ptype == 1 and not rookie) or (ptype == 2 and rookie):
+                    mask[i] = False
         avail = np.flatnonzero(mask)
         pos = self._pos[avail]
         pts = self._points[avail]
@@ -288,6 +354,8 @@ class Advisor:
         m = avail.size
 
         # 2. replacement, VORP, tiers, positional rank
+        total_picks = max(1, state.draft.total_picks)
+        rem_frac = max(0.0, total_picks - current + 1) / total_picks
         rep_arr = np.zeros(len(SKILL_POSITIONS))
         tier = np.ones(m, dtype=np.int64)
         pos_rank = np.ones(m, dtype=np.int64)
@@ -300,7 +368,9 @@ class Advisor:
             if sel.size == 0:
                 continue
             ppts = pts[sel]
-            k = int(round(self._demand_arr[pi]))
+            # the (remaining demand + 1)-th best still available: stays at the full-pool level
+            # while the draft follows the demand model instead of sinking into bench filler
+            k = int(round(remaining_demand(self._demand_arr[pi], drafted_counts[pname], rem_frac)))
             rep_arr[pi] = ppts[min(max(k, 0), sel.size - 1)]
             best_now[pname] = float(ppts[0])
             thr = max(_TIER_TOP_FRAC * ppts[0], _TIER_STD_FRAC * float(std[sel].mean()))
@@ -318,26 +388,32 @@ class Advisor:
         for slot in range(1, state.teams + 1):
             summaries[slot] = summarize_roster(slot, state.slot_label(slot), by_slot.get(slot, []),
                                                self.players, self.projections, self.league)
-        my_slot = state.my_slot
         my_summary = summaries.get(my_slot) if my_slot is not None else None
         opp_summaries = [sm for slot, sm in summaries.items() if slot != my_slot]
         my_roster = self._roster_tuples(by_slot.get(my_slot, []) if my_slot is not None else [])
         my_ids = {pl.player_id for pl, _ in my_roster}
-        remaining = len(state.my_future_picks()) if my_slot is not None else rounds
         lineup_info = self._my_lineup(my_roster, rep, remaining)
 
-        fut = [p for p in state.my_future_picks() if p > current]
-        eval_pick = fut[0] if fut else current + state.teams
-        eval_after = fut[1] if len(fut) > 1 else eval_pick + state.teams
-
         avail_players = [self.players[self.ids[i]] for i in avail]
-        pressure = position_pressure(state, opp_summaries, avail_players, self.projections, eval_pick)
-        n_between = sum(1 for p in range(current, eval_pick) if my_slot is None or slot_for_pick(state, p) != my_slot)
-        shift = shift_for_pressure(pressure, adp_baseline(avail_players, n_between))
-        shift_arr = np.array([shift[p] for p in SKILL_POSITIONS])[pos]
         mu, sigma = self._mu[avail], self._sigma[avail]
-        p_next = prob_available_array(mu, sigma, eval_pick, current, shift_arr)
-        p_after = prob_available_array(mu, sigma, eval_after, current, shift_arr)
+        if eval_pick is None:
+            # my last pick: nobody can take anyone from me before a pick I do not have
+            pressure = {p: 0.0 for p in SKILL_POSITIONS}
+            n_between = 0
+            p_next = np.ones(m, dtype=float)
+            p_after = np.ones(m, dtype=float)
+        else:
+            pressure = position_pressure(state, opp_summaries, avail_players, self.projections, eval_pick)
+            taken = {p.pick_no for p in state.picks}
+            n_between = sum(1 for p in range(current, eval_pick)
+                            if p not in taken and (my_slot is None or slot_for_pick(state, p) != my_slot))
+            shift = shift_for_pressure(pressure, adp_baseline(avail_players, n_between))
+            shift_arr = np.array([shift[p] for p in SKILL_POSITIONS])[pos]
+            # condition on the first pick an *opponent* can make: when I am on the clock that is
+            # the pick after mine (a back-to-back turn then has nobody in between -> 100%)
+            from_pick = current + 1 if on_clock else current
+            p_next = prob_available_array(mu, sigma, eval_pick, from_pick, shift_arr)
+            p_after = prob_available_array(mu, sigma, eval_after, from_pick, shift_arr)
 
         # 4. marginal value, VONA, score
         thr_arr = np.array([lineup_info["thresholds"][p] for p in SKILL_POSITIONS])
@@ -346,9 +422,20 @@ class Advisor:
         t_pos = thr_arr[pos]
         gain = np.where(np.isfinite(t_pos), np.maximum(0.0, pts - t_pos), 0.0)
         benched = pts <= t_pos
+        enters = ~benched
         own_bench = s.bench_discount * bench_w[pos] * np.maximum(0.0, pts - rep_arr[pos])
-        displaced_bench = s.bench_discount * bench_w[pos] * np.maximum(
-            0.0, np.where(np.isfinite(t_pos), t_pos, 0.0) - rep_arr[pos])
+        # the player who goes to the bench when the candidate starts is the weakest starter
+        # reachable through slot eligibility -- possibly another position (a TE in FLEX, a
+        # QB in SUPER_FLEX): price him at *his* usefulness, depth and replacement level
+        disp_idx = np.array([_POS_INDEX[d] if d is not None else -1 for d in
+                             (lineup_info["displaced"][p] for p in SKILL_POSITIONS)], dtype=np.int64)
+        d_pos = disp_idx[pos]
+        has_disp = d_pos >= 0
+        d_safe = np.where(has_disp, d_pos, 0)
+        displaced_bench = np.where(
+            has_disp,
+            s.bench_discount * bench_w[d_safe] * np.maximum(0.0, np.where(np.isfinite(t_pos), t_pos, 0.0) - rep_arr[d_safe]),
+            0.0)
         marginal = gain + np.where(benched, own_bench, displaced_bench)
 
         e_next_arr = np.zeros(len(SKILL_POSITIONS))
@@ -399,12 +486,14 @@ class Advisor:
                 bench_rest = s.bench_discount * bench_w[pi] * np.maximum(0.0, pts[rest] - rep_arr[pi])
                 same_after[j] = expected_best_available_array(bench_rest, p_next[rest])
         next_after = np.maximum(best_other[pos], same_after)
-        if not fut:
-            # this is my last pick: there is no next pick to plan for
+        if eval_pick is None:
+            # this is my last pick: there is no next pick to plan for, nothing is left at risk
             next_after = np.zeros_like(next_after)
-        # Two plans with equal expected value are not equal: the one that banks the scarcer
-        # player now carries less variance, so charge a small premium on value left at risk.
-        score = marginal + next_after - _DEFER_EPS * p_next * marginal - float(s.risk_aversion) * std
+            score = marginal - float(s.risk_aversion) * std
+        else:
+            # Two plans with equal expected value are not equal: the one that banks the scarcer
+            # player now carries less variance, so charge a small premium on value left at risk.
+            score = marginal + next_after - _DEFER_EPS * p_next * marginal - float(s.risk_aversion) * std
         teams = self._team[avail]
         stack_qb: dict[str, str] = lineup_info["stack_qb"]
         stack_pc: dict[str, str] = lineup_info["stack_pc"]
@@ -412,7 +501,8 @@ class Advisor:
             is_pc = (pos == _POS_INDEX["WR"]) | (pos == _POS_INDEX["TE"])
             is_qb = pos == _POS_INDEX["QB"]
             stack = (is_pc & np.isin(teams, list(stack_qb))) | (is_qb & np.isin(teams, list(stack_pc)))
-            score = score + np.where(stack, float(s.stack_bonus) * pts, 0.0)
+            # a stack only pays when both players start: no bonus for a backup QB / bench WR
+            score = score + np.where(stack & enters, float(s.stack_bonus) * pts, 0.0)
         bye_counts = np.zeros(_MAX_BYE + 1)
         for bw, names in lineup_info["bye_starters"].items():
             bye_counts[bw] = len(names)
@@ -427,16 +517,18 @@ class Advisor:
 
         return _Context(
             key=key, current_pick=current, current_round=current_round,
-            eval_pick=eval_pick, eval_after=eval_after,
+            eval_pick=eval_pick, eval_after=eval_after, on_clock=on_clock,
             avail=avail, pos=pos, points=pts, rep=rep, vorp=vorp, tier=tier, n_tiers=n_tiers,
-            pos_rank=pos_rank, p_next=p_next, p_after=p_after, marginal=marginal, vona=vona,
+            pos_rank=pos_rank, p_next=p_next, p_after=p_after, marginal=marginal, enters=enters, vona=vona,
             score=score, next_after=next_after, e_next_marg=e_next_marg, order=order, overall_rank=overall_rank,
             my_summary=my_summary, opp_summaries=opp_summaries, pressure=pressure,
             e_next=e_next, best_now=best_now, need_open=lineup_info["need_open"],
             open_label=lineup_info["open_label"], bench_weight=lineup_info["bench_weight"],
             bye_starters=lineup_info["bye_starters"], stack_qb=stack_qb, stack_pc=stack_pc,
             kdef_early=kdef_early, kdef_round=kdef_round, n_between=n_between,
-            open_slots=lineup_info["open_slots"], picks_spare=lineup_info["picks_spare"], my_ids=my_ids,
+            open_slots=lineup_info["open_slots"], picks_spare=lineup_info["picks_spare"],
+            idp_open=lineup_info["idp_open"], idp_slots=lineup_info["idp_slots"], remaining=remaining,
+            my_ids=my_ids,
         )
 
     def _roster_tuples(self, picks: Sequence) -> list[tuple[Player, float]]:
@@ -461,9 +553,14 @@ class Advisor:
         pts_of = {pl.player_id: p for pl, p in roster}
         by_id = {pl.player_id: pl for pl, _ in roster}
 
-        open_slots = [slots[i] for i in range(len(slots))
-                      if i not in a_real and SLOT_ELIGIBILITY.get(slots[i], frozenset()) & set(SKILL_POSITIONS)]
-        picks_spare = int(remaining_picks) - len(open_slots)
+        skill = set(SKILL_POSITIONS)
+        projected = [i for i, sl in enumerate(slots) if SLOT_ELIGIBILITY.get(sl, frozenset()) & skill]
+        open_slots = [slots[i] for i in projected if i not in a_real]
+        # IDP (DL/LB/DB/IDP_FLEX) and other unprojected starting slots still cost me picks
+        idp_slots = [sl for i, sl in enumerate(slots) if i not in projected]
+        idp_have = sum(1 for pl, _ in roster if pl.position not in skill and pl.position != "UNK")
+        idp_open = max(0, len(idp_slots) - idp_have)
+        picks_spare = int(remaining_picks) - len(open_slots) - idp_open
         bench_scale = 1.0 if picks_spare >= 2 else (0.5 if picks_spare == 1 else 0.0)
         # Replacement-level stand-ins for open starter slots exist only while there are at
         # least two spare picks: with one spare pick the downside of missing the last player
@@ -473,7 +570,14 @@ class Advisor:
         a_full, _, _ = optimal_lineup(roster + phantoms, slots)
         pos_all = dict(pos_of, **{ph.player_id: ph.position for ph, _ in phantoms})
         pts_all = dict(pts_of, **{ph.player_id: p for ph, p in phantoms})
-        thresholds = starter_thresholds({i: (pos_all[pid], pts_all[pid]) for i, pid in a_full.items()}, slots)
+        disp = starter_displacements({i: (pos_all[pid], pts_all[pid]) for i, pid in a_full.items()}, slots)
+        thresholds = {p: t for p, (t, _) in disp.items()}
+        # position of the real starter a candidate at p would send to the bench (None: empty
+        # slot, replacement-level stand-in, or nowhere to start)
+        displaced: dict[str, str | None] = {}
+        for p, (_, idx) in disp.items():
+            pid = a_full.get(idx) if idx is not None else None
+            displaced[p] = pos_all[pid] if pid is not None and not is_phantom(pid) else None
 
         need_open: dict[str, bool] = {}
         open_label: dict[str, str | None] = {}
@@ -505,9 +609,11 @@ class Advisor:
             if bw and 0 < bw < _MAX_BYE:
                 bye_starters.setdefault(int(bw), []).append(by_id[pid].name)
 
+        # stacks are only worth anything between *starters*: a benched QB2 stacks with nobody
         stack_qb: dict[str, str] = {}
         stack_pc: dict[str, str] = {}
-        for pl, _ in roster:
+        for pid in a_real.values():
+            pl = by_id[pid]
             if not pl.team:
                 continue
             if pl.position == "QB":
@@ -515,10 +621,11 @@ class Advisor:
             elif pl.position in ("WR", "TE"):
                 stack_pc.setdefault(pl.team, pl.name)
         return {
-            "thresholds": thresholds, "need_open": need_open, "open_label": open_label,
+            "thresholds": thresholds, "displaced": displaced, "need_open": need_open, "open_label": open_label,
             "bench_weight": bench_weight, "bye_starters": bye_starters,
             "stack_qb": stack_qb, "stack_pc": stack_pc,
             "open_slots": open_slots, "picks_spare": picks_spare,
+            "idp_open": idp_open, "idp_slots": idp_slots,
         }
 
     # ------------------------------------------------------------ PlayerValue
@@ -552,14 +659,18 @@ class Advisor:
         label = ctx.open_label.get(pos)
         if label:
             out.append(f"Fills your open {label}")
-        qualifier = "Only " if p_next < 0.6 else ""
-        out.append(f"{qualifier}{p_next:.0%} chance available at your next pick (#{ctx.eval_pick})")
+        if ctx.eval_pick is None:
+            out.append("This is your last pick")
+        else:
+            qualifier = "Only " if p_next < 0.6 else ""
+            out.append(f"{qualifier}{p_next:.0%} chance available at your next pick (#{ctx.eval_pick})")
         extras: list[str] = []
         team = pl.team or ""
-        if pos in ("WR", "TE") and team in ctx.stack_qb:
-            extras.append(f"Stacks with your QB {ctx.stack_qb[team]}")
-        elif pos == "QB" and team in ctx.stack_pc:
-            extras.append(f"Stacks with your {ctx.stack_pc[team]}")
+        if bool(ctx.enters[j]):
+            if pos in ("WR", "TE") and team in ctx.stack_qb:
+                extras.append(f"Stacks with your QB {ctx.stack_qb[team]}")
+            elif pos == "QB" and team in ctx.stack_pc:
+                extras.append(f"Stacks with your {ctx.stack_pc[team]}")
         if pl.bye_week and pl.bye_week in ctx.bye_starters:
             names = ctx.bye_starters[pl.bye_week]
             who = names[0] if len(names) == 1 else f"{len(names)} starters"
@@ -597,24 +708,33 @@ class Advisor:
         drop = ctx.best_now.get(pos, 0.0) - e_next
         nxt = ctx.eval_pick
         if not cands:
+            if self._demand.get(pos, 0.0) <= 0:
+                return PositionAdvice(pos, [], "SKIP", f"No {pos} starting slot in this league", e_next, drop)
             return PositionAdvice(pos, [], "SKIP", f"No {pos} left on the board", e_next, drop)
         best = cands[0]
         p = best.availability_next
         need = ctx.need_open.get(pos, False)
         low_bench = (ctx.bench_weight.get(pos, 0.0) < 0.3
                      or best.marginal_value < max(_SKIP_MIN_VALUE, 0.05 * best.projection.points))
-        base = (f"{p:.0%} chance {best.player.name} is there at your next pick (#{nxt}); "
-                f"expected best {pos} then ~{e_next:.0f} pts (drop-off {drop:.0f})")
+        if nxt is None:
+            base = f"this is your last pick; best {pos} now is {best.player.name} ({best.projection.points:.0f} pts)"
+        else:
+            base = (f"{p:.0%} chance {best.player.name} is there at your next pick (#{nxt}); "
+                    f"expected best {pos} then ~{e_next:.0f} pts (drop-off {drop:.0f})")
         if pos in ("K", "DEF") and ctx.kdef_early:
             action = "SKIP"
             text = f"K/DEF: wait until round {ctx.kdef_round} (now round {ctx.current_round}); {base}"
         elif need and ctx.picks_spare <= 0:
             action = "TAKE NOW"
-            text = (f"Must fill: {len(ctx.open_slots)} open starter(s) ({' '.join(ctx.open_slots)}) and only "
-                    f"{len(ctx.open_slots) + ctx.picks_spare} pick(s) left; {base}")
+            must = list(ctx.open_slots) + list(ctx.idp_slots[:ctx.idp_open])
+            text = (f"Must fill: {len(must)} open starter(s) ({' '.join(must)}) and only "
+                    f"{ctx.remaining} pick(s) left; {base}")
         elif best.overall_rank == 1:
             action = "TAKE NOW"
             text = f"Best value on the board right now; {base}"
+        elif nxt is None:
+            action = "SKIP"
+            text = f"Not the best use of your last pick; {base}"
         elif not need and low_bench:
             action = "SKIP"
             text = f"{pos} starters are set and a bench {pos} adds little; {base}"
@@ -644,12 +764,14 @@ class Advisor:
         for pos, c in sorted(counts.items(), key=lambda kv: -kv[1]):
             if c >= _RUN_MIN and len(recent) >= _RUN_MIN:
                 notes.append(f"{pos} run: {c} of last {len(recent)} picks")
-        fut = [p for p in state.my_future_picks() if p > ctx.current_pick]
-        if state.is_my_turn:
+        fut = [p for p in future_picks(state) if p > ctx.current_pick]
+        if ctx.on_clock:
             head = f"You are on the clock (#{ctx.current_pick})"
             if fut:
                 gap = fut[0] - ctx.current_pick
                 head += f"; next at #{fut[0]}" + (" (back-to-back)" if gap == 1 else "")
+            else:
+                head += "; this is your last pick"
             notes.append(head)
         elif len(fut) >= 2:
             gap = fut[1] - fut[0]
@@ -658,15 +780,23 @@ class Advisor:
         elif fut:
             notes.append(f"You pick next at #{fut[0]}")
         if self.league.is_superflex:
-            qb_left = int(np.sum((ctx.pos == _POS_INDEX["QB"]) & (ctx.points > ctx.rep["QB"])))
-            if qb_left <= state.teams:
-                notes.append(f"Superflex: QBs scarce ({qb_left} startable left)")
+            # startable = above the full-pool replacement level; scarce when the league's open
+            # QB/SUPER_FLEX slots could swallow every one of them
+            startable = int(np.sum((ctx.pos == _POS_INDEX["QB"]) & (ctx.points > self._full_rep["QB"])))
+            everyone = list(ctx.opp_summaries) + ([ctx.my_summary] if ctx.my_summary is not None else [])
+            qb_open = sum(sm.open_starters.get("QB", 0) + sm.open_starters.get("SUPER_FLEX", 0) for sm in everyone)
+            if qb_open > 0 and (startable <= qb_open or startable <= state.teams):
+                notes.append(f"Superflex: QBs scarce ({startable} startable left for {qb_open} open QB/SUPER_FLEX slots)")
         if ctx.kdef_early:
             notes.append(f"K/DEF: wait until round {ctx.kdef_round}")
-        remaining = len(state.my_future_picks())
+        remaining = ctx.remaining if state.my_slot is not None else 0
         if ctx.open_slots and remaining and ctx.picks_spare <= 0:
             notes.append(f"{remaining} pick{'s' if remaining != 1 else ''} left for {len(ctx.open_slots)} open "
                          f"starter{'s' if len(ctx.open_slots) != 1 else ''} ({' '.join(ctx.open_slots)}): fill them")
+        if ctx.idp_open and remaining:
+            labels = sorted(set(ctx.idp_slots), key=ctx.idp_slots.index)
+            notes.append(f"You must draft {ctx.idp_open} IDP starter{'s' if ctx.idp_open != 1 else ''} "
+                         f"({' '.join(labels)}) yourself: IDP is not projected here")
         hot = [(p, v) for p, v in ctx.pressure.items() if v >= 2.5 and p not in ("K", "DEF")]
         if hot and ctx.n_between > 0:
             p, v = max(hot, key=lambda kv: kv[1])

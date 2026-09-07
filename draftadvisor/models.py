@@ -58,7 +58,8 @@ class Player:
 
     @property
     def is_rookie(self) -> bool:
-        return (self.years_exp or 0) == 0
+        """True only when Sleeper reports ``years_exp == 0``; unknown (``None``, e.g. team defenses) is not a rookie."""
+        return self.years_exp == 0
 
     @property
     def is_defense(self) -> bool:
@@ -166,6 +167,7 @@ class DraftSettings:
     rounds: int
     pick_timer: int = 0                         # seconds per pick (0 = no timer)
     reversal_round: int = 0                     # 0 = plain snake; 3 = third-round reversal
+    player_type: int = 0                        # Sleeper settings.player_type: 0 all players, 1 rookies only, 2 vets only
     draft_order: dict[str, int] = field(default_factory=dict)      # user_id -> slot (1-based)
     slot_to_roster_id: dict[int, int] = field(default_factory=dict)  # slot -> roster_id
     traded_picks: dict[tuple[int, int], int] = field(default_factory=dict)  # (round, original_roster_id) -> owner roster_id
@@ -264,6 +266,7 @@ class DraftState:
     my_slot: int | None = None
     updated_at: float = field(default_factory=time.time)
     version: int = 0                            # increments whenever picks change
+    rostered_ids: set[str] = field(default_factory=set)  # players already on league rosters (dynasty/keeper): undraftable
 
     # -- basic derived values ---------------------------------------------------
     @property
@@ -275,9 +278,23 @@ class DraftState:
         return {p.player_id for p in self.picks}
 
     @property
+    def unavailable_ids(self) -> set[str]:
+        """Players nobody can draft: already picked (incl. keepers on the board) or on a league roster."""
+        return self.drafted_ids | self.rostered_ids
+
+    @property
+    def is_rookie_draft(self) -> bool:
+        return self.draft.player_type == 1
+
+    @property
+    def taken_pick_numbers(self) -> set[int]:
+        """Pick numbers already on the board (made picks *and* pre-populated keeper picks)."""
+        return {p.pick_no for p in self.picks}
+
+    @property
     def next_pick_no(self) -> int:
         """Overall number of the pick currently on the clock (1-based)."""
-        taken = {p.pick_no for p in self.picks}
+        taken = self.taken_pick_numbers
         n = 1
         while n in taken:
             n += 1
@@ -315,8 +332,14 @@ class DraftState:
         return self.draft.picks_for_slot(self.my_slot)
 
     def my_future_picks(self) -> list[int]:
+        """My pick numbers from the current pick on, excluding picks already on the board.
+
+        Sleeper places keepers on the board before the draft as picks (``is_keeper``) at the
+        pick number of their keeper round; those picks will never come on the clock.
+        """
         n = self.next_pick_no
-        return [p for p in self.my_pick_numbers() if p >= n]
+        taken = self.taken_pick_numbers
+        return [p for p in self.my_pick_numbers() if p >= n and p not in taken]
 
     @property
     def my_next_pick_no(self) -> int | None:
@@ -338,17 +361,23 @@ class DraftState:
         return None if nxt is None else nxt - self.next_pick_no
 
     # -- rosters ----------------------------------------------------------------
+    def slot_of_pick(self, pick: Pick) -> int:
+        """Draft slot of the team that actually made ``pick``.
+
+        Sleeper keeps ``draft_slot`` as the *original* slot of a traded pick while ``roster_id``
+        identifies the drafter, so the roster mapping wins when it is known.
+        """
+        if pick.roster_id is not None:
+            for s, rid in self.draft.slot_to_roster_id.items():
+                if rid == pick.roster_id:
+                    return s
+        return pick.draft_slot
+
     def picks_by_slot(self) -> dict[int, list[Pick]]:
         out: dict[int, list[Pick]] = {s: [] for s in range(1, self.teams + 1)}
         for p in self.picks:
             # attribute the pick to whoever owns the roster that made it, when known
-            slot = p.draft_slot
-            if p.roster_id is not None:
-                for s, rid in self.draft.slot_to_roster_id.items():
-                    if rid == p.roster_id:
-                        slot = s
-                        break
-            out.setdefault(slot, []).append(p)
+            out.setdefault(self.slot_of_pick(p), []).append(p)
         return out
 
     def my_picks(self) -> list[Pick]:
@@ -379,6 +408,7 @@ class DraftState:
             my_slot=self.my_slot,
             updated_at=time.time(),
             version=self.version + 1,
+            rostered_ids=set(self.rostered_ids),
         )
 
 

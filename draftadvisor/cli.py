@@ -21,13 +21,15 @@ from typing import Any, AsyncIterable, Callable, Iterable, Mapping, Sequence
 from rich import box
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 from .config import DEFAULT_SEASON, SKILL_POSITIONS, TRAIN_SEASONS, Settings
 from .models import DraftState, LeagueSettings, Player, Projection, Recommendation
 
 log = logging.getLogger(__name__)
 
-__all__ = ["main", "build_parser", "DraftLoop", "run_draft_loop", "resolve_player_input", "parse_seasons"]
+__all__ = ["main", "build_parser", "DraftLoop", "run_draft_loop", "resolve_player_input", "parse_seasons",
+           "MIN_POLL_SECONDS"]
 
 EXIT_OK = 0
 EXIT_USAGE = 2
@@ -53,15 +55,43 @@ def _add_identity_args(p: argparse.ArgumentParser) -> None:
     g.add_argument("--slot", type=int, help="your draft slot (1-based)")
 
 
+#: Smallest accepted ``--poll`` interval (seconds); anything lower would hammer Sleeper and kill the error backoff.
+MIN_POLL_SECONDS = 0.5
+
+
+def _add_global_args(p: argparse.ArgumentParser, suppress: bool = False) -> None:
+    """``--home/--offline/--season/-v``. With ``suppress`` the defaults are omitted so a subparser only
+    sets an attribute when the flag is actually given (otherwise its defaults would overwrite the values
+    the root parser already parsed)."""
+    d = argparse.SUPPRESS if suppress else None
+    p.add_argument("--home", default=d, help="data directory (sets DRAFTADVISOR_HOME; default ./data)")
+    p.add_argument("--offline", action="store_true", default=argparse.SUPPRESS if suppress else False,
+                   help="never touch the network")
+    p.add_argument("--season", type=int, default=d, help=f"season being drafted (default {DEFAULT_SEASON})")
+    p.add_argument("-v", "--verbose", action="count", default=argparse.SUPPRESS if suppress else 0,
+                   help="-v info, -vv debug")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    """The argparse parser for every subcommand."""
+    """The argparse parser for every subcommand.
+
+    The global flags (``--home``, ``--offline``, ``--season``, ``-v``) are accepted both before and
+    after the subcommand (``draftadvisor --offline mock`` and ``draftadvisor mock --offline``).
+    """
     p = argparse.ArgumentParser(prog="draftadvisor", description="Live Sleeper fantasy-football draft advisor.")
-    p.add_argument("--home", help="data directory (sets DRAFTADVISOR_HOME; default ./data)")
-    p.add_argument("--offline", action="store_true", help="never touch the network")
-    p.add_argument("--season", type=int, default=None, help=f"season being drafted (default {DEFAULT_SEASON})")
-    p.add_argument("-v", "--verbose", action="count", default=0, help="-v info, -vv debug")
-    sub = p.add_subparsers(dest="command", metavar="command")
-    sub.required = True
+    _add_global_args(p)
+    common = argparse.ArgumentParser(add_help=False)
+    _add_global_args(common, suppress=True)
+    root_sub = p.add_subparsers(dest="command", metavar="command")
+    root_sub.required = True
+
+    class _Sub:
+        """``add_parser`` that attaches the shared global flags to every subcommand."""
+
+        def add_parser(self, name: str, **kw: Any) -> argparse.ArgumentParser:
+            return root_sub.add_parser(name, parents=[common], **kw)
+
+    sub = _Sub()
 
     s = sub.add_parser("prep", help="download data, train the model, cache projections (+ optional Claude research)")
     _add_league_args(s)
@@ -80,7 +110,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("draft", help="live draft advisor")
     _add_league_args(s)
     _add_identity_args(s)
-    s.add_argument("--poll", type=float, default=None, help="poll interval seconds (default 2)")
+    s.add_argument("--poll", type=float, default=None, help=f"poll interval seconds (default 2, min {MIN_POLL_SECONDS})")
     s.add_argument("--no-claude", action="store_true", help="disable Claude advice")
     s.add_argument("--no-tui", action="store_true", help="plain text output instead of the dashboard")
     s.add_argument("--no-model", action="store_true", help="skip the ML model (offline projections)")
@@ -165,6 +195,20 @@ def parse_seasons(text: str | None) -> list[int]:
     return [int(x) for x in text.split(",") if x.strip()]
 
 
+def _poll_seconds(value: float | None) -> float | None:
+    """Clamp ``--poll`` to :data:`MIN_POLL_SECONDS` (0 / negative would mean a tight loop and no backoff)."""
+    if value is None:
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    if v != v or v < MIN_POLL_SECONDS:  # NaN or too small
+        log.warning("--poll %s is below the minimum; using %.1f s", value, MIN_POLL_SECONDS)
+        return MIN_POLL_SECONDS
+    return v
+
+
 def _settings_from_args(args: argparse.Namespace) -> Settings:
     s = Settings.from_env(
         league_id=getattr(args, "league_id", None),
@@ -172,7 +216,7 @@ def _settings_from_args(args: argparse.Namespace) -> Settings:
         username=getattr(args, "username", None),
         user_id=getattr(args, "user_id", None),
         slot=getattr(args, "slot", None) if getattr(args, "command", "") != "mock" else None,
-        poll_seconds=getattr(args, "poll", None),
+        poll_seconds=_poll_seconds(getattr(args, "poll", None)),
         season=getattr(args, "season", None),
     )
     if getattr(args, "no_claude", False):
@@ -180,10 +224,31 @@ def _settings_from_args(args: argparse.Namespace) -> Settings:
     return s
 
 
+class _StderrHandler(logging.StreamHandler):
+    """Logs to whatever ``sys.stderr`` is *now*.
+
+    ``logging.basicConfig(stream=sys.stderr)`` would bind the stream object at configuration time;
+    the dashboard's ``Live(redirect_stderr=True)`` later swaps ``sys.stderr`` for a proxy that prints
+    above the live display, and only a late-bound handler follows it (otherwise poller / client retry
+    warnings paint over the TUI).
+    """
+
+    def __init__(self) -> None:
+        super().__init__(sys.stderr)
+
+    @property
+    def stream(self):  # type: ignore[override]
+        return sys.stderr
+
+    @stream.setter
+    def stream(self, value) -> None:  # the base class assigns it; ignore
+        pass
+
+
 def _configure_logging(verbose: int) -> None:
     level = logging.WARNING if verbose == 0 else (logging.INFO if verbose == 1 else logging.DEBUG)
     logging.basicConfig(level=level, format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-                        stream=sys.stderr, force=True)
+                        handlers=[_StderrHandler()], force=True)
     logging.getLogger("httpx").setLevel(max(level, logging.WARNING))
 
 
@@ -192,7 +257,25 @@ def _configure_logging(verbose: int) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _is_not_found_error(e: BaseException) -> bool:
+    """A Sleeper 404 / JSON ``null`` (unknown draft or league id) or any other 4xx client error."""
+    try:
+        from .sleeper.client import SleeperAPIError, SleeperNotFound
+
+        if isinstance(e, SleeperNotFound):
+            return True
+        if isinstance(e, SleeperAPIError):
+            code = getattr(e, "status_code", None)
+            return code is not None and 400 <= int(code) < 500 and int(code) != 429
+    except Exception:  # noqa: BLE001
+        pass
+    return False
+
+
 def _is_network_error(e: BaseException) -> bool:
+    """Transport errors, timeouts, 5xx / 429 from Sleeper: things a connection check can fix."""
+    if _is_not_found_error(e):
+        return False
     try:
         import httpx
 
@@ -214,6 +297,31 @@ def _network_message(e: BaseException) -> str:
     return (f"Could not reach the Sleeper API ({type(e).__name__}: {e}).\n"
             "Check your connection (or that api.sleeper.app is reachable from here); offline commands still work:\n"
             "  draftadvisor mock --auto        draftadvisor projections        draftadvisor train")
+
+
+def _not_found_message(e: BaseException, settings: Settings | None = None) -> str:
+    ids = []
+    if settings is not None:
+        if settings.draft_id:
+            ids.append(f"draft {settings.draft_id}")
+        if settings.league_id:
+            ids.append(f"league {settings.league_id}")
+    what = " / ".join(ids) if ids else "that draft/league id"
+    url = getattr(e, "url", None)
+    return (f"Sleeper has no {what} ({type(e).__name__}: {e}).\n"
+            + (f"  ({url})\n" if url and str(url) not in str(e) else "")
+            + "Check the id (draft ids and league ids differ): `draftadvisor ids --username U` lists yours.")
+
+
+def _report_api_error(e: BaseException, console: Console, settings: Settings | None = None) -> int | None:
+    """Print a friendly message for not-found / network errors; return the exit code, or None to re-raise."""
+    if _is_not_found_error(e):
+        console.print(_not_found_message(e, settings), markup=False, highlight=False)
+        return EXIT_USAGE
+    if _is_network_error(e):
+        console.print(_network_message(e), markup=False, highlight=False, style="red")
+        return EXIT_NETWORK
+    return None
 
 
 def _run(coro):
@@ -246,7 +354,9 @@ class DraftLoop:
         self.dashboard = dashboard if tui else None
         self.researcher = researcher
         self.notes = dict(notes or {})
-        self.status: dict = dict(status or {})
+        # shared by reference on purpose: the caller (web server / cmd_draft) reads poll health,
+        # staleness and the Claude status out of the very dict it passed in
+        self.status: dict = status if status is not None else {}
         self.tui = tui and dashboard is not None
         self.out = out or print
         self.refresh_seconds = refresh_seconds
@@ -259,6 +369,7 @@ class DraftLoop:
         self._claude_task: asyncio.Task | None = None
         self._ticker: asyncio.Task | None = None
         self._last_turn_key: tuple | None = None
+        self.source: Any = None
         self.status.setdefault("claude", "off" if not (researcher is not None and getattr(researcher, "enabled", False)) else "idle")
 
     # -- rendering ----------------------------------------------------------------------
@@ -276,16 +387,48 @@ class DraftLoop:
         if state.is_my_turn:
             key = (state.next_pick_no,)
             if self._last_turn_key != key:
-                self.status["turn_started_at"] = time.time()
+                # Sleeper's clock started at the previous pick; if we noticed the turn late
+                # ((re)start mid-turn, slow bootstrap) seed the countdown from that, not from "now"
+                from .ui.dashboard import clock_start
+
+                self.status["turn_started_at"] = clock_start(state, time.time())
                 self._last_turn_key = key
         else:
             self.status.pop("turn_started_at", None)
             self._last_turn_key = None
 
     def _pull_source_stats(self, source: Any) -> None:
-        for attr, key in (("last_latency_ms", "latency_ms"), ("last_error", "last_error"), ("poll_count", "poll_count")):
+        """Copy the poller's health into ``status`` (called on every update *and* every tick)."""
+        if source is None:
+            return
+        for attr, key in (("last_latency_ms", "latency_ms"), ("poll_count", "poll_count"), ("last_poll_at", "last_poll_at")):
             if hasattr(source, attr):
                 self.status[key] = getattr(source, attr)
+        if hasattr(source, "last_error"):
+            err = getattr(source, "last_error")
+            if err:
+                self.status["last_error"] = str(err)
+                if self.status.get("stale_since") is None:
+                    self.status["stale_since"] = getattr(source, "last_poll_at", None) or time.time()
+            elif self.status.get("stale_since") is not None:
+                # the poller recovered: clear the outage indicators (set to None rather than popped so a
+                # dashboard refresh, which merges status keys, drops them from the screen too)
+                self.status["stale_since"] = None
+                self.status["last_error"] = None
+
+    def on_source_error(self, e: BaseException) -> None:
+        """Poller ``on_error`` hook: surface the outage immediately instead of at the next successful poll."""
+        self.status["last_error"] = f"{type(e).__name__}: {e}"
+        if self.status.get("stale_since") is None:
+            self.status["stale_since"] = getattr(self.source, "last_poll_at", None) or time.time()
+        if self.tui and self.dashboard is not None:
+            if self.state is not None:
+                try:
+                    self.dashboard.refresh(self.status)
+                except Exception as ex:  # noqa: BLE001
+                    log.debug("dashboard refresh failed: %s", ex)
+        else:
+            self.out(f"poll error: {self.status['last_error']} (board may be stale)")
 
     # -- state updates -------------------------------------------------------------------
     async def handle(self, state: DraftState, source: Any = None) -> Recommendation | None:
@@ -299,6 +442,8 @@ class DraftLoop:
         try:
             rec = self.advisor.recommend(state)
             self.recommend_calls += 1
+            if str(self.status.get("last_error") or "").startswith("recommend:"):
+                self.status.pop("last_error", None)
         except Exception as e:  # noqa: BLE001
             log.exception("recommend failed: %s", e)
             self.status["last_error"] = f"recommend: {e}"
@@ -350,6 +495,7 @@ class DraftLoop:
             await asyncio.sleep(self.refresh_seconds)
             if self.tui and self.dashboard is not None and self.state is not None:
                 try:
+                    self._pull_source_stats(self.source)   # latency / errors / staleness between picks too
                     self.dashboard.refresh(self.status)
                 except Exception as e:  # noqa: BLE001
                     log.debug("dashboard refresh failed: %s", e)
@@ -357,6 +503,7 @@ class DraftLoop:
     # -- main -------------------------------------------------------------------------------
     async def run(self, source: Any, stop: asyncio.Event | None = None) -> DraftState | None:
         """Consume ``source`` until the draft completes / ``stop`` is set / Ctrl-C."""
+        self.source = source
         if self.tui and self.dashboard is not None:
             self.dashboard.start()
         if self.tui and self.refresh_seconds > 0:
@@ -367,7 +514,10 @@ class DraftLoop:
                 async def on_update(state: DraftState) -> None:
                     await self.handle(state, source)
 
-                await source.run(on_update, stop)
+                if _accepts_kwarg(source.run, "on_error"):
+                    await source.run(on_update, stop, on_error=self.on_source_error)
+                else:                       # a source without the poller's ``on_error`` hook
+                    await source.run(on_update, stop)
             else:
                 async for state in _aiter(source):
                     if stop is not None and stop.is_set():
@@ -401,6 +551,16 @@ class DraftLoop:
                     pass
         if self.tui and self.dashboard is not None:
             self.dashboard.stop()
+
+
+def _accepts_kwarg(fn: Any, name: str) -> bool:
+    try:
+        import inspect
+
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return name in params or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
 
 
 async def _aiter(source: Any):
@@ -546,9 +706,15 @@ def cmd_prep(args: argparse.Namespace) -> int:
     console = Console()
     settings = _settings_from_args(args)
     if args.offline:
-        console.print("[dim]--offline: skipping Sleeper[/dim]")
-    ctx = _run(prep(settings, research=args.research, refresh=args.refresh, train=not args.no_train, top=args.top,
-                    progress=lambda s: console.print(f"[cyan]…[/cyan] {s}")))
+        console.print("[dim]--offline: Sleeper will not be contacted[/dim]")
+    progress = lambda s: console.print(Text("… ", style="cyan") + Text(str(s)))  # noqa: E731
+    kw = dict(research=args.research, refresh=args.refresh, train=not args.no_train, top=args.top, progress=progress)
+    try:
+        ctx = _run(prep(settings, offline=args.offline, **kw))
+    except TypeError as e:
+        if "offline" not in str(e):
+            raise
+        ctx = _run(prep(settings, **kw))    # older app.prep without the offline parameter
     snap = ctx.sources.get("snapshot")
     if snap is not None:
         try:
@@ -564,7 +730,31 @@ def cmd_prep(args: argparse.Namespace) -> int:
     _print_sources(console, ctx)
     if args.research:
         console.print(f"research notes written: {ctx.sources.get('research', 0)}")
+        _print_research_problems(console, ctx.researcher)
     return EXIT_OK
+
+
+def _print_research_problems(console: Console, researcher: Any) -> None:
+    err = getattr(researcher, "last_error", None)
+    if err:
+        console.print(Text(f"research problem: {err}", style="yellow"))
+
+
+def _research_counts(notes: Mapping[str, Any], started_at: float) -> tuple[int, int, int]:
+    """(ok, failed, cached) for the notes returned by ``research_players``."""
+    try:
+        from .research.claude import UNAVAILABLE_SUMMARY
+    except Exception:  # noqa: BLE001
+        UNAVAILABLE_SUMMARY = "(research unavailable)"  # noqa: N806
+    ok = failed = cached = 0
+    for n in notes.values():
+        if float(getattr(n, "generated_at", 0.0) or 0.0) < started_at:
+            cached += 1
+        elif str(getattr(n, "summary", "")).startswith(UNAVAILABLE_SUMMARY):
+            failed += 1
+        else:
+            ok += 1
+    return ok, failed, cached
 
 
 def cmd_train(args: argparse.Namespace) -> int:
@@ -668,12 +858,17 @@ async def _draft_async(args: argparse.Namespace, settings: Settings, console: Co
         status = {"mode": "live", "projections": ctx.projections,
                   "hint": "Ctrl-C to quit • advice refreshes on every pick"}
         loop = DraftLoop(ctx.advisor, ctx.players, dashboard, researcher=ctx.researcher, notes=ctx.notes,
-                         status=status, tui=not args.no_tui, out=console.print)
+                         status=status, tui=not args.no_tui, out=_plain_printer(console))
         final = await loop.run(poller)
         if final is not None and final.is_complete:
             console.print("[green]Draft complete.[/green]")
             _print_final_rosters(console, final, ctx)
     return EXIT_OK
+
+
+def _plain_printer(console: Console) -> Callable[[str], None]:
+    """Print plain text: no rich markup / highlighting (advice text may contain ``[brackets]``)."""
+    return lambda s: console.print(str(s), markup=False, highlight=False)
 
 
 def cmd_draft(args: argparse.Namespace) -> int:
@@ -688,9 +883,9 @@ def cmd_draft(args: argparse.Namespace) -> int:
         console.print("\nstopped.")
         return EXIT_OK
     except Exception as e:  # noqa: BLE001
-        if _is_network_error(e):
-            console.print(f"[red]{_network_message(e)}[/red]")
-            return EXIT_NETWORK
+        rc = _report_api_error(e, console, settings)
+        if rc is not None:
+            return rc
         raise
 
 
@@ -756,8 +951,8 @@ def cmd_mock(args: argparse.Namespace) -> int:
                 pick = mock.bot_pick()
                 pl = ctx.players.get(pick.player_id)
                 if not args.auto or args.verbose:
-                    console.print(f"[dim]#{pick.pick_no:>3} R{pick.round:<2} {mock.state().slot_label(pick.draft_slot):<8} "
-                                  f"{pl.name if pl else pick.player_name} ({pick.position})[/dim]")
+                    console.print(Text(f"#{pick.pick_no:>3} R{pick.round:<2} {mock.state().slot_label(pick.draft_slot):<8} "
+                                       f"{pl.name if pl else pick.player_name} ({pick.position})", style="dim"))
                 if args.speed > 0 and not args.auto:
                     time.sleep(args.speed)
                 continue
@@ -768,15 +963,15 @@ def cmd_mock(args: argparse.Namespace) -> int:
                 pl = top.player if top else mock.available()[0]
                 pick = mock.make_pick(pl.player_id)
                 why = "; ".join(top.reasons[:2]) if top else "best available"
-                console.print(f"[bold]#{pick.pick_no:>3} R{pick.round:<2} You      {pl.name} ({pl.position}) — {why}[/bold]")
+                console.print(Text(f"#{pick.pick_no:>3} R{pick.round:<2} You      {pl.name} ({pl.position}) — {why}", style="bold"))
                 if args.verbose:
-                    console.print(render_text(rec, state, ctx.players))
+                    console.print(render_text(rec, state, ctx.players), markup=False, highlight=False)
                 continue
             status["turn_started_at"] = time.time()
             if dashboard is not None:
                 console.print(dashboard.build(state, rec, ctx.players, status))
             else:
-                console.print(render_text(rec, state, ctx.players))
+                console.print(render_text(rec, state, ctx.players), markup=False, highlight=False)
             while True:
                 try:
                     raw = input(f"Pick #{state.next_pick_no} (Enter = {top.player.name if top else 'best available'}): ")
@@ -798,10 +993,10 @@ def cmd_mock(args: argparse.Namespace) -> int:
                 except ValueError as e:
                     console.print(f"[red]{e}[/red]")
                     continue
-                console.print(f"[green]You take {pl.name} ({pl.position}, {pl.team or 'FA'}) at #{pick.pick_no}[/green]")
+                console.print(Text(f"You take {pl.name} ({pl.position}, {pl.team or 'FA'}) at #{pick.pick_no}", style="green"))
                 if top is not None and pl.player_id != top.player_id:
                     try:
-                        console.print("[dim]" + advisor.explain_pick(state, pl.player_id) + "[/dim]")
+                        console.print(Text(str(advisor.explain_pick(state, pl.player_id)), style="dim"))
                     except Exception as e:  # noqa: BLE001
                         log.debug("explain_pick failed: %s", e)
                 break
@@ -1002,8 +1197,18 @@ def cmd_research(args: argparse.Namespace) -> int:
         console.print("[yellow]Claude is off — set ANTHROPIC_API_KEY to run research.[/yellow]")
         return EXIT_USAGE
     targets = top_players_by_adp(ctx.players, args.top)
-    console.print(f"[cyan]…[/cyan] researching {len(targets)} players (cached notes are reused)")
-    notes = _run(ctx.researcher.research_players(targets, ctx.projections))
+    console.print(f"[cyan]…[/cyan] researching {len(targets)} players (cached notes are reused; Ctrl-C keeps what is done)")
+    started_at = time.time()
+
+    def progress(done: int, total: int, name: str) -> None:
+        console.print(Text(f"[{done}/{total}] {name}", style="dim"))
+
+    try:
+        notes = _run(ctx.researcher.research_players(targets, ctx.projections, progress=progress))
+    except TypeError as e:
+        if "progress" not in str(e):
+            raise
+        notes = _run(ctx.researcher.research_players(targets, ctx.projections))
     t = Table(title="Research notes", box=box.SIMPLE_HEAD)
     for col in ("Player", "Pos", "Inj", "Role", "Summary"):
         t.add_column(col, justify="right" if col in ("Inj", "Role") else "left")
@@ -1013,7 +1218,11 @@ def cmd_research(args: argparse.Namespace) -> int:
             continue
         t.add_row(pl.name, pl.position, f"{n.injury_risk:.2f}", f"{n.role_certainty:.2f}", n.summary[:90])
     console.print(t)
-    console.print(f"{len(notes)} notes")
+    ok, failed, cached = _research_counts(notes, started_at)
+    console.print(f"{len(notes)} notes: {ok} researched, {failed} failed, {cached} cached")
+    _print_research_problems(console, ctx.researcher)
+    if failed and not ok:
+        return EXIT_ERROR
     return EXIT_OK
 
 
@@ -1082,9 +1291,12 @@ def cmd_ids(args: argparse.Namespace) -> int:
     try:
         user, rows = _run(go())
     except Exception as e:  # noqa: BLE001
-        if _is_network_error(e):
-            console.print(f"[red]{_network_message(e)}[/red]")
-            return EXIT_NETWORK
+        if _is_not_found_error(e):
+            console.print(Text(f"Sleeper has no user {args.username!r} ({e})", style="red"))
+            return EXIT_USAGE
+        rc = _report_api_error(e, console, settings)
+        if rc is not None:
+            return rc
         raise
     console.print(f"user {user.get('display_name')} (id {user.get('user_id')}) • season {settings.season}")
     t = Table(box=box.SIMPLE_HEAD)
@@ -1135,9 +1347,9 @@ def cmd_capture(args: argparse.Namespace) -> int:
     try:
         snap = _run(go())
     except Exception as e:  # noqa: BLE001
-        if _is_network_error(e):
-            console.print(f"[red]{_network_message(e)}[/red]")
-            return EXIT_NETWORK
+        rc = _report_api_error(e, console, settings)
+        if rc is not None:
+            return rc
         raise
     print_snapshot(snap, console)
     return EXIT_OK
@@ -1163,6 +1375,9 @@ def main(argv: list[str] | None = None) -> int:
         print("\nstopped.", file=sys.stderr)
         return EXIT_OK
     except Exception as e:  # noqa: BLE001
+        if _is_not_found_error(e):
+            print(_not_found_message(e, _settings_from_args(args)), file=sys.stderr)
+            return EXIT_USAGE
         if _is_network_error(e):
             print(_network_message(e), file=sys.stderr)
             return EXIT_NETWORK

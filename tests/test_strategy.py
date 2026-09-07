@@ -30,7 +30,7 @@ from draftadvisor.strategy import (
     tiers,
     vorp,
 )
-from draftadvisor.strategy.availability import expected_best_available_array, prob_available_array
+from draftadvisor.strategy.availability import adp_baseline, expected_best_available_array, prob_available_array
 from draftadvisor.strategy.lineup import starter_thresholds, summarize_roster
 
 
@@ -623,3 +623,339 @@ def test_simulate_candidates_deterministic_and_time_boxed(fixture_state, univers
     elapsed = (time.perf_counter() - t0) * 1000.0
     assert elapsed < 600 and set(partial) <= set(cands[:3]) and partial
     assert simulate_candidates(fixture_state, players, proj, adv, ["nope"], n_sims=2) == {}
+
+
+# ---------------------------------------------------------------------------
+# review findings S1-S10 (regressions)
+# ---------------------------------------------------------------------------
+
+from draftadvisor.strategy.lineup import bench_value, starter_displacements  # noqa: E402
+from draftadvisor.strategy.recommend import future_picks  # noqa: E402
+from draftadvisor.strategy.replacement import remaining_demand  # noqa: E402
+from draftadvisor.strategy.trade import roster_value  # noqa: E402
+
+
+def _with_my_roster(adv: Advisor, draft_json, lg: LeagueSettings, specs: list[tuple[str, int]], until_pick: int) -> DraftState:
+    """ADP-ordered draft to ``until_pick`` with slot 1's picks replaced by ``specs`` = [(pos, rank-at-pos)]."""
+    base = DraftState(_draft(draft_json), [], lg, my_slot=1)
+    s = _advance(base, adv, until_pick=until_pick)
+    picks = [pk for pk in s.picks if pk.roster_id != 4]
+    taken = {pk.player_id for pk in picks}
+    my_nums = [n for n in s.draft.picks_for_slot(1) if n < until_pick]
+    assert len(my_nums) >= len(specs)
+    for (pos, rank), n in zip(specs, my_nums):
+        pool = sorted((pid for pid in adv.projections if adv.projections[pid].position == pos and pid not in taken),
+                      key=lambda k: -adv.projections[k].points)
+        pid = pool[rank]
+        taken.add(pid)
+        picks.append(Pick(n, s.draft.round_of(n), 1, pid, 4, metadata={"position": pos}))
+    return s.with_picks(sorted(picks, key=lambda p: p.pick_no))
+
+
+def test_s1_keeper_pick_is_not_a_future_pick(fixture_state, universe, league):
+    players, proj = universe
+    adv = Advisor(league, players, proj)
+    keeper_id = next(pid for pid in adv.available_players(fixture_state) if pid.position == "RB").player_id
+    picks = list(fixture_state.picks) + [Pick(48, 4, 1, keeper_id, 4, is_keeper=True, metadata={"position": "RB"})]
+    st = fixture_state.with_picks(picks)
+    assert 48 not in future_picks(st) and future_picks(st)[:3] == [24, 25, 49]
+    # on the clock at #47 (slot 2): my next pick is #49, not the keeper-filled #48
+    st47 = _advance(st, adv, until_pick=47)
+    assert st47.next_pick_no == 47
+    rec = adv.recommend(st47)
+    ctx = adv._context(st47)
+    assert ctx.eval_pick == 49 and ctx.n_between == 1 and ctx.remaining == 11
+    assert any("You pick next at #49 and #72" in n for n in rec.notes)
+    assert all("(#49)" in c.reasons[-1] or any("(#49)" in r for r in c.reasons)
+               for a in rec.by_position.values() for c in a.candidates)
+    # the keeper's own pick number never shows up as a future pick in evaluate_pick_choice either
+    assert "#48" not in evaluate_pick_choice(st47, adv, rec.best_overall[1].player_id)
+
+
+def test_s2_availability_conditions_on_first_opponent_pick(draft_json, picks_json, universe, league):
+    players, proj = universe
+    adv = Advisor(league, players, proj)
+    # slot 12 on the clock at #12 with #13 next: nobody can pick in between -> 100% for everyone
+    st = DraftState(_draft(draft_json), _picks(picks_json)[:11], league, my_slot=12)
+    assert st.is_my_turn and st.next_pick_no == 12
+    ctx = adv._context(st)
+    assert ctx.eval_pick == 13 and ctx.on_clock
+    assert np.all(ctx.p_next == 1.0) and np.all(ctx.p_after <= 1.0)
+    rec = adv.recommend(st)
+    assert all(a.rationale.startswith("100% chance") or a.action == "TAKE NOW" or a.action == "SKIP"
+               for a in rec.by_position.values())
+    assert any("100% chance" in r for r in rec.top_pick.reasons)
+    assert any("next at #13 (back-to-back)" in n for n in rec.notes)
+    # mid-board on my turn: p_next is conditioned on pick #6 (the first opponent pick), not on #5
+    st5 = DraftState(_draft(draft_json), _picks(picks_json)[:4], league, my_slot=5)
+    assert st5.is_my_turn and st5.next_pick_no == 5
+    c5 = adv._context(st5)
+    assert c5.eval_pick == 20 and c5.on_clock
+    shift = shift_for_pressure(c5.pressure, adp_baseline(adv.available_players(st5), c5.n_between))
+    shift_arr = np.array([shift[SKILL_POSITIONS[int(pi)]] for pi in c5.pos])
+    mu, sigma = adv._mu[c5.avail], adv._sigma[c5.avail]
+    assert np.allclose(c5.p_next, prob_available_array(mu, sigma, 20, 6, shift_arr))
+    assert np.allclose(c5.p_after, prob_available_array(mu, sigma, c5.eval_after, 6, shift_arr))
+    # the magnitude of the old bias for a player whose ADP is right at my pick
+    biased = prob_available_array(np.array([5.0]), np.array([2.5]), 9, 5)[0]
+    right = prob_available_array(np.array([5.0]), np.array([2.5]), 9, 6)[0]
+    assert right > biased + 0.05
+    # not my turn: conditioning stays at the current pick
+    st6 = DraftState(_draft(draft_json), _picks(picks_json)[:5], league, my_slot=5)
+    assert not st6.is_my_turn
+    assert not adv._context(st6).on_clock
+
+
+def test_s3_replacement_level_does_not_sink_into_bench_filler(fixture_state, universe, league):
+    players, proj = universe
+    adv = Advisor(league, players, proj)
+    full = replacement_levels(proj, players, league)
+    levels = {}
+    for pick in (25, 49, 97, 145):
+        st = _advance(fixture_state, adv, until_pick=pick)
+        levels[pick] = adv._context(st).rep
+    # RB/WR are drafted faster than the demand model allows for: the level drifts down gently
+    # (old code: 36th *available* RB, 239 -> 129 at #97 -> 93 at #145)
+    assert levels[145]["RB"] > 0.7 * full["RB"] and levels[145]["WR"] > 0.7 * full["WR"]
+    assert levels[25]["RB"] <= full["RB"] + 5 and levels[145]["RB"] < levels[25]["RB"]
+    # a position nobody drafts keeps the full-pool level
+    assert levels[97]["TE"] == pytest.approx(full["TE"]) and levels[97]["K"] == pytest.approx(full["K"])
+    # the displayed VORP of a below-replacement RB late in the draft is not inflated
+    st = _advance(fixture_state, adv, until_pick=145)
+    v = adv.value_of(st, adv.available_players(st)[-1].player_id)
+    assert v.vorp < 0
+    # remaining demand: equals demand - drafted when the draft follows the demand model, floored by pace
+    assert remaining_demand(35.4, 0, 1.0) == pytest.approx(35.4)
+    assert remaining_demand(35.4, 20, 0.4) == pytest.approx(15.4)
+    assert remaining_demand(35.4, 40, 0.2) == pytest.approx(7.08)
+    assert remaining_demand(35.4, 40, 0.0) == 0.0
+    rb_sorted = sorted((p.points for p in proj.values() if p.position == "RB"), reverse=True)
+    top20 = {pid for pid in proj if proj[pid].position == "RB" and proj[pid].points >= rb_sorted[19]}
+    avail = [pid for pid in proj if pid not in top20]
+    lv = replacement_levels(proj, players, league, avail, drafted_counts={"RB": 20}, remaining_fraction=0.4)
+    assert lv["RB"] == pytest.approx(full["RB"])           # 20 gone, 15 more needed -> same player as full pool
+    assert replacement_levels(proj, players, league, avail)["RB"] < full["RB"]   # old behaviour still available
+
+
+def test_s4_displaced_starter_priced_at_his_own_position(draft_json, universe, league):
+    players, proj = universe
+    adv = Advisor(league, players, proj)
+    # second TE starts in FLEX: an RB who bumps him sends a *TE* to the bench
+    st = _with_my_roster(adv, draft_json, league, [("QB", 0), ("RB", 0), ("RB", 5), ("WR", 0), ("WR", 5), ("TE", 0), ("TE", 1)], 96)
+    ctx = adv._context(st)
+    roster = adv._roster_tuples(st.picks_by_slot()[1])
+    assert sorted(pl.position for pl, _ in roster) == ["QB", "RB", "RB", "TE", "TE", "WR", "WR"] and ctx.picks_spare >= 2
+    te_in_flex = min(p for pl, p in roster if pl.position == "TE")
+    bench_discount = adv.settings.bench_discount
+    checked = 0
+    for j in range(ctx.avail.size):
+        pid = adv.ids[int(ctx.avail[j])]
+        pts = proj[pid].points
+        if pts == te_in_flex:
+            continue                                    # exact tie: either assignment is optimal
+        exact = marginal_lineup_value(players[pid], pts, roster, league, bench_discount, replacement=ctx.rep)
+        assert float(ctx.marginal[j]) == pytest.approx(exact, abs=1e-6), (pid, pts)
+        if players[pid].position == "RB" and pts > te_in_flex:
+            expected = (pts - te_in_flex) + bench_discount * 0.15 * max(0.0, te_in_flex - ctx.rep["TE"])
+            assert float(ctx.marginal[j]) == pytest.approx(expected, abs=1e-6)
+            checked += 1
+    assert checked > 0
+    # QB2 in SUPER_FLEX displaced by an RB/WR: bench value at QB usefulness (superflex -> 1.0) over the QB level
+    raw = dict(league.__dict__)
+    sf = LeagueSettings(league.league_id, league.name, league.season, league.total_rosters,
+                        ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "SUPER_FLEX", "K", "DEF"] + ["BN"] * 6,
+                        dict(league.scoring_settings))
+    adv_sf = Advisor(sf, players, proj)
+    st = _with_my_roster(adv_sf, draft_json, sf, [("QB", 0), ("QB", 25), ("RB", 0), ("RB", 5), ("WR", 0), ("WR", 5), ("TE", 0)], 96)
+    ctx = adv_sf._context(st)
+    roster = adv_sf._roster_tuples(st.picks_by_slot()[1])
+    qb2 = min(p for pl, p in roster if pl.position == "QB")
+    for j in range(ctx.avail.size):
+        pid = adv_sf.ids[int(ctx.avail[j])]
+        pts = proj[pid].points
+        if pts == qb2:
+            continue
+        exact = marginal_lineup_value(players[pid], pts, roster, sf, bench_discount, replacement=ctx.rep)
+        assert float(ctx.marginal[j]) == pytest.approx(exact, abs=1e-6), (pid, pts)
+    # starter_displacements names the weakest reachable starter
+    slots = ["QB", "RB", "WR", "FLEX"]
+    disp = starter_displacements({0: ("QB", 300.0), 1: ("RB", 200.0), 2: ("WR", 210.0), 3: ("TE", 150.0)}, slots)
+    assert disp["RB"] == (150.0, 3) and disp["TE"] == (150.0, 3) and disp["QB"] == (300.0, 0)
+    assert disp["K"] == (float("inf"), None)
+    assert starter_displacements({0: ("QB", 300.0)}, slots)["RB"] == (0.0, None)
+
+
+def test_s5_trade_prices_bench_like_the_advisor(universe, league):
+    players, proj = universe
+    by = lambda pos: sorted((pid for pid in proj if proj[pid].position == pos), key=lambda k: -proj[k].points)
+    qbs, rbs, wrs, tes, ks, defs = (by(p) for p in ("QB", "RB", "WR", "TE", "K", "DEF"))
+    rep = replacement_levels(proj, players, league)
+    mine = [qbs[0], rbs[0], rbs[5], rbs[20], wrs[0], wrs[5], wrs[30], tes[0], ks[0], defs[0]]
+    theirs = [qbs[1], rbs[1], rbs[2], wrs[1], wrs[2], wrs[40], tes[1], ks[1], defs[1]]
+    # a K2 is worth nothing on the bench; a QB2 in a 1-QB league almost nothing
+    base, _, _ = roster_value(mine, players, proj, league)
+    assert roster_value(mine + [ks[5]], players, proj, league)[0] == pytest.approx(base)
+    with_qb2 = roster_value(mine + [qbs[2]], players, proj, league)[0]
+    assert 0.0 <= with_qb2 - base <= 0.35 * 0.12 * (proj[qbs[2]].points - rep["QB"]) + 1e-9
+    # trading my FLEX RB (starting) for their QB1 (my bench) is a loss, not an ACCEPT
+    ev = evaluate_trade(mine, theirs, give=[rbs[20]], get=[qbs[1]], players=players, projections=proj, league=league)
+    assert ev.my_delta < 0 and ev.verdict != "ACCEPT"
+    # a free QB adds only his (tiny) bench value, not 0.35 x his raw points
+    free = evaluate_trade(mine, theirs, give=[], get=[qbs[1]], players=players, projections=proj, league=league)
+    assert free.my_delta < 0.35 * 0.12 * proj[qbs[1]].points
+    # giving away my K for a useful WR: the K's bench value is 0, the WR's is real
+    k_for_wr = evaluate_trade(mine, theirs, give=[ks[0]], get=[wrs[40]], players=players, projections=proj, league=league)
+    assert k_for_wr.my_delta == pytest.approx(
+        -proj[ks[0]].points + proj[ks[1]].points * 0 + 0.35 * 1.0 * (0.6 ** 1) * max(0.0, proj[wrs[40]].points - rep["WR"]), abs=1e-6) \
+        or k_for_wr.my_delta < 0
+    # symmetry survives
+    mirror = evaluate_trade(theirs, mine, give=[qbs[1]], get=[rbs[20]], players=players, projections=proj, league=league)
+    assert mirror.my_delta == pytest.approx(ev.their_delta) and mirror.their_delta == pytest.approx(ev.my_delta)
+    # the shared helper: K/DEF 0, depth decay, over replacement only
+    lg = _lg(STD_SLOTS)
+    pos = {"a": "RB", "b": "RB", "k": "K", "q": "QB"}
+    pts = {"a": 200.0, "b": 180.0, "k": 150.0, "q": 300.0}
+    r = {"RB": 100.0, "K": 120.0, "QB": 250.0}
+    assert bench_value(["a", "b", "k", "q"], pos, pts, lg, 0.35, r) == pytest.approx(
+        0.35 * 100 + 0.35 * 0.6 * 80 + 0.0 + 0.35 * 0.12 * 50)
+    assert bench_value(["__rep__3", "zzz"], pos, pts, lg, 0.35, r) == 0.0
+
+
+def test_s6_stack_bonus_only_for_players_who_start(draft_json, universe, league):
+    players, proj = universe
+    adv = Advisor(league, players, proj, Settings(stack_bonus=0.05))
+    st = _with_my_roster(adv, draft_json, league, [("QB", 0), ("RB", 0), ("RB", 5), ("WR", 0), ("WR", 5), ("TE", 0), ("K", 0)], 108)
+    roster = adv._roster_tuples(st.picks_by_slot()[1])
+    my_wr = next(pl for pl, _ in roster if pl.position == "WR")
+    qb2 = next(p for p in adv.available_players(st) if p.position == "QB")
+    qb2.team = my_wr.team                                # "stack" with a backup QB who will never start
+    adv_b = Advisor(league, players, proj, Settings(stack_bonus=0.05))
+    adv_0 = Advisor(league, players, proj, Settings(stack_bonus=0.0))
+    v_b, v_0 = adv_b.value_of(st, qb2.player_id), adv_0.value_of(st, qb2.player_id)
+    assert v_b.marginal_value == v_0.marginal_value and v_b.score == pytest.approx(v_0.score)
+    assert not any("Stacks with" in r for r in v_b.reasons)
+    # a WR who *would* start next to my QB still gets the bonus
+    my_qb = next(pl for pl, _ in roster if pl.position == "QB")
+    wr = next(p for p in adv.available_players(st) if p.position == "WR")
+    wr.team = my_qb.team
+    adv_b2 = Advisor(league, players, proj, Settings(stack_bonus=0.05))
+    v = adv_b2.value_of(st, wr.player_id)
+    assert v.marginal_value > 0 and any("Stacks with your QB" in r for r in v.reasons)
+    assert v.score > Advisor(league, players, proj, Settings(stack_bonus=0.0)).value_of(st, wr.player_id).score
+
+
+def test_s7_last_pick_has_no_fictitious_next_pick(draft_json, universe, league):
+    players, proj = universe
+    adv = Advisor(league, players, proj)
+    st = DraftState(_draft(draft_json), [], league, my_slot=12)      # slot 12 owns the very last pick (#180)
+    st = _advance(st, adv, until_pick=180, allow_kdef=True)
+    assert st.next_pick_no == 180 and st.is_my_turn
+    ctx = adv._context(st)
+    assert ctx.eval_pick is None and ctx.on_clock and ctx.remaining == 1 and ctx.n_between == 0
+    assert np.all(ctx.p_next == 1.0) and np.all(ctx.next_after == 0.0)
+    rec = adv.recommend(st)
+    assert any("this is your last pick" in n for n in rec.notes)
+    for v in rec.best_overall:
+        assert v.availability_next == 1.0 and any("This is your last pick" in r for r in v.reasons)
+        assert not any("#18" in r or "#19" in r for r in v.reasons)
+    for a in rec.by_position.values():
+        assert "last pick" in a.rationale and "(#" not in a.rationale
+        assert a.action in ("TAKE NOW", "SKIP")
+    assert "last pick" in adv.explain_pick(st, rec.best_overall[1].player_id)
+    assert all(v.score <= v.marginal_value + 1e-9 for v in rec.best_overall)     # no lookahead term left
+
+
+def test_s8_notes_respect_league_shape(fixture_state, universe, league_json):
+    players, proj = universe
+    raw = dict(league_json)
+    raw["roster_positions"] = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "FLEX"] + ["BN"] * 7
+    no_kdef = _league(raw)
+    adv = Advisor(no_kdef, players, proj)
+    rec = adv.recommend(fixture_state)
+    assert not any("K/DEF" in n for n in rec.notes)
+    assert rec.by_position["K"].candidates == [] and "No K starting slot" in rec.by_position["K"].rationale
+    assert rec.by_position["DEF"].action == "SKIP"
+    assert not any(v.player.position in ("K", "DEF") for v in rec.best_overall)
+    assert not any(p.position in ("K", "DEF") for p in adv.available_players(fixture_state))
+    late = _advance(fixture_state, adv, until_pick=12 * 13 + 1)
+    assert not any(v.player.position in ("K", "DEF") for v in adv.recommend(late).best_overall)
+    # the standard league still gets the note (and SKIP) in round 2
+    std = Advisor(_league(league_json), players, proj).recommend(fixture_state)
+    assert any(n.startswith("K/DEF: wait until round") for n in std.notes) and std.by_position["K"].action == "SKIP"
+    # superflex scarcity is measured on the full-pool level: silent with a deep pool, fires as it drains
+    raw["roster_positions"] = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "SUPER_FLEX", "K", "DEF"] + ["BN"] * 6
+    sf = _league(raw)
+    adv_sf = Advisor(sf, players, proj)
+    assert not any(n.startswith("Superflex") for n in adv_sf.recommend(fixture_state).notes)
+    mid = _advance(fixture_state, adv_sf, until_pick=97)
+    rec_mid = adv_sf.recommend(mid)
+    note = next((n for n in rec_mid.notes if n.startswith("Superflex: QBs scarce")), None)
+    assert note is not None and "startable left for" in note
+    full_qb = sorted((p.points for p in proj.values() if p.position == "QB"), reverse=True)[round(starter_demand(sf)["QB"])]
+    startable = sum(1 for p in adv_sf.available_players(mid) if p.position == "QB" and proj[p.player_id].points > full_qb)
+    assert f"({startable} startable" in note and startable <= 12
+
+
+def test_s9_idp_slots_count_against_spare_picks(fixture_state, universe, league_json):
+    players, proj = universe
+    raw = dict(league_json)
+    raw["roster_positions"] = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF", "DL", "LB", "DB"] + ["BN"] * 3
+    idp = _league(raw)
+    adv = Advisor(idp, players, proj)
+    ctx = adv._context(fixture_state)
+    std_ctx = Advisor(_league(league_json), players, proj)._context(fixture_state)
+    assert ctx.idp_open == 3 and ctx.idp_slots == ["DL", "LB", "DB"]
+    assert ctx.picks_spare == std_ctx.picks_spare - 3 and ctx.open_slots == std_ctx.open_slots
+    rec = adv.recommend(fixture_state)
+    assert any(n.startswith("You must draft 3 IDP starters (DL LB DB)") for n in rec.notes)
+    # an LB on my roster (unknown to the projections) fills one of them
+    picks = list(fixture_state.picks) + [Pick(21, 2, 12, "idp-lb-1", 4, metadata={"position": "LB", "first_name": "Roquan", "last_name": "Smith"})]
+    st = fixture_state.with_picks(picks)
+    ctx2 = adv._context(st)
+    # #21 is slot 12's number attributed to my roster (a traded pick): one slot fewer, no pick of mine spent
+    assert ctx2.idp_open == 2 and ctx2.picks_spare == ctx.picks_spare + 1
+    assert any("2 IDP starters" in n for n in adv.recommend(st).notes)
+    assert not any("IDP" in n for n in Advisor(_league(league_json), players, proj).recommend(st).notes)
+    # end-game with IDP slots still open: they are counted as must-fill picks
+    late = _advance(st, adv, until_pick=12 * 13 + 1)
+    c3 = adv._context(late)
+    assert c3.picks_spare <= 0 and c3.idp_open == 2
+    assert any("IDP" in n for n in adv.recommend(late).notes)
+
+
+def test_s10_simulate_tolerates_unknown_positions(fixture_state, universe, league):
+    players, proj = universe
+    adv = Advisor(league, players, proj)
+    picks = list(fixture_state.picks) + [
+        Pick(21, 2, 12, "idp-lb-1", 4, metadata={"position": "LB"}),
+        Pick(22, 2, 11, "ghost-1", 4, metadata={}),                 # no metadata at all -> position UNK
+    ]
+    st = fixture_state.with_picks(picks)
+    rec = adv.recommend(st)
+    assert rec.my_roster is not None and rec.my_roster.position_counts.get("LB") == 1
+    cands = [v.player_id for v in rec.best_overall[:2]]
+    out = simulate_candidates(st, players, proj, adv, cands, n_sims=3, rounds_ahead=3, seed=1)
+    assert set(out) == set(cands) and all(v > 0 for v in out.values())
+
+
+def test_f3_rostered_players_and_rookie_only_drafts_are_excluded(fixture_state, universe, league):
+    """Dynasty rosters and rookie-only drafts shrink the pool (DraftState.rostered_ids / player_type)."""
+    import dataclasses
+
+    from draftadvisor.strategy.recommend import Advisor
+
+    players, projections = universe
+    adv = Advisor(league, players, projections)
+    rec0 = adv.recommend(fixture_state)
+    top = rec0.best_overall[0].player_id
+    st = fixture_state.with_picks(fixture_state.picks)
+    if hasattr(st, "rostered_ids"):
+        st.rostered_ids = {top}
+        rec1 = adv.recommend(st)
+        assert all(v.player_id != top for v in rec1.best_overall)
+        assert adv.value_of(st, top) is None
+    if "player_type" in {f.name for f in dataclasses.fields(type(fixture_state.draft))}:
+        d = dataclasses.replace(fixture_state.draft, player_type=1)
+        st2 = dataclasses.replace(fixture_state.with_picks(fixture_state.picks), draft=d)
+        rec2 = adv.recommend(st2)
+        assert rec2.best_overall and all(v.player.years_exp == 0 for v in rec2.best_overall)

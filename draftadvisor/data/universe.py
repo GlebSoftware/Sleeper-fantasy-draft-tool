@@ -80,15 +80,46 @@ def players_from_sleeper(payload: Mapping[str, Mapping], active_only: bool = Tru
     return out
 
 
+_ROSTER_STATUS = {"ACT": "Active", "RES": "Injured Reserve", "PUP": "PUP", "SUS": "Suspended", "DEV": "Practice Squad",
+                  "CUT": "Inactive", "RET": "Inactive", "EXE": "Inactive"}
+_ROSTER_POS = {"FB": "RB", "HB": "RB", "PK": "K"}
+#: Prefix of the synthetic player id used for roster players with no Sleeper id in any source.
+SYNTHETIC_ID_PREFIX = "nfl:"
+
+
 def players_from_crosswalk(cw: Crosswalk, roster: pd.DataFrame | None = None, season: int = DEFAULT_SEASON) -> dict[str, Player]:
-    """Offline universe: every crosswalk entry with a fantasy position, enriched with the roster."""
+    """Offline universe: every crosswalk entry with a fantasy position, enriched with the roster.
+
+    Active roster skill players that have no Sleeper id in any source (typically
+    rookies the id tables have not caught up with) are included under a synthetic
+    id ``nfl:<gsis_id>`` and registered in ``cw`` so history/ML lookups work.
+    """
     out: dict[str, Player] = {}
     ro_by_gsis: dict[str, dict] = {}
     if roster is not None and len(roster):
         for r in roster.itertuples(index=False):
             d = r._asdict()
-            if d.get("gsis_id"):
-                ro_by_gsis[str(d["gsis_id"])] = d
+            if _clean_id(d.get("gsis_id")):
+                ro_by_gsis[_clean_id(d["gsis_id"])] = d
+    # Roster players with no Sleeper link anywhere -> synthetic ids (before the main loop
+    # so cw.attrs contains them and they flow through the same enrichment path).
+    synthetic: list[str] = []
+    for g, d in ro_by_gsis.items():
+        if cw.sleeper_for_gsis(g) is not None:
+            continue
+        pos = _ROSTER_POS.get(d.get("position"), d.get("position"))
+        if pos not in SKILL_POSITIONS or pos == "DEF":
+            continue
+        if _ROSTER_STATUS.get(d.get("status"), d.get("status")) not in _ACTIVE_STATUSES:
+            continue
+        sid = f"{SYNTHETIC_ID_PREFIX}{g}"
+        cw.add(sid, gsis_id=g, pfr_id=d.get("pfr_id"), name=d.get("full_name"), position=pos,
+               team=d.get("team"), years_exp=d.get("years_exp"), status=d.get("status"),
+               birth_date=d.get("birth_date"), draft_number=d.get("draft_number"), entry_year=d.get("entry_year"))
+        synthetic.append(f"{d.get('full_name')} {pos} {d.get('team')}")
+    if synthetic:
+        log.info("offline universe: %d active roster players have no Sleeper id, using synthetic ids: %s",
+                 len(synthetic), ", ".join(synthetic))
     for sid, a in cw.attrs.items():
         pos = a.get("position")
         if pos not in SKILL_POSITIONS:
@@ -120,8 +151,7 @@ def players_from_crosswalk(cw: Crosswalk, roster: pd.DataFrame | None = None, se
             age=age,
             years_exp=years_exp,
             injury_status=None,
-            status={"ACT": "Active", "RES": "Injured Reserve", "PUP": "PUP", "SUS": "Suspended", "DEV": "Practice Squad",
-                    "CUT": "Inactive", "RET": "Inactive", "EXE": "Inactive"}.get(status, status),
+            status=_ROSTER_STATUS.get(status, status),
             depth_chart_order=None,
             gsis_id=g,
             fantasypros_id=cw.sleeper_to_fp.get(sid),
@@ -148,14 +178,28 @@ def enrich_players(players: dict[str, Player], cw: Crosswalk, ecr: pd.DataFrame 
             pl.bye_week = byes.get(pl.team)
     if ecr is not None and len(ecr):
         by_fp = {str(r.fantasypros_id): r for r in ecr.itertuples(index=False)}
-        by_name = {(normalize_name(r.player), r.pos): r for r in ecr.itertuples(index=False)}
+        # Name fallback: (name, pos, team) first; (name, pos) only when that key is
+        # unique on the board (an ambiguous key must not silently match the last row).
+        by_name_team: dict[tuple[str, str, str | None], object] = {}
+        by_name: dict[tuple[str, str], object] = {}
+        ambiguous: set[tuple[str, str]] = set()
+        for r in ecr.itertuples(index=False):
+            key = (normalize_name(r.player), r.pos)
+            by_name_team.setdefault((*key, getattr(r, "team", None)), r)
+            if key in by_name:
+                ambiguous.add(key)
+            else:
+                by_name[key] = r
         for sid, pl in players.items():
             r = by_fp.get(pl.fantasypros_id or "")
             if r is None:
                 if pl.position == "DEF":
                     r = next((x for x in ecr.itertuples(index=False) if x.pos == "DEF" and x.team == pl.team), None)
                 else:
-                    r = by_name.get((normalize_name(pl.name), pl.position))
+                    key = (normalize_name(pl.name), pl.position)
+                    r = by_name_team.get((*key, pl.team))
+                    if r is None and key not in ambiguous:
+                        r = by_name.get(key)
             if r is not None:
                 pl.ecr = _f(r.ecr)
                 pl.ecr_sd = _f(r.sd)

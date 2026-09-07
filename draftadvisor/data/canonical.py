@@ -20,7 +20,8 @@ from ..scoring.engine import ScoringEngine
 #: nflverse team abbreviations -> Sleeper abbreviations.
 TEAM_TO_SLEEPER = {
     # nflverse / historical
-    "LA": "LAR", "OAK": "LV", "SD": "LAC", "STL": "LAR", "SL": "LAR", "JAC": "JAX", "WSH": "WAS", "FA": None,
+    "LA": "LAR", "OAK": "LV", "SD": "LAC", "SDC": "LAC", "STL": "LAR", "SL": "LAR", "JAC": "JAX", "WSH": "WAS",
+    "FA": None, "FA*": None,
     # MFL-style codes used by dynastyprocess
     "KCC": "KC", "LVR": "LV", "GBP": "GB", "NEP": "NE", "NOS": "NO", "SFO": "SF", "TBB": "TB", "ARZ": "ARI",
     "BLT": "BAL", "CLV": "CLE", "HST": "HOU", "RAM": "LAR",
@@ -72,6 +73,30 @@ def _fg_over_30(list_col: pd.Series) -> pd.Series:
     return list_col.map(one).astype(float)
 
 
+#: Field-goal distance brackets: Sleeper key suffix -> (lo, hi) inclusive yards.
+FG_BRACKETS = (("0_19", 0, 19), ("20_29", 20, 29), ("30_39", 30, 39), ("40_49", 40, 49), ("50_59", 50, 59), ("60p", 60, 10**6))
+
+
+def _fg_list_brackets(list_col: pd.Series) -> dict[str, pd.Series]:
+    """Count the kicks in an nflverse ``fg_*_list`` column (``"42;55"``) per distance bracket."""
+    def one(v) -> list[float]:
+        counts = [0.0] * len(FG_BRACKETS)
+        if v is None or (isinstance(v, float) and np.isnan(v)) or str(v).strip() in ("", "nan"):
+            return counts
+        for part in str(v).split(";"):
+            try:
+                d = float(part)
+            except ValueError:
+                continue
+            for i, (_, lo, hi) in enumerate(FG_BRACKETS):
+                if lo <= d <= hi:
+                    counts[i] += 1.0
+                    break
+        return counts
+    arr = np.array(list_col.map(one).tolist(), dtype=float).reshape(len(list_col), len(FG_BRACKETS))
+    return {name: pd.Series(arr[:, i], index=list_col.index) for i, (name, _, _) in enumerate(FG_BRACKETS)}
+
+
 def player_weekly_to_canonical(raw: pd.DataFrame) -> pd.DataFrame:
     """Convert an nflverse ``stats_player_week_YYYY`` frame to the canonical schema."""
     df = raw[raw.get("season_type", "REG") == "REG"].copy() if "season_type" in raw.columns else raw.copy()
@@ -98,12 +123,14 @@ def player_weekly_to_canonical(raw: pd.DataFrame) -> pd.DataFrame:
     out["pass_2pt"] = _num(df, "passing_2pt_conversions")
     out["pass_sack"] = _num(df, "sacks_suffered", "sacks")
     out["pass_fd"] = _num(df, "passing_first_downs")
+    out["pass_cmp_40p"] = _num(df, "passing_40")
     # rushing
     out["rush_att"] = _num(df, "carries")
     out["rush_yd"] = _num(df, "rushing_yards")
     out["rush_td"] = _num(df, "rushing_tds")
     out["rush_2pt"] = _num(df, "rushing_2pt_conversions")
     out["rush_fd"] = _num(df, "rushing_first_downs")
+    out["rush_40p"] = _num(df, "rushing_40")
     # receiving
     out["rec"] = _num(df, "receptions")
     out["rec_tgt"] = _num(df, "targets")
@@ -111,9 +138,18 @@ def player_weekly_to_canonical(raw: pd.DataFrame) -> pd.DataFrame:
     out["rec_td"] = _num(df, "receiving_tds")
     out["rec_2pt"] = _num(df, "receiving_2pt_conversions")
     out["rec_fd"] = _num(df, "receiving_first_downs")
+    out["rec_40p"] = _num(df, "receiving_40")
     # misc
-    out["fum"] = _num(df, "sack_fumbles") + _num(df, "rushing_fumbles") + _num(df, "receiving_fumbles")
-    out["fum_lost"] = _num(df, "sack_fumbles_lost") + _num(df, "rushing_fumbles_lost") + _num(df, "receiving_fumbles_lost")
+    # Sleeper charges every fumble incl. kick/punt returns; nflverse's *_total columns
+    # include those, the sack/rush/rec split (older files) does not.
+    if "fumbles_total" in df.columns:
+        out["fum"] = _num(df, "fumbles_total")
+    else:
+        out["fum"] = _num(df, "sack_fumbles") + _num(df, "rushing_fumbles") + _num(df, "receiving_fumbles")
+    if "fumbles_lost_total" in df.columns:
+        out["fum_lost"] = _num(df, "fumbles_lost_total")
+    else:
+        out["fum_lost"] = _num(df, "sack_fumbles_lost") + _num(df, "rushing_fumbles_lost") + _num(df, "receiving_fumbles_lost")
     out["fum_rec_td"] = _num(df, "fumble_recovery_tds")
     out["st_td"] = _num(df, "special_teams_tds")
     out["kr_yd"] = _num(df, "kickoff_return_yards")
@@ -122,11 +158,14 @@ def player_weekly_to_canonical(raw: pd.DataFrame) -> pd.DataFrame:
     out["fgm"] = _num(df, "fg_made")
     out["fga"] = _num(df, "fg_att")
     out["fgmiss"] = _num(df, "fg_missed") + _num(df, "fg_blocked")
+    # fgmiss = missed + blocked (what Sleeper reports as fga - fgm); nflverse's
+    # fg_missed_* brackets exclude blocked kicks, so allocate those by distance too.
+    blocked = _fg_list_brackets(df["fg_blocked_list"]) if "fg_blocked_list" in df.columns else {}
     for lo, hi in ((0, 19), (20, 29), (30, 39), (40, 49), (50, 59)):
         out[f"fgm_{lo}_{hi}"] = _num(df, f"fg_made_{lo}_{hi}")
-        out[f"fgmiss_{lo}_{hi}"] = _num(df, f"fg_missed_{lo}_{hi}")
+        out[f"fgmiss_{lo}_{hi}"] = _num(df, f"fg_missed_{lo}_{hi}") + blocked.get(f"{lo}_{hi}", 0.0)
     out["fgm_60p"] = _num(df, "fg_made_60_")
-    out["fgmiss_60p"] = _num(df, "fg_missed_60_")
+    out["fgmiss_60p"] = _num(df, "fg_missed_60_") + blocked.get("60p", 0.0)
     out["fgm_yds"] = _num(df, "fg_made_distance")
     out["fgm_yds_over_30"] = _fg_over_30(df["fg_made_list"]) if "fg_made_list" in df.columns else 0.0
     out["xpm"] = _num(df, "pat_made")
@@ -154,7 +193,9 @@ def team_weekly_to_canonical(team_raw: pd.DataFrame, games: pd.DataFrame | None)
     # opponent offensive yards -> yards allowed
     off = pd.DataFrame({
         "season": df["season"], "week": df["week"], "opp": df["team"],
-        "_yds": _num(df, "passing_yards") - _num(df, "sack_yards_lost", "sack_yards") + _num(df, "rushing_yards"),
+        # net yards = gross passing + rushing - sack yardage. nflverse stores
+        # sack_yards_lost as a NEGATIVE number; abs() is robust to either sign.
+        "_yds": _num(df, "passing_yards") - _num(df, "sack_yards_lost", "sack_yards").abs() + _num(df, "rushing_yards"),
         "_opp_st_td": _num(df, "special_teams_tds"),
     })
     m = df.merge(off, left_on=["season", "week", "opponent_team"], right_on=["season", "week", "opp"], how="left")

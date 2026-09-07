@@ -35,32 +35,41 @@ DEFAULT_SCORING: dict[str, float] = {
 #: Stat keys we know how to produce from nflverse data (see data/canonical.py).
 #: Anything a league scores that is *not* in this list is scored only when the
 #: stat line came from Sleeper (projections/stats), otherwise ignored.
+#: Every key listed here is actually written by ``player_weekly_to_canonical`` /
+#: ``team_weekly_to_canonical`` (see :data:`NON_DERIVABLE_STAT_KEYS` for the rest).
 SLEEPER_STAT_KEYS: tuple[str, ...] = (
     # passing
     "pass_att", "pass_cmp", "pass_inc", "pass_yd", "pass_td", "pass_int", "pass_2pt", "pass_sack",
-    "pass_fd", "pass_cmp_40p", "pass_td_40p", "pass_td_50p",
+    "pass_fd", "pass_cmp_40p",
     "bonus_pass_yd_300", "bonus_pass_yd_400", "bonus_pass_cmp_25",
     # rushing
-    "rush_att", "rush_yd", "rush_td", "rush_2pt", "rush_fd", "rush_40p", "rush_td_40p", "rush_td_50p",
+    "rush_att", "rush_yd", "rush_td", "rush_2pt", "rush_fd", "rush_40p",
     "bonus_rush_yd_100", "bonus_rush_yd_200", "bonus_rush_att_20",
     # receiving
-    "rec", "rec_tgt", "rec_yd", "rec_td", "rec_2pt", "rec_fd", "rec_40p", "rec_td_40p", "rec_td_50p",
+    "rec", "rec_tgt", "rec_yd", "rec_td", "rec_2pt", "rec_fd", "rec_40p",
     "bonus_rec_yd_100", "bonus_rec_yd_200", "bonus_rec_rb", "bonus_rec_wr", "bonus_rec_te",
     "bonus_rush_rec_yd_100", "bonus_rush_rec_yd_200",
     # misc
-    "fum", "fum_lost", "fum_rec_td", "st_td", "st_ff", "st_fum_rec", "kr_yd", "pr_yd",
+    "fum", "fum_lost", "fum_rec_td", "st_td", "kr_yd", "pr_yd",
     # kicking
     "fgm", "fga", "fgmiss", "fgm_yds", "fgm_yds_over_30",
     "fgm_0_19", "fgm_20_29", "fgm_30_39", "fgm_40_49", "fgm_50_59", "fgm_60p", "fgm_50p",
-    "fgmiss_0_19", "fgmiss_20_29", "fgmiss_30_39", "fgmiss_40_49", "fgmiss_50p",
+    "fgmiss_0_19", "fgmiss_20_29", "fgmiss_30_39", "fgmiss_40_49", "fgmiss_50_59", "fgmiss_60p", "fgmiss_50p",
     "xpm", "xpa", "xpmiss",
     # team defense
-    "def_td", "sack", "int", "ff", "fum_rec", "safe", "blk_kick", "def_2pt", "def_st_td", "def_st_ff",
-    "def_st_fum_rec", "def_forced_punts", "def_pass_def", "def_4_and_stop", "def_3_and_out",
+    "def_td", "sack", "int", "ff", "fum_rec", "safe", "blk_kick", "def_2pt", "def_st_td", "def_pass_def",
     "pts_allow", "pts_allow_0", "pts_allow_1_6", "pts_allow_7_13", "pts_allow_14_20",
     "pts_allow_21_27", "pts_allow_28_34", "pts_allow_35p",
     "yds_allow", "yds_allow_0_100", "yds_allow_100_199", "yds_allow_200_299", "yds_allow_300_349",
     "yds_allow_350_399", "yds_allow_400_449", "yds_allow_450_499", "yds_allow_500_549", "yds_allow_550p",
+)
+
+#: Sleeper scoring keys that nflverse weekly stats cannot supply (no per-play
+#: TD-distance or special-teams-fumble breakdown). For these the offline/ML stat
+#: line is zero and only the Sleeper projection component contributes.
+NON_DERIVABLE_STAT_KEYS: tuple[str, ...] = (
+    "pass_td_40p", "pass_td_50p", "rush_td_40p", "rush_td_50p", "rec_td_40p", "rec_td_50p",
+    "st_ff", "st_fum_rec", "def_st_ff", "def_st_fum_rec", "def_forced_punts", "def_4_and_stop", "def_3_and_out",
 )
 
 # Position-specific reception bonuses: the bonus key applies only to that position.

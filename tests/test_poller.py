@@ -318,3 +318,105 @@ async def test_identity_by_user_id_or_slot(kw):
     p = make_poller(FakeClient(), **kw)
     st = await p.bootstrap()
     assert st.my_slot == 9 and st.my_user_id == "999999999999999999"
+
+
+# ---------------------------------------------------------------------------
+# Review findings: backoff overflow (F7), settings / traded-pick refresh (F9), unknown draft, rosters (F3)
+# ---------------------------------------------------------------------------
+
+
+async def test_backoff_never_overflows_and_has_a_floor():
+    p = make_poller(FakeClient(), poll_seconds=2.0)
+    p.consecutive_errors = 1030
+    assert p._backoff() == 30.0                     # no OverflowError, capped
+    p.consecutive_errors = 1
+    assert p._backoff() == 4.0
+    p0 = make_poller(FakeClient(), poll_seconds=0.0)
+    p0.consecutive_errors = 1
+    assert p0._backoff() == 2.0                     # poll 0 still backs off (1 s floor x 2)
+
+
+async def test_settings_change_reparses_draft():
+    """F9: a commissioner changing rounds / pick timer before the start must reach the parsed draft."""
+    fc = FakeClient()
+    p = make_poller(fc, username="gleb")
+    st0 = await p.bootstrap()
+    assert st0.draft.rounds == 15 and st0.draft.pick_timer == 30
+    fc.draft["settings"]["rounds"] = 16
+    fc.draft["settings"]["pick_timer"] = 60
+    st1 = await p.poll_once()
+    assert st1 is not None and st1.draft.rounds == 16 and st1.draft.pick_timer == 60
+    assert st1.draft.total_picks == 192 and st1.version == st0.version + 1
+    assert st1.my_slot == 1 and st1.rostered_ids == set()
+    assert await p.poll_once() is None
+
+
+async def test_traded_picks_refreshed_periodically_while_drafting():
+    """F9: an in-draft pick trade changes my future picks without any other change on the board."""
+    fc = FakeClient()
+    p = make_poller(fc, username="gleb")
+    p.traded_refresh_seconds = 30.0
+    st0 = await p.bootstrap()
+    assert fc.calls.count("traded") == 1
+    assert st0.my_future_picks()[:3] == [24, 25, 26]
+    # not due yet: no traded-picks request, no new state
+    assert await p.poll_once() is None and fc.calls.count("traded") == 1
+    # a new trade: slot 1 (roster 4) gives its round-5 pick (#49) to roster 5 (slot 2)
+    fc.traded.append({"season": "2026", "round": 5, "roster_id": 4, "previous_owner_id": 4, "owner_id": 5})
+    p._traded_at -= 31.0                             # make the refresh due
+    st1 = await p.poll_once()
+    assert fc.calls.count("traded") == 2
+    assert st1 is not None and st1.version == st0.version + 1
+    assert st1.draft.traded_picks == {(3, 5): 4, (5, 4): 5}
+    assert 49 not in st1.my_future_picks() and st1.my_future_picks()[:3] == [24, 25, 26]
+    # same payload again -> nothing new
+    p._traded_at -= 31.0
+    assert await p.poll_once() is None and fc.calls.count("traded") == 3
+    # pre_draft: not polled for traded picks on a timer
+    fc.draft["status"] = "pre_draft"
+    await p.poll_once()
+    p._traded_at -= 31.0
+    await p.poll_once()
+    assert fc.calls.count("traded") == 3
+
+
+async def test_traded_picks_refetched_when_order_changes():
+    fc = FakeClient(n=0)
+    fc.draft["status"] = "pre_draft"
+    order, s2r = fc.draft["draft_order"], fc.draft["slot_to_roster_id"]
+    fc.draft["draft_order"] = fc.draft["slot_to_roster_id"] = None
+    p = make_poller(fc, username="gleb")
+    await p.bootstrap()
+    n_traded = fc.calls.count("traded")
+    fc.draft["draft_order"], fc.draft["slot_to_roster_id"], fc.draft["status"] = order, s2r, "drafting"
+    st = await p.poll_once()
+    assert st is not None and st.my_slot == 1 and fc.calls.count("traded") == n_traded + 1
+
+
+async def test_run_raises_for_unknown_draft_instead_of_retrying():
+    class Missing(FakeClient):
+        async def get_draft(self, draft_id):
+            self.calls.append("draft")
+            raise SleeperNotFound("not found", status_code=404)
+
+    fc = Missing()
+    p = make_poller(fc, username="gleb")
+    p._sleep = lambda s, e: asyncio.sleep(0)  # type: ignore[method-assign]
+    errors = []
+    with pytest.raises(SleeperNotFound):
+        await p.run(lambda st: None, on_error=errors.append)
+    assert len(errors) == 1 and fc.calls.count("draft") == 1
+    assert "SleeperNotFound" in (p.last_error or "")
+
+
+async def test_bootstrap_fills_rostered_ids_from_league_rosters():
+    fc = FakeClient()
+    fc.rosters[0]["players"] = ["4034"]
+    fc.rosters[1]["reserve"] = ["6794"]
+    fc.rosters[2]["taxi"] = [9509]
+    p = make_poller(fc, username="gleb")
+    st = await p.bootstrap()
+    assert st.rostered_ids == {"4034", "6794", "9509"}
+    fc.n = 21
+    st1 = await p.poll_once()
+    assert st1.rostered_ids == {"4034", "6794", "9509"}      # carried across incremental states

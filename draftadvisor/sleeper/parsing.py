@@ -27,6 +27,7 @@ __all__ = [
     "adp_key_for",
     "adp_map",
     "resolve_my_slot",
+    "rostered_player_ids",
     "state_from_sleeper",
 ]
 
@@ -156,6 +157,7 @@ def parse_draft(raw: Mapping[str, Any], traded_picks: list[dict] | None = None) 
         rounds=rounds,
         pick_timer=_int(settings.get("pick_timer"), 0) or 0,
         reversal_round=_int(settings.get("reversal_round"), 0) or 0,
+        player_type=_int(settings.get("player_type"), 0) or 0,
         draft_order=draft_order,
         slot_to_roster_id=slot_to_roster,
         traded_picks=_parse_traded_picks(traded_picks, season),
@@ -256,6 +258,23 @@ def parse_managers(users: list[dict] | None, draft: DraftSettings,
                 slot=slot,
                 roster_id=rosters_by_owner.get(uid) or draft.slot_to_roster_id.get(slot),
             )
+    return out
+
+
+def rostered_player_ids(rosters: Iterable[Mapping[str, Any]] | None) -> set[str]:
+    """Every player id on any league roster (``players`` + ``reserve`` + ``taxi``), str-coerced.
+
+    In dynasty / keeper leagues these players cannot be drafted (Sleeper's board excludes them);
+    in a redraft league the rosters are empty before the draft, so the set is empty.
+    """
+    out: set[str] = set()
+    for r in rosters or []:
+        if not isinstance(r, Mapping):
+            continue
+        for key in ("players", "reserve", "taxi"):
+            for pid in r.get(key) or []:
+                if pid is not None and pid != "":
+                    out.add(str(pid))
     return out
 
 
@@ -401,4 +420,5 @@ def state_from_sleeper(draft_raw: dict, picks_raw: list[dict], league_raw: dict 
         managers=managers,
         my_user_id=my_user_id,
         my_slot=my_slot,
+        rostered_ids=rostered_player_ids(rosters_raw),
     )

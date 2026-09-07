@@ -1,7 +1,6 @@
 """Tests for draftadvisor.projections (features, model, blend). Offline unless data/raw exists."""
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import numpy as np
@@ -451,3 +450,134 @@ def test_real_backtest_beats_last_season_baseline(monkeypatch):
     for pos in ("RB", "WR", "TE"):
         assert res[pos]["mae_model"] < res[pos]["mae_last"], res[pos]
         assert res[pos]["spearman_model"] > 0.7
+
+
+# ---------------------------------------------------------------------------
+# review regressions (PROJ-1 .. PROJ-6)
+# ---------------------------------------------------------------------------
+
+from draftadvisor.projections.blend import (  # noqa: E402
+    MAX_ML_CV,
+    MIN_STD_FRACTION,
+    PTS_BRACKETS,
+    YDS_BRACKETS,
+    MarketCurve,
+    default_rank_curves,
+    yds_bracket_rates,
+)
+
+
+def test_sleeper_def_projection_keeps_points_allowed_keys(projections_json):
+    """PROJ-1: the ``pts_`` prefix filter dropped pts_allow and every pts_allow_* bracket."""
+    eng = ScoringEngine(PPR)
+    sf = projections_json["SF"]
+    pts, games, line = sleeper_stats_to_projection(sf, eng, "DEF")
+    assert games == 17.0
+    assert "pts_ppr" not in line and "adp_ppr" not in line and "gp" not in line
+    assert line["pts_allow"] == sf["pts_allow"]
+    assert all(line[k] == sf[k] for k in PTS_BRACKETS)
+    base = (sf["sack"] + 2 * sf["int"] + sf["ff"] + 2 * sf["fum_rec"] + 2 * sf["safe"] + 6 * sf["def_td"]
+            + 2 * sf["blk_kick"] - 2 * sf["fum_lost"])
+    assert pts == pytest.approx(base + sum(PPR[k] * sf[k] for k in PTS_BRACKETS))
+    # yards-allowed brackets are derived from the season total (Sleeper never ships them)
+    assert sum(line[k] for k in YDS_BRACKETS) == pytest.approx(17.0)
+    yb = yds_bracket_rates(sf["yds_allow"] / 17.0)
+    assert line["yds_allow_300_349"] == pytest.approx(yb["yds_allow_300_349"] * 17.0)
+    # points-allowed brackets are derived only when Sleeper omits them
+    pts2, _, line2 = sleeper_stats_to_projection({"gp": 17, "pts_allow": 17 * 18.0, "sack": 40}, eng, "DEF")
+    br = def_bracket_rates(18.0)
+    assert line2["pts_allow_14_20"] == pytest.approx(br["pts_allow_14_20"] * 17)
+    assert pts2 == pytest.approx(40 + 17 * sum(PPR[k] * v for k, v in br.items()))
+    # a league that scores pts_allow per point sees it too
+    eng2 = ScoringEngine({**PPR, "pts_allow": -0.1})
+    assert sleeper_stats_to_projection(sf, eng2, "DEF")[0] == pytest.approx(pts - 0.1 * sf["pts_allow"])
+
+
+def test_ml_games_shrink_reaches_the_season_total():
+    """PROJ-2: an injury-shortened pred_games must be shrunk in the ML *points*, not only the label."""
+    eng = ScoringEngine(PPR)
+    pr = Projector(eng)
+    players = {"a": Player("a", "A", "WR", team="KC"), "T1": Player("T1", "T1 Defense", "DEF", team="T1")}
+    out = pr.project(players, ml_pred=_ml_pred({"a": WR_RATES}, "WR", games=8.0))
+    ppg = 5 + 7.0 + 3.0
+    g = 8.0 + 0.6 * (16.0 - 8.0)
+    assert out["a"].games == pytest.approx(g)
+    assert out["a"].components["ml"] == pytest.approx(ppg * g)
+    assert out["a"].points == pytest.approx(ppg * g) and out["a"].ppg == pytest.approx(ppg)
+    # a full season is left alone; a DEF is never shrunk
+    full = pr.project(players, ml_pred=_ml_pred({"a": WR_RATES}, "WR", games=17.0))
+    assert full["a"].games == 17.0 and full["a"].points == pytest.approx(ppg * 17)
+    def_rates = {"sack": 2.5, "int": 1, "ff": 0.5, "fum_rec": 0.5, "safe": 0, "def_td": 0.1, "blk_kick": 0,
+                 "pts_allow": 18.0, "yds_allow": 330}
+    d = pr.project(players, ml_pred=_ml_pred({"T1": def_rates}, "DEF", games=12.0))
+    assert d["T1"].games == 12.0
+
+
+def test_std_adds_ecr_sd_in_quadrature():
+    """PROJ-4: a tight expert consensus must not shrink the outcome risk below the ML std."""
+    eng = ScoringEngine(PPR)
+    pr = Projector(eng, rank_curves=default_rank_curves())
+    players = _players_with_ecr(20)
+    players["nosd"] = Player("nosd", "No sd", "WR", team="KC", ecr=5.0, ecr_sd=None)
+    players["sd"] = Player("sd", "With sd", "WR", team="KC", ecr=5.0, ecr_sd=2.0)
+    ml = _ml_pred({"nosd": WR_RATES, "sd": WR_RATES}, "WR", games=16.0, std=4.0)
+    out = pr.project(players, ml_pred=ml)
+    curve = MarketCurve.from_universe(players, "WR", pr.rank_curves["WR"])
+    e = curve.sd_points(5.0, 2.0)
+    assert e > 0
+    s0, s1 = out["nosd"].std, out["sd"].std
+    pts = out["nosd"].points
+    assert out["sd"].points == pytest.approx(pts)
+    # ML-only std: std_ppg * games rescaled to league ppg (4 * 16 * (pts/16) / 15), under the raised cap
+    assert s0 == pytest.approx(4.0 * pts / 15.0) and s0 <= MAX_ML_CV * pts + 1e-9
+    assert s1 > s0 and s1 == pytest.approx(np.sqrt(s0 ** 2 + e ** 2))
+    assert s1 >= MIN_STD_FRACTION * pts
+    # neither player is a rookie (years_exp unknown)
+    assert "rookie" not in out["nosd"].flags and "rookie" not in out["sd"].flags
+
+
+def test_unknown_years_exp_is_not_a_rookie():
+    """PROJ-5: only years_exp == 0 is a rookie; a DEF never is (Sleeper ships years_exp null for them)."""
+    eng = ScoringEngine(PPR)
+    pr = Projector(eng)
+    players = {
+        "SF": Player("SF", "SF Defense", "DEF", team="SF"),
+        "BAL": Player("BAL", "BAL Defense", "DEF", team="BAL", years_exp=0),
+        "v": Player("v", "Vet, unknown exp", "WR", team="KC", years_exp=None),
+        "r": Player("r", "Rookie", "WR", team="KC", years_exp=0),
+    }
+    def_rates = {"sack": 2.5, "int": 1, "ff": 0.5, "fum_rec": 0.5, "safe": 0, "def_td": 0.1, "blk_kick": 0,
+                 "pts_allow": 18.0, "yds_allow": 330}
+    ml = pd.concat([_ml_pred({"v": WR_RATES, "r": WR_RATES}, "WR"), _ml_pred({"SF": def_rates, "BAL": def_rates}, "DEF")])
+    out = pr.project(players, ml_pred=ml)
+    assert all("rookie" not in out[pid].flags for pid in ("SF", "BAL", "v"))
+    assert "rookie" in out["r"].flags
+    assert out["r"].std == pytest.approx(out["v"].std * 1.25)
+    assert out["SF"].std == pytest.approx(out["BAL"].std)
+
+
+def test_injury_deduction_spares_the_ecr_component():
+    """PROJ-6: IR/Out/Sus cut the stats-based sources only; the market already prices the injury."""
+    eng = ScoringEngine(PPR)
+    pr = Projector(eng, rank_curves=default_rank_curves())
+    players = _players_with_ecr(20)
+    players["h"] = Player("h", "Healthy", "WR", team="KC", ecr=5.0, ecr_sd=2.0)
+    players["i"] = Player("i", "On IR", "WR", team="KC", ecr=5.0, ecr_sd=2.0, injury_status="IR", status="Injured Reserve")
+    players["f"] = Player("f", "ECR-only healthy", "WR", team="KC", ecr=5.0, ecr_sd=2.0)
+    players["e"] = Player("e", "ECR-only IR", "WR", team="KC", ecr=5.0, ecr_sd=2.0, injury_status="IR", status="Injured Reserve")
+    players["s"] = Player("s", "Suspended", "WR", team="KC", ecr=5.0, ecr_sd=2.0, injury_status="Sus")
+    ml = _ml_pred({"h": WR_RATES, "i": WR_RATES, "s": WR_RATES}, "WR")
+    out = pr.project(players, ml_pred=ml)
+    h, i, s = out["h"], out["i"], out["s"]
+    assert i.components["ecr"] == pytest.approx(h.components["ecr"])
+    assert i.components["ml"] == pytest.approx(h.components["ml"] * 10.0 / 16.0)
+    assert i.games == pytest.approx(10.0) and "injury:IR" in i.flags
+    assert i.points == pytest.approx(i.weights["ml"] * i.components["ml"] + i.weights["ecr"] * i.components["ecr"])
+    assert h.points > i.points > h.points * 10.0 / 16.0
+    assert s.components["ml"] == pytest.approx(h.components["ml"] * 12.0 / 16.0) and s.games == pytest.approx(12.0)
+    # ECR-only: points untouched (no double count), games still reflect the stint
+    assert out["e"].points == pytest.approx(out["f"].points) and out["e"].games == pytest.approx(10.0)
+    # ML-only IR without ECR keeps the full deduction (nothing else prices it)
+    lone = {"a": Player("a", "A", "WR", team="KC"), "ir": Player("ir", "IR", "WR", team="KC", injury_status="IR", status="Injured Reserve")}
+    o = Projector(eng).project(lone, ml_pred=_ml_pred({"a": WR_RATES, "ir": WR_RATES}, "WR"))
+    assert o["ir"].games == pytest.approx(3.0) and o["ir"].points == pytest.approx(o["a"].points * 3.0 / 16.0)

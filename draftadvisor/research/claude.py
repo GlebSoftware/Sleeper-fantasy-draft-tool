@@ -12,11 +12,29 @@ Design notes
   Notes marked "(research unavailable)" (refusal / error) are retried on the next
   run instead of being treated as fresh.
 * ``on_the_clock_advice`` is the only call on the draft loop's critical path. It
-  streams a short answer with ``effort="low"``, enforces ``asyncio.wait_for``,
-  de-duplicates concurrent requests for the same draft state and caches results
-  by ``(state.version, top candidate ids)``. It never raises.
-* The system prompt used for advice is built once per league and kept
-  byte-identical between calls so the ``cache_control`` prefix cache hits.
+  streams a short answer with thinking **disabled** and ``effort="low"`` (on
+  ``claude-sonnet-5`` an omitted ``thinking`` runs adaptive thinking, whose
+  tokens count against ``max_tokens`` and could leave a truncated or empty
+  answer on the 30-second clock), enforces ``asyncio.wait_for``, de-duplicates
+  concurrent requests for the same draft state and caches results by
+  ``(state.version, top candidate ids)``. The result is stored from a task
+  done-callback, so a lookahead request whose awaiter was cancelled by the draft
+  loop still lands in the cache instead of being paid for twice. It never raises.
+  ``stop_reason == "max_tokens"`` is treated as a failure (``None`` +
+  ``last_error``) rather than showing a half sentence as the pick.
+* Research requests fail fast: a 400/401/403/404 (bad key, no model access,
+  rejected schema, wrong model id) stops the whole run with ``last_error`` set
+  and returns the notes gathered so far; a 429 pauses every worker for the
+  server's ``retry-after`` and retries that player once. ``last_run_stats``
+  (``ok`` / ``failed`` / ``cached`` / ``skipped``) describes the last run.
+* Prompt caching: no ``cache_control`` markers are sent. The advice system prompt
+  is ~300 tokens and the research/ask prompts are shorter, all below the 1024-token
+  minimum cacheable prefix on Sonnet 5, so a marker would be silently ignored;
+  padding the prompt past 1024 tokens would cost more per cache miss (write
+  premium + extra input tokens) than it saves, and in a 12-team draft my picks are
+  ~6 minutes apart, longer than the 5-minute cache TTL. The advice system prompt is
+  still built once per league and kept byte-identical because it is cheap and
+  deterministic, not because it is cached.
 """
 from __future__ import annotations
 
@@ -58,6 +76,7 @@ __all__ = [
     "describe_roster_slots",
     "UNAVAILABLE_SUMMARY",
     "RESEARCH_SCHEMA",
+    "ResearchAborted",
 ]
 
 #: Summary text stored in a minimal note when research failed / was refused.
@@ -69,6 +88,32 @@ ADVICE_TOP_N = 8
 RECENT_PICKS_N = 6
 
 WEB_SEARCH_TOOL: dict[str, Any] = {"type": "web_search_20260209", "name": "web_search", "max_uses": 3}
+
+#: Output budget for on-the-clock advice (thinking disabled, 2-4 plain sentences).
+ADVICE_MAX_TOKENS = 600
+#: Output budget for one research request (adaptive thinking + up to 3 searches share it) and
+#: the larger budget used for the single retry after ``stop_reason == "max_tokens"``.
+RESEARCH_MAX_TOKENS = 4096
+RESEARCH_RETRY_MAX_TOKENS = 12288
+#: Output budget for :meth:`ClaudeResearcher.ask`.
+ASK_MAX_TOKENS = 1500
+#: Appended to an ``ask`` answer that hit ``max_tokens``.
+TRUNCATION_MARKER = "\n\n[answer truncated: max_tokens reached]"
+
+#: HTTP statuses that mean the run cannot succeed (bad key, no access, rejected request, wrong
+#: model id). One of these aborts a research run instead of burning every remaining request.
+FATAL_STATUS_CODES = frozenset({400, 401, 403, 404})
+FATAL_ERROR_NAMES = frozenset({"AuthenticationError", "PermissionDeniedError", "BadRequestError", "NotFoundError"})
+#: Pause applied to every research worker after a 429 when the server sends no ``retry-after``.
+RATE_LIMIT_DEFAULT_PAUSE_S = 15.0
+RATE_LIMIT_MAX_PAUSE_S = 120.0
+#: Content-block types of the server-side web search tool (answer text follows the last one).
+SERVER_TOOL_BLOCK_TYPES = frozenset({"server_tool_use", "web_search_tool_result"})
+
+
+class ResearchAborted(Exception):
+    """Raised inside a research run when a fatal API error makes further requests pointless."""
+
 
 #: Structured-output schema for a research note.
 RESEARCH_SCHEMA: dict[str, Any] = {
@@ -134,6 +179,43 @@ def _describe_error(exc: BaseException) -> str:
     return f"{name}({status}): {text}" if status else f"{name}: {text}"
 
 
+def _error_kind(exc: BaseException) -> str:
+    """Classify an API error without importing the SDK: ``"fatal"`` (400/401/403/404 - the run
+    cannot succeed), ``"rate_limit"`` (429) or ``"other"`` (retryable / unknown)."""
+    status = getattr(exc, "status_code", None)
+    name = type(exc).__name__
+    if status in FATAL_STATUS_CODES or name in FATAL_ERROR_NAMES:
+        return "fatal"
+    if status == 429 or name == "RateLimitError":
+        return "rate_limit"
+    return "other"
+
+
+def _retry_after_seconds(exc: BaseException) -> float:
+    """``retry-after`` from a 429 response (seconds; HTTP-date form falls back to the default), clamped."""
+    delay = RATE_LIMIT_DEFAULT_PAUSE_S
+    headers = getattr(getattr(exc, "response", None), "headers", None)
+    raw = None
+    if headers is not None:
+        try:
+            raw = headers.get("retry-after")
+        except Exception:  # unusual header container
+            raw = None
+    if raw is not None:
+        try:
+            delay = float(raw)
+        except (TypeError, ValueError):
+            delay = RATE_LIMIT_DEFAULT_PAUSE_S
+    return max(0.0, min(RATE_LIMIT_MAX_PAUSE_S, delay))
+
+
+def _supports_thinking_disabled(model: str) -> bool:
+    """``thinking={"type": "disabled"}`` is accepted on Sonnet/Opus/Haiku ids but returns 400 on the
+    Fable / Mythos line (thinking is always on there); those must omit the parameter."""
+    m = (model or "").lower()
+    return not ("fable" in m or "mythos" in m)
+
+
 def _text_blocks(message: Any) -> list[str]:
     """All non-empty text blocks of a response, in order (tolerates fake objects)."""
     out: list[str] = []
@@ -145,12 +227,31 @@ def _text_blocks(message: Any) -> list[str]:
     return out
 
 
+def _answer_text_blocks(message: Any) -> list[str]:
+    """Text blocks after the last server-tool block (the structured answer once searching is
+    done); the whole text list when there were no tool blocks or nothing follows them."""
+    blocks = list(getattr(message, "content", None) or [])
+    last_tool = -1
+    for i, block in enumerate(blocks):
+        if getattr(block, "type", None) in SERVER_TOOL_BLOCK_TYPES:
+            last_tool = i
+    tail: list[str] = []
+    for block in blocks[last_tool + 1:]:
+        if getattr(block, "type", None) == "text":
+            text = getattr(block, "text", None)
+            if text:
+                tail.append(str(text))
+    return tail or _text_blocks(message)
+
+
 def _response_text(message: Any) -> str:
     return "\n".join(_text_blocks(message)).strip()
 
 
 def _parse_json_object(texts: Iterable[str]) -> dict[str, Any] | None:
-    """Parse the JSON object Claude produced; tries the last text block first, then a brace slice."""
+    """Parse the JSON object Claude produced: each block alone (last first), then the blocks
+    concatenated with ``''`` (a structured answer may be split across blocks by citations; a
+    newline inside a string literal would make it invalid) sliced at the outer braces."""
     texts = [t for t in texts if t]
     for candidate in reversed(texts):
         try:
@@ -159,7 +260,7 @@ def _parse_json_object(texts: Iterable[str]) -> dict[str, Any] | None:
             continue
         if isinstance(obj, dict):
             return obj
-    joined = "\n".join(texts)
+    joined = "".join(texts)
     start, end = joined.find("{"), joined.rfind("}")
     if 0 <= start < end:
         try:
@@ -169,6 +270,19 @@ def _parse_json_object(texts: Iterable[str]) -> dict[str, Any] | None:
         if isinstance(obj, dict):
             return obj
     return None
+
+
+def _parse_research_response(response: Any) -> dict[str, Any] | None:
+    """Structured note from a research response; prefers the text after the last search block."""
+    answer = _answer_text_blocks(response)
+    data = _parse_json_object(answer)
+    if data is None:
+        everything = _text_blocks(response)
+        if everything != answer:
+            data = _parse_json_object(everything)
+    if data is None and log.isEnabledFor(logging.DEBUG):
+        log.debug("research response not parseable as JSON; raw text blocks: %r", _text_blocks(response))
+    return data
 
 
 def _player_line(pl: Player, points: float | None = None) -> str:
@@ -407,10 +521,15 @@ class ClaudeResearcher:
         self._client = client
         self._sdk_unavailable = False
         self.last_error: str | None = None
+        #: Outcome of the last :meth:`research_players` run: ``ok`` (parsed notes), ``failed``
+        #: (minimal notes / fatal error), ``cached`` (fresh notes reused), ``skipped`` (not
+        #: attempted because the run was aborted).
+        self.last_run_stats: dict[str, int] = {"ok": 0, "failed": 0, "cached": 0, "skipped": 0}
         self.season: int = DEFAULT_SEASON
         self._advice_cache: dict[tuple, str] = {}
         self._advice_inflight: dict[tuple, "asyncio.Task[str | None]"] = {}
         self._system_cache: dict[str, str] = {}
+        self._rate_limited_until: float = 0.0  # loop.time() deadline shared by research workers
         self.request_count = 0
 
     # -- state ----------------------------------------------------------------
@@ -497,9 +616,15 @@ class ClaudeResearcher:
     ) -> dict[str, ResearchNote]:
         """Research each player (one web-search request each), caching notes on disk.
 
-        Returns notes for every requested player (fresh cached notes are reused without a
-        request; failures yield a minimal "(research unavailable)" note so callers never block).
+        Returns notes for every requested player that was attempted (fresh cached notes are
+        reused without a request; per-player failures yield a minimal "(research unavailable)"
+        note so callers never block). A fatal API error (bad key, no model access, rejected
+        request, wrong model id) aborts the run: ``last_error`` is set, the remaining players are
+        left un-researched (no note written, so they are retried next run) and whatever was
+        gathered is returned. ``last_run_stats`` summarises the run.
         """
+        stats = {"ok": 0, "failed": 0, "cached": 0, "skipped": 0}
+        self.last_run_stats = stats
         if not players:
             return {}
         cached = self.load_notes()
@@ -513,24 +638,41 @@ class ClaudeResearcher:
             note = cached.get(pl.player_id)
             if self._is_fresh(note, max_age_days):
                 result[pl.player_id] = note  # type: ignore[assignment]
+                stats["cached"] += 1
             else:
                 todo.append(pl)
         if not todo:
             return result
         if not self.enabled or self._get_client() is None:
             log.info("Claude disabled: %d players left un-researched", len(todo))
+            stats["skipped"] = len(todo)
             return result
         log.info("researching %d players (%d cached)", len(todo), len(result))
         sem = asyncio.Semaphore(max(1, int(concurrency)))
         total, done = len(todo), 0
+        aborted = False
 
         async def one(pl: Player) -> None:
-            nonlocal done
+            nonlocal done, aborted
+            if aborted:
+                stats["skipped"] += 1
+                return
             async with sem:
+                if aborted:  # a sibling hit a fatal error while we waited for the semaphore
+                    stats["skipped"] += 1
+                    return
                 proj = (projections or {}).get(pl.player_id)
-                note = await self._research_one(pl, proj)
+                try:
+                    note = await self._research_one(pl, proj)
+                except ResearchAborted as exc:
+                    if not aborted:
+                        log.error("research aborted: %s", exc)
+                    aborted = True
+                    stats["failed"] += 1
+                    return
             self.save_note(note)
             result[pl.player_id] = note
+            stats["ok" if note.summary != UNAVAILABLE_SUMMARY else "failed"] += 1
             done += 1
             if progress is not None:
                 try:
@@ -539,7 +681,25 @@ class ClaudeResearcher:
                     log.debug("progress callback failed: %s", _describe_error(exc))
 
         await asyncio.gather(*(one(pl) for pl in todo))
+        log.info("research run: %d ok, %d failed, %d cached, %d skipped",
+                 stats["ok"], stats["failed"], stats["cached"], stats["skipped"])
         return result
+
+    async def _wait_for_rate_limit(self) -> None:
+        """Block until the shared 429 pause (set by any worker) has elapsed."""
+        while True:
+            remaining = self._rate_limited_until - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                return
+            await asyncio.sleep(remaining)
+
+    def _pause_for_rate_limit(self, exc: BaseException) -> float:
+        """Record a 429: every research worker waits ``retry-after`` before its next request."""
+        delay = _retry_after_seconds(exc)
+        loop = asyncio.get_running_loop()
+        self._rate_limited_until = max(self._rate_limited_until, loop.time() + delay)
+        log.warning("Claude rate limited (%s); pausing research for %.0fs", _describe_error(exc), delay)
+        return delay
 
     def _research_user_message(self, pl: Player, proj: Projection | None) -> str:
         facts = [
@@ -563,44 +723,68 @@ class ClaudeResearcher:
         facts.append("Fill in the schema. Keep summary <= 60 words, upside/downside <= 25 words each.")
         return " ".join(facts)
 
-    async def _research_one(self, pl: Player, proj: Projection | None) -> ResearchNote:
-        """One research request; never raises."""
-        client = self._get_client()
-        if client is None:
-            return self._minimal_note(pl.player_id, "disabled")
-        user_text = self._research_user_message(pl, proj)
+    async def _research_call(self, client: Any, user_text: str, max_tokens: int) -> Any:
+        """One research request (plus the ``pause_turn`` continuation). Raises SDK errors."""
         messages: list[dict[str, Any]] = [{"role": "user", "content": user_text}]
         kwargs: dict[str, Any] = dict(
             model=self.model,
-            max_tokens=2048,
-            system=[{
-                "type": "text",
-                "text": RESEARCH_SYSTEM_PROMPT.format(season=self.season),
-                "cache_control": {"type": "ephemeral"},
-            }],
+            max_tokens=max_tokens,
+            system=[{"type": "text", "text": RESEARCH_SYSTEM_PROMPT.format(season=self.season)}],
             tools=[dict(WEB_SEARCH_TOOL)],
             output_config={"effort": "medium", "format": {"type": "json_schema", "schema": RESEARCH_SCHEMA}},
         )
-        try:
+        response = await asyncio.wait_for(
+            client.messages.create(messages=messages, **kwargs), self.research_timeout_s,
+        )
+        self.request_count += 1
+        if getattr(response, "stop_reason", None) == "pause_turn":
+            messages = messages + [{"role": "assistant", "content": response.content}]
             response = await asyncio.wait_for(
                 client.messages.create(messages=messages, **kwargs), self.research_timeout_s,
             )
             self.request_count += 1
-            if getattr(response, "stop_reason", None) == "pause_turn":
-                messages = messages + [{"role": "assistant", "content": response.content}]
-                response = await asyncio.wait_for(
-                    client.messages.create(messages=messages, **kwargs), self.research_timeout_s,
-                )
-                self.request_count += 1
-        except asyncio.TimeoutError:
-            return self._minimal_note(pl.player_id, "timeout")
-        except Exception as exc:
-            self.last_error = _describe_error(exc)
-            return self._minimal_note(pl.player_id, self.last_error)
-        stop = getattr(response, "stop_reason", None)
+        return response
+
+    async def _research_one(self, pl: Player, proj: Projection | None) -> ResearchNote:
+        """Research one player. Per-player problems (timeout, refusal, unparseable, 5xx, network)
+        become a minimal note; a fatal API error raises :class:`ResearchAborted`; a 429 pauses
+        all workers for ``retry-after`` and retries once; ``stop_reason == "max_tokens"`` retries
+        once with a larger output budget."""
+        client = self._get_client()
+        if client is None:
+            return self._minimal_note(pl.player_id, "disabled")
+        user_text = self._research_user_message(pl, proj)
+        max_tokens = RESEARCH_MAX_TOKENS
+        rate_limit_retried = False
+        while True:
+            await self._wait_for_rate_limit()
+            try:
+                response = await self._research_call(client, user_text, max_tokens)
+            except asyncio.TimeoutError:
+                return self._minimal_note(pl.player_id, "timeout")
+            except Exception as exc:
+                self.last_error = _describe_error(exc)
+                kind = _error_kind(exc)
+                if kind == "fatal":
+                    raise ResearchAborted(self.last_error) from exc
+                if kind == "rate_limit" and not rate_limit_retried:
+                    self._pause_for_rate_limit(exc)
+                    rate_limit_retried = True
+                    continue
+                return self._minimal_note(pl.player_id, self.last_error)
+            stop = getattr(response, "stop_reason", None)
+            if stop == "max_tokens" and max_tokens < RESEARCH_RETRY_MAX_TOKENS:
+                log.info("research for %s hit max_tokens=%d; retrying with %d",
+                         pl.name, max_tokens, RESEARCH_RETRY_MAX_TOKENS)
+                max_tokens = RESEARCH_RETRY_MAX_TOKENS
+                continue
+            break
         if stop == "refusal":
             return self._minimal_note(pl.player_id, "refusal")
-        data = _parse_json_object(_text_blocks(response))
+        if stop == "max_tokens":
+            self.last_error = f"max_tokens ({RESEARCH_RETRY_MAX_TOKENS}) exceeded twice for {pl.name}"
+            return self._minimal_note(pl.player_id, self.last_error)
+        data = _parse_research_response(response)
         if data is None:
             return self._minimal_note(pl.player_id, f"unparseable response (stop_reason={stop})")
         return self._note_from_data(pl.player_id, data)
@@ -656,7 +840,10 @@ class ClaudeResearcher:
         """2-4 sentences of advice for the current pick, or None (disabled / timeout / error).
 
         Cached by ``(state.version, top candidate ids)``; concurrent calls for the same key share
-        one request. On success the text is also stored in ``rec.claude_advice``.
+        one request. On success the text is also stored in ``rec.claude_advice``. The request task
+        stores its own result via a done-callback, so a caller that is cancelled while waiting
+        (the draft loop cancels the lookahead request when my pick comes up) does not waste the
+        answer: the next call for the same state is a cache hit.
         """
         if not self.enabled or rec is None or not rec.best_overall:
             return None
@@ -670,6 +857,7 @@ class ClaudeResearcher:
         if task is None:
             task = asyncio.ensure_future(self._advice_request(state, rec, players, notes))
             self._advice_inflight[key] = task
+            task.add_done_callback(lambda t, key=key: self._advice_done(key, t))
         try:
             text = await asyncio.wait_for(asyncio.shield(task), timeout)
         except asyncio.TimeoutError:
@@ -679,19 +867,31 @@ class ClaudeResearcher:
             text = None
         except asyncio.CancelledError:
             if not task.cancelled():
-                raise  # the caller itself was cancelled
+                raise  # the caller itself was cancelled; the request finishes and caches itself
             text = None
         except Exception as exc:
             self.last_error = _describe_error(exc)
             log.warning("Claude advice failed: %s", self.last_error)
             text = None
-        finally:
-            if owner:
-                self._advice_inflight.pop(key, None)
         if text:
             self._remember_advice(key, text)
             rec.claude_advice = text
         return text
+
+    def _advice_done(self, key: tuple, task: "asyncio.Task[str | None]") -> None:
+        """Done-callback of an advice request: drop it from the in-flight table and cache a
+        successful answer even when nobody is awaiting it any more."""
+        if self._advice_inflight.get(key) is task:
+            self._advice_inflight.pop(key, None)
+        if task.cancelled():
+            return
+        exc = task.exception()  # also marks the exception as retrieved when no awaiter is left
+        if exc is not None:
+            self.last_error = _describe_error(exc)
+            return
+        text = task.result()
+        if text:
+            self._remember_advice(key, text)
 
     def _remember_advice(self, key: tuple, text: str) -> None:
         if len(self._advice_cache) >= self._ADVICE_CACHE_MAX:
@@ -712,21 +912,28 @@ class ClaudeResearcher:
         context = build_context_text(state, rec, players, notes)
         user_text = f"{context}\n\nWho should I pick now? Answer in 2-4 sentences."
         t0 = time.perf_counter()
-        async with client.messages.stream(
+        kwargs: dict[str, Any] = dict(
             model=self.model,
-            max_tokens=400,
-            system=[{
-                "type": "text",
-                "text": self.advice_system_prompt(state.league),
-                "cache_control": {"type": "ephemeral"},
-            }],
+            max_tokens=ADVICE_MAX_TOKENS,
+            system=[{"type": "text", "text": self.advice_system_prompt(state.league)}],
             messages=[{"role": "user", "content": user_text}],
             output_config={"effort": "low"},
-        ) as stream:
+        )
+        if _supports_thinking_disabled(self.model):
+            # On Sonnet 5 an omitted ``thinking`` runs adaptive thinking whose tokens count against
+            # max_tokens; on the 30-second clock we want the whole budget to be the answer.
+            kwargs["thinking"] = {"type": "disabled"}
+        async with client.messages.stream(**kwargs) as stream:
             message = await stream.get_final_message()
         self.request_count += 1
-        if getattr(message, "stop_reason", None) == "refusal":
+        stop = getattr(message, "stop_reason", None)
+        if stop == "refusal":
             log.info("Claude refused the advice request")
+            return None
+        if stop == "max_tokens":
+            # A cut-off sentence could name the wrong pick or fallback; better no advice than that.
+            self.last_error = f"advice truncated (stop_reason=max_tokens at {ADVICE_MAX_TOKENS} tokens)"
+            log.warning("Claude advice hit max_tokens; discarding partial answer")
             return None
         text = _response_text(message)
         log.info("Claude advice in %.0f ms (%d chars)", (time.perf_counter() - t0) * 1000, len(text))
@@ -746,8 +953,8 @@ class ClaudeResearcher:
             response = await asyncio.wait_for(
                 client.messages.create(
                     model=self.model,
-                    max_tokens=1500,
-                    system=[{"type": "text", "text": ASK_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+                    max_tokens=ASK_MAX_TOKENS,
+                    system=[{"type": "text", "text": ASK_SYSTEM_PROMPT}],
                     messages=[{"role": "user", "content": content}],
                     output_config={"effort": "medium"},
                 ),
@@ -762,7 +969,15 @@ class ClaudeResearcher:
             self.last_error = _describe_error(exc)
             log.warning("Claude ask failed: %s", self.last_error)
             return ""
-        if getattr(response, "stop_reason", None) == "refusal":
+        stop = getattr(response, "stop_reason", None)
+        if stop == "refusal":
             self.last_error = "refusal"
             return ""
-        return _response_text(response)
+        text = _response_text(response)
+        if stop == "max_tokens":
+            self.last_error = f"answer truncated (stop_reason=max_tokens at {ASK_MAX_TOKENS} tokens)"
+            log.warning("Claude ask hit max_tokens; answer truncated")
+            if not text:
+                return ""
+            text += TRUNCATION_MARKER
+        return text

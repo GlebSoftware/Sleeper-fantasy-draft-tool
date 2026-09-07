@@ -8,6 +8,13 @@ Cadence (``interval()``):
 
 Exceptions never escape :meth:`DraftPoller.run`: they are logged, recorded in ``last_error``, reported
 to the optional ``on_error`` hook and the poller backs off exponentially (up to 30 s) before trying again.
+The one exception is a draft that does not exist (:class:`SleeperNotFound` while bootstrapping): that
+cannot fix itself, so ``run`` raises it instead of retrying forever.
+
+Besides picks and status, :meth:`DraftPoller.poll_once` notices commissioner changes to the draft
+settings (teams / rounds / pick timer / reversal round / player type) and re-parses the draft, and it
+re-reads ``/traded_picks`` whenever the order changes and every :attr:`DraftPoller.traded_refresh_seconds`
+while the draft is running (picks can be traded mid-draft).
 """
 from __future__ import annotations
 
@@ -29,6 +36,10 @@ UpdateHook = Callable[[DraftState], Any]
 ErrorHook = Callable[[Exception], Any]
 
 _ORDER_KEYS = ("draft_order", "slot_to_roster_id", "status", "type")
+#: ``draft.settings`` keys that change pick-order math / the clock; a change re-parses the draft.
+_SETTINGS_KEYS = ("teams", "rounds", "pick_timer", "reversal_round", "player_type")
+#: Cap on the backoff exponent (``poll_seconds * 2**n`` must never overflow a float).
+_MAX_BACKOFF_EXP = 8
 
 
 class DraftPoller:
@@ -40,6 +51,8 @@ class DraftPoller:
     pre_draft_interval: float = 10.0
     #: Upper bound of the exponential backoff after errors.
     max_backoff: float = 30.0
+    #: How often ``/traded_picks`` is re-read while the draft is drafting / paused.
+    traded_refresh_seconds: float = 30.0
 
     def __init__(self, client: SleeperClient, draft_id: str, *, league_id: str | None = None,
                  settings: Settings | None = None, username: str | None = None, user_id: str | None = None,
@@ -65,18 +78,35 @@ class DraftPoller:
         self._users_raw: list[dict] | None = None
         self._rosters_raw: list[dict] | None = None
         self._traded_raw: list[dict] = []
+        self._traded_at: float | None = None
         self._signature: tuple | None = None
 
     # -- helpers ----------------------------------------------------------------
     @staticmethod
     def _order_signature(draft_raw: dict) -> tuple:
+        """Everything in the draft payload (other than status / last_picked) that changes the parsed draft."""
         order = draft_raw.get("draft_order") or {}
         s2r = draft_raw.get("slot_to_roster_id") or {}
+        settings = draft_raw.get("settings") or {}
         return (
             tuple(sorted((str(k), str(v)) for k, v in order.items())),
             tuple(sorted((str(k), str(v)) for k, v in s2r.items())),
             draft_raw.get("type"),
+            tuple(str(settings.get(k)) for k in _SETTINGS_KEYS),
         )
+
+    @staticmethod
+    def _traded_signature(traded: list[dict] | None) -> tuple:
+        return tuple(sorted(
+            (str(tp.get("season")), str(tp.get("round")), str(tp.get("roster_id")), str(tp.get("owner_id")))
+            for tp in (traded or []) if isinstance(tp, dict)
+        ))
+
+    def _traded_due(self, now: float) -> bool:
+        st = self.state
+        if st is None or st.draft.status not in ("drafting", "paused"):
+            return False
+        return self._traded_at is None or (now - self._traded_at) >= self.traded_refresh_seconds
 
     def _make_signature(self, picks: list[Pick], draft_raw: dict) -> tuple:
         return (len(picks), picks[-1].pick_no if picks else 0, draft_raw.get("status"),
@@ -118,6 +148,7 @@ class DraftPoller:
             self.client.get_draft_picks(self.draft_id),
         )
         self._traded_raw = list(traded or [])
+        self._traded_at = time.time()
         self._draft_raw = draft_raw
         prev_version = self.state.version if self.state is not None else -1
         self.state = self._build_state(picks_raw, draft_raw, version=prev_version + 1)
@@ -132,25 +163,47 @@ class DraftPoller:
         return self.state
 
     async def poll_once(self) -> DraftState | None:
-        """Fetch picks + draft; return a new state only when picks, status or draft order changed."""
+        """Fetch picks + draft (+ traded picks when due); return a new state only when something changed.
+
+        "Something" = picks, status, last_picked, the draft order / slot mapping, the settings that
+        drive pick-order math, or the traded-pick list.
+        """
         if self.state is None:
             return await self.bootstrap()
         t0 = time.perf_counter()
-        picks_raw, draft_raw = await asyncio.gather(
-            self.client.get_draft_picks(self.draft_id),
-            self.client.get_draft(self.draft_id),
-        )
+        want_traded = self._traded_due(time.time())
+        coros: list[Awaitable[Any]] = [self.client.get_draft_picks(self.draft_id), self.client.get_draft(self.draft_id)]
+        if want_traded:
+            coros.append(self._fetch_optional("traded picks", self.client.get_traded_picks(self.draft_id), None))
+        results = await asyncio.gather(*coros)
+        picks_raw, draft_raw = results[0], results[1]
+        traded_new = results[2] if want_traded else None
         self.poll_count += 1
         self.last_latency_ms = (time.perf_counter() - t0) * 1000.0
         self.last_poll_at = time.time()
         picks = parse_picks(picks_raw)
         sig = self._make_signature(picks, draft_raw)
-        if sig == self._signature:
+        order_changed = self._order_signature(draft_raw) != self._order_signature(self._draft_raw)
+        if order_changed and not want_traded:
+            # a new order / slot mapping can come with a new set of traded picks (e.g. draft (re)started)
+            traded_new = await self._fetch_optional("traded picks", self.client.get_traded_picks(self.draft_id), None)
+            want_traded = True
+        traded_changed = False
+        if want_traded:
+            self._traded_at = time.time()
+            if traded_new is not None:
+                traded_new = list(traded_new or [])
+                if self._traded_signature(traded_new) != self._traded_signature(self._traded_raw):
+                    log.info("traded picks changed (%d entries); re-parsing draft %s", len(traded_new), self.draft_id)
+                    self._traded_raw = traded_new
+                    traded_changed = True
+        if sig == self._signature and not traded_changed:
             return None
         old = self.state
-        if self._order_signature(draft_raw) != self._order_signature(self._draft_raw):
-            # draft order / slot mapping appeared or changed (typically pre_draft -> drafting): re-parse
-            log.info("draft order changed; re-parsing draft %s", self.draft_id)
+        if order_changed or traded_changed:
+            # draft order / slot mapping / settings / traded picks appeared or changed: re-parse
+            if order_changed:
+                log.info("draft order or settings changed; re-parsing draft %s", self.draft_id)
             new_state = self._build_state(picks_raw, draft_raw, version=old.version + 1)
         else:
             draft = old.draft
@@ -164,6 +217,7 @@ class DraftPoller:
             new_state = DraftState(
                 draft=draft, picks=picks, league=old.league, managers=old.managers,
                 my_user_id=old.my_user_id, my_slot=old.my_slot, version=old.version + 1,
+                rostered_ids=old.rostered_ids,
             )
         self._draft_raw = draft_raw
         self._signature = sig
@@ -217,14 +271,21 @@ class DraftPoller:
         log.warning("poll error (%d in a row): %s", self.consecutive_errors, self.last_error)
 
     def _backoff(self) -> float:
-        return min(self.max_backoff, float(self.settings.poll_seconds) * (2 ** self.consecutive_errors))
+        """Exponential backoff after errors: ``max(1, poll_seconds) * 2**n`` capped at :attr:`max_backoff`.
+
+        The exponent is capped so that a long outage (or a draft that keeps failing) can never
+        overflow the float and crash the loop.
+        """
+        base = max(1.0, float(self.settings.poll_seconds or 0.0))
+        return min(self.max_backoff, base * (2 ** min(self.consecutive_errors, _MAX_BACKOFF_EXP)))
 
     async def run(self, on_update: UpdateHook, stop: asyncio.Event | None = None,
                   on_error: ErrorHook | None = None) -> DraftState:
         """Bootstrap, then poll until the draft completes or ``stop`` is set.
 
         ``on_update(state)`` is called after bootstrap and on every change (awaited if it returns an
-        awaitable). Errors are logged, stored in ``last_error``, passed to ``on_error`` and never raised.
+        awaitable). Errors are logged, stored in ``last_error``, passed to ``on_error`` and never raised,
+        except a :class:`SleeperNotFound` during bootstrap (unknown draft id), which is re-raised.
         """
         while self.state is None:
             if stop is not None and stop.is_set():
@@ -232,6 +293,11 @@ class DraftPoller:
             try:
                 await self.bootstrap()
             except asyncio.CancelledError:
+                raise
+            except SleeperNotFound as e:
+                # the draft id does not exist: retrying cannot help (and would loop forever)
+                self._record_error(e)
+                await self._emit(on_error, e)
                 raise
             except Exception as e:  # noqa: BLE001
                 self._record_error(e)

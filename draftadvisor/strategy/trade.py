@@ -1,8 +1,10 @@
 """Trade and pick-choice evaluation (DESIGN.md §3.4).
 
-A roster is valued as its optimal starting lineup plus ``bench_discount`` × the
-points of its bench.  A trade is judged by the change in that value for both
-sides; the details name lineup-slot changes and bye-week effects.
+A roster is valued as its optimal starting lineup plus its bench priced the way
+the advisor prices bench picks: ``bench_discount`` × bench usefulness (RB/WR 1,
+TE 0.15, QB 0.12 unless superflex, K/DEF 0) × depth factor × points over the
+position's replacement level.  A trade is judged by the change in that value for
+both sides; the details name lineup-slot changes and bye-week effects.
 """
 from __future__ import annotations
 
@@ -12,7 +14,9 @@ from typing import Mapping, Sequence
 
 from ..config import NON_STARTING_SLOTS
 from ..models import DraftState, LeagueSettings, Player, Projection
-from .lineup import optimal_lineup
+from .lineup import bench_value, optimal_lineup
+from .recommend import future_picks
+from .replacement import replacement_levels
 
 log = logging.getLogger(__name__)
 
@@ -52,12 +56,21 @@ def roster_value(
     projections: Mapping[str, Projection],
     league: LeagueSettings,
     bench_discount: float = 0.35,
+    replacement: Mapping[str, float] | None = None,
 ) -> tuple[float, dict[int, str], list[str]]:
-    """``(value, lineup assignment, bench ids)``: starters + discounted bench points."""
+    """``(value, lineup assignment, bench ids)``: starters + advisor-style bench value.
+
+    ``replacement`` levels default to the full-pool :func:`replacement_levels`; a
+    bench player is worth ``bench_discount`` × usefulness × depth factor × his
+    points over that level, so a QB2 or K2 adds (almost) nothing.
+    """
     roster = _tuples(ids, players, projections)
     assignment, starters, bench = optimal_lineup(roster, league.starting_slots)
+    if replacement is None:
+        replacement = replacement_levels(projections, players, league)
     pts = {pl.player_id: p for pl, p in roster}
-    value = starters + bench_discount * sum(pts[b] for b in bench)
+    pos = {pl.player_id: pl.position for pl, _ in roster}
+    value = starters + bench_value(bench, pos, pts, league, bench_discount, replacement)
     return float(value), assignment, bench
 
 
@@ -122,10 +135,11 @@ def evaluate_trade(
     my_after_ids = [pid for pid in my_ids if pid not in give_s] + list(get)
     their_after_ids = [pid for pid in their_ids if pid not in get_s] + list(give)
 
-    my_b, my_lineup_b, _ = roster_value(my_ids, players, projections, league, bench_discount)
-    my_a, my_lineup_a, _ = roster_value(my_after_ids, players, projections, league, bench_discount)
-    th_b, th_lineup_b, _ = roster_value(their_ids, players, projections, league, bench_discount)
-    th_a, th_lineup_a, _ = roster_value(their_after_ids, players, projections, league, bench_discount)
+    rep = replacement_levels(projections, players, league)
+    my_b, my_lineup_b, _ = roster_value(my_ids, players, projections, league, bench_discount, rep)
+    my_a, my_lineup_a, _ = roster_value(my_after_ids, players, projections, league, bench_discount, rep)
+    th_b, th_lineup_b, _ = roster_value(their_ids, players, projections, league, bench_discount, rep)
+    th_a, th_lineup_a, _ = roster_value(their_after_ids, players, projections, league, bench_discount, rep)
     my_delta, their_delta = my_a - my_b, th_a - th_b
 
     details: list[str] = []
@@ -174,7 +188,7 @@ def evaluate_pick_choice(state: DraftState, advisor, player_id: str) -> str:
     if gap <= 5:
         lines.append(f"Close call ({gap:.1f} pts): either pick is fine.")
     elif v.availability_next >= 0.75:
-        nxt = [p for p in state.my_future_picks() if p > state.next_pick_no]
+        nxt = [p for p in future_picks(state) if p > state.next_pick_no]
         when = f" at #{nxt[0]}" if nxt else " next time"
         lines.append(f"{v.player.name} is {v.availability_next:.0%} likely to be there{when}: "
                      f"take {top.player.name} now and revisit.")

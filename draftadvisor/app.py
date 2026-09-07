@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import dataclasses
 import gzip
+import hashlib
 import json
 import logging
 import time
@@ -38,9 +39,11 @@ log = logging.getLogger(__name__)
 __all__ = [
     "AppContext",
     "build_context",
+    "rebuild_projections",
     "prep",
     "default_league",
     "projections_cache_path",
+    "projection_fingerprint",
     "load_cached_projections",
     "save_projections",
     "ecr_only_projections",
@@ -79,6 +82,8 @@ class AppContext:
     byes: dict[str, int]
     crosswalk: Any                                  # data.crosswalk.Crosswalk
     sources: dict = field(default_factory=dict)     # what fed the build: {"players": "sleeper", "ml": "model", ...}
+    sleeper_proj: Any = None                        # Sleeper season projections payload used (for re-blends)
+    use_model: bool = True                          # whether the ML model was allowed for this build
 
     @property
     def timings(self) -> dict[str, float]:
@@ -143,8 +148,15 @@ def save_projections(path: Path, projections: Mapping[str, Projection], meta: Ma
     return path
 
 
-def load_cached_projections(path: Path, max_age_hours: float | None = PROJECTIONS_TTL_HOURS) -> dict[str, Projection] | None:
-    """Projections from :func:`save_projections` if the file exists and is fresh, else None."""
+def load_cached_projections(path: Path, max_age_hours: float | None = PROJECTIONS_TTL_HOURS,
+                            fingerprint: str | None = None) -> dict[str, Projection] | None:
+    """Projections from :func:`save_projections` if the file exists and is fresh, else None.
+
+    When ``fingerprint`` is given it must equal ``meta["fingerprint"]`` of the cached file
+    (see :func:`projection_fingerprint`); a cache built from different inputs (other
+    scoring, no Sleeper projections, changed injury statuses, new research notes, ...)
+    is reported as missing so the caller rebuilds.
+    """
     if not path.exists():
         return None
     age_h = (time.time() - path.stat().st_mtime) / 3600.0
@@ -154,6 +166,9 @@ def load_cached_projections(path: Path, max_age_hours: float | None = PROJECTION
     try:
         with gzip.open(path, "rt", encoding="utf-8") as fh:
             payload = json.load(fh)
+        if fingerprint is not None and (payload.get("meta") or {}).get("fingerprint") != fingerprint:
+            log.info("projection cache %s was built from different inputs, rebuilding", path)
+            return None
         fields = {f.name for f in dataclasses.fields(Projection)}
         out = {pid: Projection(**{k: v for k, v in d.items() if k in fields})
                for pid, d in payload.get("projections", {}).items()}
@@ -164,6 +179,42 @@ def load_cached_projections(path: Path, max_age_hours: float | None = PROJECTION
         return None
     log.info("loaded %d cached projections from %s (%.1f h old)", len(out), path, age_h)
     return out
+
+
+def projection_fingerprint(league: LeagueSettings, players: Mapping[str, Player], *,
+                           sleeper_proj: Mapping | None, sleeper_players: Mapping | bool | None, use_model: bool,
+                           notes: Mapping[str, ResearchNote] | None) -> str:
+    """Digest of everything that changes the projections for ``players`` (the relevant subset).
+
+    League id + scoring settings + roster positions, whether Sleeper payloads were supplied,
+    ``use_model``, the research notes and, per player, the inputs the Projector reads
+    (injury status, depth chart, team, ECR, bye) plus his Sleeper projection line. A cache
+    whose fingerprint differs must not be served: on draft day it would silently override
+    fresh Sleeper projections, an IR designation or the notes the user paid for.
+    """
+    per_player = []
+    for pid in sorted(players):
+        pl = players[pid]
+        note = notes.get(pid) if notes else None
+        per_player.append((
+            pid, pl.position, pl.team, pl.injury_status, pl.status, pl.depth_chart_order, pl.years_exp,
+            pl.bye_week, pl.ecr, pl.ecr_sd,
+            sorted((sleeper_proj.get(pid) or {}).items()) if sleeper_proj else None,
+            (note.injury_risk, note.role_certainty) if note is not None else None,
+        ))
+    payload = {
+        "league_id": league.league_id,
+        "season": league.season,
+        "scoring": sorted((league.scoring_settings or {}).items()),
+        "roster": list(league.roster_positions or []),
+        "sleeper_proj": bool(sleeper_proj),
+        "sleeper_players": bool(sleeper_players),
+        "use_model": bool(use_model),
+        "n_notes": len(notes or {}),
+        "players": per_player,
+    }
+    raw = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha1(raw).hexdigest()[:20]
 
 
 def _market_rank(pl: Player) -> float:
@@ -484,21 +535,19 @@ def build_context(settings: Settings, league: LeagueSettings | None = None, draf
 
     relevant = _relevant_subset(players)
     cache_path = projections_cache_path(league.league_id)
-    projections = None if refresh else load_cached_projections(cache_path)
+    fingerprint = projection_fingerprint(league, relevant, sleeper_proj=sleeper_proj,
+                                         sleeper_players=sources["players"] == "sleeper", use_model=use_model, notes=notes)
+    # the cache is only served when it was built from exactly these inputs (PROJ-3): the
+    # live-draft path (Sleeper payloads supplied) never reuses an offline / stale build
+    projections = None if refresh else load_cached_projections(cache_path, fingerprint=fingerprint)
     if projections is not None:
-        # keep only players we know about; add ECR-only rows for relevant newcomers (rare)
         projections = {pid: p for pid, p in projections.items() if pid in players}
         sources["projections"] = "cache"
     else:
         say("building projections")
-        projections, sources["projections"] = build_projections(
-            relevant, engine, league, settings, cw, sleeper_proj=sleeper_proj, notes=notes, byes=byes,
-            use_model=use_model)
-        try:
-            save_projections(cache_path, projections, {"league_id": league.league_id, "source": sources["projections"],
-                                                       "season": season})
-        except Exception as e:  # noqa: BLE001
-            log.warning("could not cache projections: %s", e)
+        projections, sources["projections"] = _build_and_cache(
+            relevant, engine, league, settings, cw, cache_path, fingerprint, sleeper_proj=sleeper_proj,
+            notes=notes, byes=byes, use_model=use_model)
     tm.lap("projections")
 
     say("preparing advisor")
@@ -512,7 +561,50 @@ def build_context(settings: Settings, league: LeagueSettings | None = None, draf
             len(players), len(projections), sources["projections"], len(notes), tm.total_ms)
     return AppContext(settings=settings, engine=engine, league=league, draft=draft, players=players,
                       projections=projections, advisor=advisor, researcher=researcher, notes=notes, byes=byes,
-                      crosswalk=cw, sources=sources)
+                      crosswalk=cw, sources=sources, sleeper_proj=sleeper_proj, use_model=use_model)
+
+
+def _build_and_cache(relevant: Mapping[str, Player], engine: ScoringEngine, league: LeagueSettings, settings: Settings,
+                     cw, cache_path: Path, fingerprint: str, *, sleeper_proj: Mapping | None,
+                     notes: Mapping[str, ResearchNote] | None, byes: Mapping[str, int],
+                     use_model: bool) -> tuple[dict[str, Projection], str]:
+    projections, source = build_projections(relevant, engine, league, settings, cw, sleeper_proj=sleeper_proj,
+                                            notes=notes, byes=byes, use_model=use_model)
+    try:
+        save_projections(cache_path, projections, {"league_id": league.league_id, "source": source,
+                                                   "season": league.season, "fingerprint": fingerprint,
+                                                   "notes": len(notes or {})})
+    except Exception as e:  # noqa: BLE001
+        log.warning("could not cache projections: %s", e)
+    return projections, source
+
+
+def rebuild_projections(ctx: AppContext, notes: Mapping[str, ResearchNote] | None = None) -> AppContext:
+    """Re-blend the projections of ``ctx`` with ``notes`` (default: ``ctx.notes``) and swap
+    ``ctx.projections`` / ``ctx.advisor`` in place; the cache file is rewritten too.
+
+    Used after a research run so ``injury_risk`` / ``role_certainty`` reach points, VORP,
+    tiers and availability instead of only the Claude prompt (R1). The new dicts are
+    assigned (not mutated) so a concurrent reader keeps a consistent snapshot.
+    """
+    from .strategy.recommend import Advisor
+
+    if notes is not None and notes is not ctx.notes:
+        ctx.notes.update(notes)
+    relevant = _relevant_subset(ctx.players)
+    fingerprint = projection_fingerprint(ctx.league, relevant, sleeper_proj=ctx.sleeper_proj,
+                                         sleeper_players=ctx.sources.get("players") == "sleeper",
+                                         use_model=ctx.use_model, notes=ctx.notes)
+    projections, source = _build_and_cache(
+        relevant, ctx.engine, ctx.league, ctx.settings, ctx.crosswalk, projections_cache_path(ctx.league.league_id),
+        fingerprint, sleeper_proj=ctx.sleeper_proj, notes=ctx.notes, byes=ctx.byes, use_model=ctx.use_model)
+    advisor = Advisor(ctx.league, ctx.players, projections, ctx.settings)
+    ctx.projections = projections
+    ctx.advisor = advisor
+    ctx.sources["projections"] = source
+    ctx.sources["notes"] = len(ctx.notes)
+    log.info("projections re-blended with %d research notes (%s)", len(ctx.notes), source)
+    return ctx
 
 
 # ---------------------------------------------------------------------------
@@ -565,13 +657,48 @@ async def fetch_league(client, league_id: str | None, draft_id: str | None = Non
 # ---------------------------------------------------------------------------
 
 
+async def _fetch_sleeper_inputs(settings: Settings) -> tuple:
+    """(league, draft, players payload, projections payload, snapshot) from Sleeper; every
+    piece is ``None`` when unreachable (network errors are logged, never raised)."""
+    league = draft = None
+    sleeper_players = sleeper_proj = None
+    snapshot = None
+    try:
+        from .sleeper.client import SleeperClient
+
+        async with SleeperClient() as client:
+            league, draft = await fetch_league(client, settings.league_id, settings.draft_id)
+            try:
+                sleeper_players = await client.get_players()
+            except Exception as e:  # noqa: BLE001
+                log.warning("Sleeper players unavailable: %s", e)
+            try:
+                sleeper_proj = await client.get_season_projections(settings.season)
+            except Exception as e:  # noqa: BLE001
+                log.warning("Sleeper projections unavailable: %s", e)
+            if settings.league_id or settings.draft_id:
+                try:
+                    from .capture import capture_league
+
+                    snapshot = await capture_league(client, settings.league_id, settings.draft_id,
+                                                    username=settings.username, user_id=settings.user_id,
+                                                    slot=settings.slot, season=settings.season)
+                except Exception as e:  # noqa: BLE001
+                    log.warning("league capture failed: %s", e)
+    except Exception as e:  # noqa: BLE001
+        log.warning("Sleeper unreachable (%s); continuing offline", e)
+    return league, draft, sleeper_players, sleeper_proj, snapshot
+
+
 async def prep(settings: Settings, research: bool = False, refresh: bool = False, train: bool = True,
-               top: int = 200, progress: Callable[[str], None] | None = None) -> AppContext:
+               top: int = 200, progress: Callable[[str], None] | None = None, offline: bool = False) -> AppContext:
     """Download data, train the model, fetch Sleeper payloads if reachable, build + cache the context.
 
-    Network errors are swallowed (logged) so ``prep`` works offline with ``data/raw``.
-    ``sources`` of the returned context carries ``metrics`` (backtest), ``snapshot`` (capture) and
-    ``research`` (number of notes written).
+    Network errors are swallowed (logged) so ``prep`` works offline with ``data/raw``; with
+    ``offline=True`` Sleeper is not contacted at all (no retries / timeouts to sit through).
+    When ``research`` runs, the projections are re-blended with the new notes (and re-cached)
+    so the draft command picks them up. ``sources`` of the returned context carries ``metrics``
+    (backtest), ``snapshot`` (capture) and ``research`` (number of notes written).
     """
     ensure_dirs()
     say = progress or (lambda s: None)
@@ -598,31 +725,11 @@ async def prep(settings: Settings, research: bool = False, refresh: bool = False
     league = draft = None
     sleeper_players = sleeper_proj = None
     snapshot = None
-    say("contacting Sleeper")
-    try:
-        from .sleeper.client import SleeperClient
-
-        async with SleeperClient() as client:
-            league, draft = await fetch_league(client, settings.league_id, settings.draft_id)
-            try:
-                sleeper_players = await client.get_players()
-            except Exception as e:  # noqa: BLE001
-                log.warning("Sleeper players unavailable: %s", e)
-            try:
-                sleeper_proj = await client.get_season_projections(settings.season)
-            except Exception as e:  # noqa: BLE001
-                log.warning("Sleeper projections unavailable: %s", e)
-            if settings.league_id or settings.draft_id:
-                try:
-                    from .capture import capture_league
-
-                    snapshot = await capture_league(client, settings.league_id, settings.draft_id,
-                                                    username=settings.username, user_id=settings.user_id,
-                                                    slot=settings.slot, season=settings.season)
-                except Exception as e:  # noqa: BLE001
-                    log.warning("league capture failed: %s", e)
-    except Exception as e:  # noqa: BLE001
-        log.warning("Sleeper unreachable (%s); continuing offline", e)
+    if offline:
+        say("Sleeper skipped (--offline)")
+    else:
+        say("contacting Sleeper")
+        league, draft, sleeper_players, sleeper_proj, snapshot = await _fetch_sleeper_inputs(settings)
     if league is None:
         league, draft = load_snapshot_league(settings)
 
@@ -637,10 +744,22 @@ async def prep(settings: Settings, research: bool = False, refresh: bool = False
         else:
             say(f"running Claude research on the top {top} players")
             targets = top_players_by_adp(ctx.players, top)
+            new_notes: dict[str, ResearchNote] = {}
             try:
-                new_notes = await ctx.researcher.research_players(targets, ctx.projections)
-                ctx.notes.update(new_notes)
-                ctx.sources["research"] = len(new_notes)
+                new_notes = await ctx.researcher.research_players(
+                    targets, ctx.projections, progress=lambda d, t, n: say(f"research {d}/{t}: {n}"))
             except Exception as e:  # noqa: BLE001
                 log.warning("research failed: %s", e)
+            err = getattr(ctx.researcher, "last_error", None)
+            if err:
+                log.warning("research problem: %s", err)
+            ctx.sources["research"] = len(new_notes)
+            if new_notes:
+                # the notes must reach the cached projections the draft command loads (R1)
+                say("re-blending projections with the research notes")
+                try:
+                    rebuild_projections(ctx, new_notes)
+                except Exception as e:  # noqa: BLE001
+                    log.warning("could not re-blend projections with research notes: %s", e)
     return ctx
+

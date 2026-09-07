@@ -20,7 +20,15 @@ from draftadvisor.models import (
     RosterSummary,
 )
 from draftadvisor.research import ClaudeResearcher, build_context_text, describe_roster_slots, describe_scoring
-from draftadvisor.research.claude import UNAVAILABLE_SUMMARY, _parse_json_object
+from draftadvisor.research.claude import (
+    ADVICE_MAX_TOKENS,
+    RESEARCH_MAX_TOKENS,
+    RESEARCH_RETRY_MAX_TOKENS,
+    TRUNCATION_MARKER,
+    UNAVAILABLE_SUMMARY,
+    _answer_text_blocks,
+    _parse_json_object,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -273,21 +281,26 @@ def test_research_notes_cached_and_reused():
     assert call["tools"][0]["type"] == "web_search_20260209" and call["tools"][0]["max_uses"] == 3
     assert call["output_config"]["effort"] == "medium"
     assert call["output_config"]["format"]["type"] == "json_schema"
-    assert call["system"][0]["cache_control"] == {"type": "ephemeral"}
+    assert call["max_tokens"] == RESEARCH_MAX_TOKENS
+    # R5: prompts are far below the 1024-token cacheable minimum, so no cache_control marker is sent
+    assert "cache_control" not in call["system"][0]
     assert "2026" in call["system"][0]["text"]
     user = call["messages"][0]["content"]
     assert "Today is" in user and "Alpha Back" in user and "280 season points" in user
-    assert "thinking" not in call
+    assert "thinking" not in call            # research keeps adaptive thinking (searches need it)
+    assert r.last_run_stats == {"ok": 2, "failed": 0, "cached": 0, "skipped": 0}
 
     # on disk
     path = research_dir() / "notes" / "1.json"
     assert path.exists()
-    assert json.load(open(path))["player_id"] == "1"
+    with open(path, encoding="utf-8") as fh:
+        assert json.load(fh)["player_id"] == "1"
     assert set(r.load_notes()) == {"1", "2"}
 
     # second run: fresh notes -> no new requests
     notes2 = asyncio.run(r.research_players(players))
     assert len(client.messages.create_calls) == 2 and set(notes2) == {"1", "2"}
+    assert r.last_run_stats == {"ok": 0, "failed": 0, "cached": 2, "skipped": 0}
 
     # stale notes are refreshed
     notes3 = asyncio.run(r.research_players(players, max_age_days=0))
@@ -307,6 +320,7 @@ def test_research_refusal_and_error_write_minimal_notes():
     r2 = ClaudeResearcher(api_key="k", client=bad)
     notes = asyncio.run(r2.research_players([PLAYERS["4"]]))
     assert notes["4"].summary == UNAVAILABLE_SUMMARY and "boom" in (r2.last_error or "")
+    assert r2.last_run_stats == {"ok": 0, "failed": 1, "cached": 0, "skipped": 0}
 
     # unavailable notes are retried on the next run (not treated as fresh)
     good = FakeClient(responses=[json_message(summary="Back.")])
@@ -373,10 +387,12 @@ def test_advice_prompt_streaming_and_cache():
     assert rec.claude_advice == text
     assert len(client.messages.stream_calls) == 1 and client.messages.create_calls == []
     call = client.messages.stream_calls[0]
-    assert call["max_tokens"] == 400 and call["output_config"] == {"effort": "low"}
-    assert call["model"] == "claude-sonnet-5" and "tools" not in call and "thinking" not in call
+    # R2: thinking off so the whole (600-token) budget is the answer, not adaptive-thinking tokens
+    assert call["max_tokens"] == ADVICE_MAX_TOKENS == 600 and call["output_config"] == {"effort": "low"}
+    assert call["thinking"] == {"type": "disabled"}
+    assert call["model"] == "claude-sonnet-5" and "tools" not in call
     sys_block = call["system"][0]
-    assert sys_block["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in sys_block          # R5: below the cacheable minimum, marker dropped
     assert "Test League" in sys_block["text"] and "HALF-PPR" in sys_block["text"] and "FLEX" in sys_block["text"]
     user = call["messages"][0]["content"]
     assert "Bravo Wide" in user and "Golf Back" in user and "Committee back." in user and "Open needs" in user
@@ -458,3 +474,283 @@ def test_parse_json_object_variants():
     assert _parse_json_object(["Searching", 'Here: {"a": 2} done'])["a"] == 2
     assert _parse_json_object(["nothing"]) is None
     assert _parse_json_object(['[1, 2]']) is None
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for review findings R2-R6
+# ---------------------------------------------------------------------------
+
+
+def _api_error(name: str, status: int, message: str = "err", headers: dict | None = None):
+    """Build a real SDK exception offline (the SDK is a hard dependency; no network involved)."""
+    import anthropic
+    import httpx
+
+    cls = getattr(anthropic, name)
+    response = httpx.Response(status, headers=headers or {}, request=httpx.Request("POST", "https://api.invalid/v1"))
+    return cls(message, response=response, body={"error": {"type": "x", "message": message}})
+
+
+# -- R2: stop_reason == "max_tokens" ---------------------------------------
+
+
+def test_advice_max_tokens_is_a_failure_not_a_half_sentence():
+    truncated = text_message("Take Golf Back because he is the last RB1 before a tier break and", "max_tokens")
+    r = ClaudeResearcher(api_key="k", client=FakeClient(stream_message=truncated))
+    st = _state()
+    rec = _rec(st)
+    assert asyncio.run(r.on_the_clock_advice(st, rec, PLAYERS, {})) is None
+    assert rec.claude_advice is None
+    assert "max_tokens" in (r.last_error or "")
+    assert r._advice_cache == {} and r._advice_inflight == {}
+
+    # thinking-only response (no text) with max_tokens -> None as well
+    r2 = ClaudeResearcher(api_key="k", client=FakeClient(stream_message=Message([Block("thinking")], "max_tokens")))
+    assert asyncio.run(r2.on_the_clock_advice(st, rec, PLAYERS, {})) is None
+    assert "max_tokens" in (r2.last_error or "")
+
+
+def test_advice_omits_thinking_param_on_fable_models():
+    # thinking={"type": "disabled"} returns 400 on the Fable/Mythos line; the param must be omitted there
+    client = FakeClient(stream_message=text_message("Take him."))
+    r = ClaudeResearcher(api_key="k", model="claude-fable-5-1", client=client)
+    st = _state()
+    assert asyncio.run(r.on_the_clock_advice(st, _rec(st), PLAYERS, {})) == "Take him."
+    call = client.messages.stream_calls[0]
+    assert "thinking" not in call and call["max_tokens"] == ADVICE_MAX_TOKENS
+
+
+def test_research_max_tokens_retries_once_with_bigger_budget():
+    truncated = Message([Block("server_tool_use"), Block("web_search_tool_result"), Block("text", '{"summary": "Loc')],
+                        stop_reason="max_tokens")
+    client = FakeClient(responses=[truncated, json_message(summary="Full note.")])
+    r = ClaudeResearcher(api_key="k", client=client)
+    notes = asyncio.run(r.research_players([PLAYERS["7"]]))
+    assert notes["7"].summary == "Full note."
+    calls = client.messages.create_calls
+    assert [c["max_tokens"] for c in calls] == [RESEARCH_MAX_TOKENS, RESEARCH_RETRY_MAX_TOKENS]
+    assert r.last_run_stats == {"ok": 1, "failed": 0, "cached": 0, "skipped": 0}
+
+    # truncated twice -> unavailable note (not raised), reason recorded
+    client = FakeClient(responses=[truncated, truncated])
+    r = ClaudeResearcher(api_key="k", client=client)
+    notes = asyncio.run(r.research_players([PLAYERS["8"]]))
+    assert notes["8"].summary == UNAVAILABLE_SUMMARY
+    assert len(client.messages.create_calls) == 2 and "max_tokens" in (r.last_error or "")
+    assert r.last_run_stats["failed"] == 1
+
+
+def test_ask_appends_truncation_marker_on_max_tokens():
+    client = FakeClient(responses=[text_message("Golf Back, because RB is scarce and", "max_tokens")])
+    r = ClaudeResearcher(api_key="k", client=client)
+    answer = asyncio.run(r.ask("Who?", "ctx"))
+    assert answer == "Golf Back, because RB is scarce and" + TRUNCATION_MARKER
+    assert "max_tokens" in (r.last_error or "")
+    assert client.messages.create_calls[0]["max_tokens"] == 1500
+    assert "cache_control" not in client.messages.create_calls[0]["system"][0]
+    # no text at all -> "" (caller shows last_error)
+    r2 = ClaudeResearcher(api_key="k", client=FakeClient(responses=[text_message("", "max_tokens")]))
+    assert asyncio.run(r2.ask("Who?", "ctx")) == "" and "max_tokens" in (r2.last_error or "")
+
+
+# -- R3: fail fast / rate limit / stats -------------------------------------
+
+
+def test_research_fatal_api_error_aborts_run_without_writing_notes(tmp_path):
+    import pytest
+    pytest.importorskip("anthropic")
+    for name, status in (("AuthenticationError", 401), ("PermissionDeniedError", 403),
+                         ("BadRequestError", 400), ("NotFoundError", 404)):
+        client = FakeClient(error=_api_error(name, status, f"{name} happened"))
+        r = ClaudeResearcher(api_key="k", client=client, cache_dir=tmp_path / name)
+        players = list(PLAYERS.values())            # 10 players, concurrency 2
+        notes = asyncio.run(r.research_players(players, concurrency=2))
+        # at most one request per worker slot, the rest are skipped
+        assert 1 <= len(client.messages.create_calls) <= 2, name
+        assert notes == {}, name
+        assert list((tmp_path / name).rglob("*.json")) == [], name        # no 'unavailable' notes written
+        assert name in (r.last_error or "") and f"{name} happened" in r.last_error, name
+        stats = r.last_run_stats
+        assert stats["ok"] == 0 and stats["cached"] == 0, name
+        assert stats["failed"] == len(client.messages.create_calls), name
+        assert stats["failed"] + stats["skipped"] == len(players), name
+
+
+def test_research_fatal_error_returns_what_was_done(tmp_path):
+    # first player succeeds, second hits a 401 -> the good note is kept, the run stops
+    import pytest
+    pytest.importorskip("anthropic")
+    err = _api_error("AuthenticationError", 401, "invalid x-api-key")
+
+    def raise_err(kwargs):
+        raise err
+
+    client = FakeClient(responses=[json_message(summary="Good."), raise_err, json_message(summary="Never.")])
+    r = ClaudeResearcher(api_key="k", client=client, cache_dir=tmp_path)
+    players = [PLAYERS["1"], PLAYERS["2"], PLAYERS["3"], PLAYERS["4"]]
+    notes = asyncio.run(r.research_players(players, concurrency=1))
+    assert set(notes) == {"1"} and notes["1"].summary == "Good."
+    assert len(client.messages.create_calls) == 2
+    assert "invalid x-api-key" in r.last_error
+    assert r.last_run_stats == {"ok": 1, "failed": 1, "cached": 0, "skipped": 2}
+    assert sorted(p.stem for p in (tmp_path / "notes").glob("*.json")) == ["1"]
+
+
+def test_research_rate_limit_pauses_all_workers_and_retries_once(tmp_path):
+    import pytest
+    pytest.importorskip("anthropic")
+    err = _api_error("RateLimitError", 429, "slow down", headers={"retry-after": "0.15"})
+    started: list[float] = []
+    loop_time = {"fn": None}
+
+    class RLMessages(FakeMessages):
+        async def create(self, **kwargs):
+            started.append(loop_time["fn"]())
+            self.create_calls.append(kwargs)
+            if len(self.create_calls) == 1:
+                raise err
+            return json_message(summary="After pause.")
+
+    client = FakeClient()
+    client.messages = RLMessages()
+    r = ClaudeResearcher(api_key="k", client=client, cache_dir=tmp_path)
+
+    async def run():
+        loop_time["fn"] = asyncio.get_running_loop().time
+        return await r.research_players([PLAYERS["1"], PLAYERS["2"], PLAYERS["3"]], concurrency=1)
+
+    notes = asyncio.run(run())
+    assert all(n.summary == "After pause." for n in notes.values()) and set(notes) == {"1", "2", "3"}
+    assert len(client.messages.create_calls) == 4          # 1 failed + retry + 2 others
+    # every request after the 429 waited for retry-after
+    assert all(t - started[0] >= 0.14 for t in started[1:])
+    assert r.last_run_stats == {"ok": 3, "failed": 0, "cached": 0, "skipped": 0}
+
+    # a second consecutive 429 for the same player becomes an unavailable note, never raises
+    client2 = FakeClient(error=_api_error("RateLimitError", 429, "still", headers={"retry-after": "0"}))
+    r2 = ClaudeResearcher(api_key="k", client=client2, cache_dir=tmp_path / "b")
+    notes = asyncio.run(r2.research_players([PLAYERS["5"]]))
+    assert notes["5"].summary == UNAVAILABLE_SUMMARY and len(client2.messages.create_calls) == 2
+    assert "RateLimitError" in r2.last_error
+
+
+def test_retry_after_parsing_defaults_and_clamps():
+    from draftadvisor.research.claude import RATE_LIMIT_DEFAULT_PAUSE_S, RATE_LIMIT_MAX_PAUSE_S, _retry_after_seconds
+    assert _retry_after_seconds(RuntimeError("no response")) == RATE_LIMIT_DEFAULT_PAUSE_S
+
+    class E(Exception):
+        class response:
+            headers = {"retry-after": "Wed, 21 Oct 2026 07:28:00 GMT"}
+
+    assert _retry_after_seconds(E()) == RATE_LIMIT_DEFAULT_PAUSE_S
+
+    class E2(Exception):
+        class response:
+            headers = {"retry-after": "9999"}
+
+    assert _retry_after_seconds(E2()) == RATE_LIMIT_MAX_PAUSE_S
+
+
+# -- R4: lookahead result survives a cancelled awaiter -----------------------
+
+
+def test_advice_result_cached_when_awaiter_is_cancelled():
+    client = FakeClient(stream_message=text_message("Take Golf Back."), stream_delay=0.1)
+    r = ClaudeResearcher(api_key="k", client=client)
+    st = _state()
+    rec = _rec(st)
+
+    async def run():
+        task = asyncio.ensure_future(r.on_the_clock_advice(st, rec, PLAYERS, {}))
+        await asyncio.sleep(0.02)
+        task.cancel()                          # DraftLoop.schedule_claude cancels the lookahead task
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        assert len(r._advice_inflight) == 1     # the shielded request is still running
+        await asyncio.sleep(0.2)               # let it finish with nobody awaiting it
+        assert r._advice_inflight == {}
+        assert r._advice_cache.get(r._advice_key(st, rec)) == "Take Golf Back."
+        # on-clock call for the same state is a cache hit: no second paid request
+        rec2 = _rec(st)
+        assert await r.on_the_clock_advice(st, rec2, PLAYERS, {}) == "Take Golf Back."
+        assert rec2.claude_advice == "Take Golf Back."
+
+    asyncio.run(run())
+    assert len(client.messages.stream_calls) == 1
+
+
+def test_advice_failure_after_cancelled_awaiter_records_last_error_and_clears_inflight():
+    class FailingStream(FakeStream):
+        async def get_final_message(self):
+            await asyncio.sleep(0.05)
+            raise ConnectionError("dropped")
+
+    class M(FakeMessages):
+        def stream(self, **kwargs):
+            self.stream_calls.append(kwargs)
+            return FailingStream(None)
+
+    client = FakeClient()
+    client.messages = M()
+    r = ClaudeResearcher(api_key="k", client=client)
+    st = _state()
+    rec = _rec(st)
+
+    async def run():
+        task = asyncio.ensure_future(r.on_the_clock_advice(st, rec, PLAYERS, {}))
+        await asyncio.sleep(0.01)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        await asyncio.sleep(0.1)
+        assert r._advice_inflight == {} and r._advice_cache == {}
+        assert "dropped" in (r.last_error or "")
+
+    asyncio.run(run())
+
+
+# -- R6: JSON split across text blocks / answer after the last search block --
+
+
+def test_parse_json_object_split_across_text_blocks():
+    parts = ['{"summary": "healthy', ' after surgery", "injury_risk": 0.1}']
+    assert _parse_json_object(parts) == {"summary": "healthy after surgery", "injury_risk": 0.1}
+    # still tolerant of intro text around the object
+    assert _parse_json_object(["Searching", 'Here: {"a": 2} done'])["a"] == 2
+
+
+def test_research_parses_json_split_by_citations_after_search_blocks():
+    msg = Message([
+        Block("text", "Let me look this up."),
+        Block("server_tool_use"), Block("web_search_tool_result"),
+        Block("text", '{"summary": "Starter,'), Block("text", ' healthy.", "injury_risk": 0.1, "role_certainty": 0.8,'),
+        Block("text", ' "upside": "u", "downside": "d", "sources": ["https://s"]}'),
+    ])
+    r = ClaudeResearcher(api_key="k", client=FakeClient(responses=[msg]))
+    notes = asyncio.run(r.research_players([PLAYERS["9"]]))
+    assert notes["9"].summary == "Starter, healthy." and notes["9"].role_certainty == 0.8
+
+
+def test_answer_text_blocks_prefers_text_after_last_server_tool_block():
+    msg = Message([
+        Block("text", '{"summary": "stale draft"}'), Block("server_tool_use"), Block("web_search_tool_result"),
+        Block("text", "intro"), Block("server_tool_use"), Block("web_search_tool_result"),
+        Block("text", '{"summary": "final"}'),
+    ])
+    assert _answer_text_blocks(msg) == ['{"summary": "final"}']
+    # nothing after the tool blocks -> fall back to all text blocks
+    msg2 = Message([Block("text", '{"summary": "only"}'), Block("server_tool_use"), Block("web_search_tool_result")])
+    assert _answer_text_blocks(msg2) == ['{"summary": "only"}']
+
+
+def test_research_unparseable_logs_raw_text_at_debug(caplog):
+    import logging
+    r = ClaudeResearcher(api_key="k", client=FakeClient(responses=[text_message("nothing structured here")]))
+    with caplog.at_level(logging.DEBUG, logger="draftadvisor.research.claude"):
+        notes = asyncio.run(r.research_players([PLAYERS["SF"]]))
+    assert notes["SF"].summary == UNAVAILABLE_SUMMARY
+    assert any("nothing structured here" in rec.getMessage() for rec in caplog.records)

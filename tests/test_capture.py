@@ -129,3 +129,69 @@ def test_report_text_contains_key_facts():
     # JSON round trip keeps raw payloads
     d = snap.to_dict()
     assert json.loads(json.dumps(d))["raw"]["league"]["league_id"] == "1180000000000000001"
+
+
+# ---------------------------------------------------------------------------
+# Review findings: pre-draft identity (F4), optional endpoint failures (F8)
+# ---------------------------------------------------------------------------
+
+
+class PreDraftClient(FakeClient):
+    """The draft has not started: no draft order / slot mapping, no picks."""
+
+    def __init__(self, fail: dict[str, Exception] | None = None):
+        super().__init__()
+        self.fail = fail or {}
+
+    async def _get(self, name, payload):
+        if name in self.fail:
+            self.calls.append(name)
+            raise self.fail[name]
+        payload = await super()._get(name, payload)
+        if name in ("draft", "drafts"):
+            drafts = payload if isinstance(payload, list) else [payload]
+            for d in drafts:
+                d["status"], d["draft_order"], d["slot_to_roster_id"], d["last_picked"] = "pre_draft", None, None, None
+        if name == "picks":
+            return []
+        return payload
+
+
+def test_capture_pre_draft_keeps_identity_and_saves(tmp_path):
+    snap = asyncio.run(capture_league(PreDraftClient(), league_id="1180000000000000001", username="gleb"))
+    assert snap.draft is not None and snap.draft.status == "pre_draft" and snap.draft.draft_order == {}
+    assert snap.my_user_id == "111111111111111111" and snap.my_slot is None and snap.my_picks == []
+    assert (leagues_dir() / "1180000000000000001.json").exists()
+    text = snap.to_text(width=140)
+    assert "draft order not set yet" in text and "Team Gleb" in text
+    assert "not identified" not in text
+    # the Sleeper *username* (differs from the display name) resolves as well
+    snap2 = asyncio.run(capture_league(PreDraftClient(), league_id="x", username="mike_h", save=False))
+    assert snap2.my_user_id == "222222222222222222" and snap2.my_slot is None
+
+
+def test_capture_username_differing_from_display_name_resolves_slot():
+    snap = asyncio.run(capture_league(FakeClient(), league_id="x", username="Mike_H", save=False))
+    assert snap.my_user_id == "222222222222222222" and snap.my_slot == 2
+
+
+def test_capture_pre_draft_unknown_user_still_raises():
+    with pytest.raises(ValueError) as e:
+        asyncio.run(capture_league(PreDraftClient(), league_id="x", username="nobody", save=False))
+    assert "managers" in str(e.value).lower() and "Gleb" in str(e.value)
+
+
+def test_capture_survives_5xx_on_optional_endpoints():
+    from draftadvisor.sleeper.client import SleeperAPIError
+
+    fail = {"users": SleeperAPIError("users down", status_code=500), "rosters": SleeperAPIError("rate limited", status_code=429),
+            "traded": SleeperAPIError("boom", status_code=503)}
+    snap = asyncio.run(capture_league(PreDraftClient(fail=fail), league_id="1180000000000000001", user_id="111111111111111111",
+                                      save=False))
+    assert snap.league is not None and snap.draft is not None
+    assert snap.raw["users"] == [] and snap.raw["rosters"] == [] and snap.raw["traded_picks"] == []
+    assert snap.my_user_id == "111111111111111111"
+    # the league / draft endpoints themselves stay fatal
+    with pytest.raises(SleeperAPIError):
+        asyncio.run(capture_league(PreDraftClient(fail={"league": SleeperAPIError("down", status_code=500)}),
+                                   league_id="x", save=False))

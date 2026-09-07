@@ -479,3 +479,59 @@ API (all JSON; errors are `{"detail": "..."}` with 4xx/5xx):
   context sorted by points; `POST /api/board/load` builds the default context when there is no session.
 * `POST /api/ask` `{"question"}` → `{"answer"}` (503 when Claude is disabled).
 * `POST /api/research` `{"top": 150}` → `{"ok": true}` (background, progress in `status.log`).
+
+### 3.9 Stateless web API v2 (local + Vercel)  (owner: integrator + "frontend-v2" agent)
+
+The web app runs on Vercel (serverless: no background tasks, no persistent disk, no pandas/scikit-learn in the
+function bundle) and locally with the same code. Therefore **the server is stateless**: the browser owns the
+session config and, for mock drafts, the pick list; every request carries what the server needs; the server
+keeps only warm-memory caches (bundle, Sleeper players/projections, ECR, per-league context) and persists
+research notes in Vercel Blob (`BLOB_READ_WRITE_TOKEN`) or the local data dir.
+
+Model outputs are precomputed into `web_bundle/` (`draftadvisor bundle`, committed): `players.json` (offline
+universe), `ml.json` (per player predicted per-game rates, games, std, rookie flag), `season_totals.json`
+(player-season stat totals 2019-2025 for the rank curves under any scoring), `byes.json`, `meta.json`.
+
+Access control (optional): env `DRAFTADVISOR_ACCESS_CODE`; when set every `/api/*` call must carry header
+`X-Access-Code`. Anthropic key: env `ANTHROPIC_API_KEY` **or** header `X-Anthropic-Key` (stored in the browser's
+localStorage, never logged). Models: research `claude-sonnet-5` (web search), chat `claude-opus-5`
+(env `DRAFTADVISOR_CHAT_MODEL`).
+
+**Session object** (sent by the browser as JSON body field `session`, or as query params for GET):
+`{"mode": "live"|"mock", "draft_id", "league_id", "username", "user_id", "slot", "use_claude": bool,
+  "mock": {"teams","rounds","slot","scoring","superflex","seed"}, "picks": [player_id,...]  // mock only }`
+
+Endpoints (JSON; errors `{"detail"}`):
+* `GET /api/status` → `{"ok", "version", "bundle": {"built_at","players","seasons"}, "claude": {"server_key": bool},
+  "notes": {"count", "store": "blob"|"local"|"memory"}, "access_code_required": bool}`
+* `POST /api/lookup {"username"}` → user + leagues + drafts (as v1).
+* `POST /api/session/start {session}` → validates, captures the league (snapshot: scoring diff, flags, draft
+  order, my picks), warms the league context; returns `{"session": {...resolved ids/slot...}, "snapshot": {...},
+  "league": {...}}`. For mock: builds the league/draft and returns the same shape (snapshot synthesised).
+* `GET /api/state?...session params...` (live) / `POST /api/mock/state {session, action, player_id?}` (mock)
+  → the render payload of §3.8 (draft, league, me, best, by_position, available, recent, opponents, pressure,
+  notes, snapshot, status) **without** `claude` advice (see /api/advice). Mock `action` ∈ `"sync"` (just
+  render), `"advance"` (bots pick until my turn or the end), `"pick"` (my pick then advance), `"auto"` (take
+  the top recommendation then advance); the response includes `"picks"` (the full list the browser must keep)
+  and `"last_picks"` (picks made in this call, for the feed).
+* `GET /api/advice?...session params...` → `{"advice": str|null, "status": "ready|thinking|off|error", "model"}`
+  (Sonnet, cached per state version; the browser calls it when `is_my_turn` or `picks_until_my_turn <= 1`).
+* `POST /api/chat {session, messages: [{"role","content"}], model?}` → **SSE stream** (`text/event-stream`,
+  events `data: {"delta": "..."}` … `data: {"done": true, "usage": {...}}`) — chat with full live context
+  (the current recommendation, roster, needs, candidates, notes) injected server-side; the browser keeps the
+  transcript (localStorage) and sends the whole history each time.
+* `POST /api/research/player {session, player_id, force?}` → `{"note": {...}}` (web search; up to ~60 s).
+* `POST /api/research/next {session, top}` → researches ONE player lacking a fresh note among the top
+  `top` by ADP (or among my current top-8 candidates first when a draft is running) → `{"done", "total",
+  "note"|null, "remaining"}`; the browser loops until `remaining == 0`.
+* `GET /api/notes` → `{player_id: note}`; `GET /api/player/{id}?...` → card + projection detail + note.
+* `GET /api/projections?league_id=&position=&top=&q=` → board (league scoring when known, else half-PPR).
+
+Research note fields (v2): `summary, injury_risk (0-1), role_certainty (0-1), offfield_risk (0-1), red_flags
+[str] (legal / suspension / holdout / contract / injury-report / benching / negative-commentary), upside,
+downside, sources [url], generated_at, model`. The Projector uses `injury_risk` (games), `role_certainty`
+(std) and `offfield_risk` (games and std), and the cards show `red_flags`.
+
+Timer: the countdown shows only what Sleeper reports **right now** (`draft.pick_timer` re-read every poll and
+`last_picked`); if the commissioner changes the clock mid-draft the display follows; nothing in the advice logic
+depends on the timer.

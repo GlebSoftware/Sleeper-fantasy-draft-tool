@@ -15,8 +15,10 @@ below 130 columns):
 ``status`` is a free-form dict the caller fills in; recognised keys:
 ``latency_ms``, ``compute_ms``, ``claude`` ("off" | "thinking" | "ready" | "error" | text),
 ``turn_started_at`` (epoch seconds when we noticed it became my turn), ``poll_count``,
-``last_error``, ``mode`` ("live" | "mock"), ``hint`` (key hint text), ``message``,
-``projections`` (``dict[player_id, Projection]`` used to show my roster's projected points).
+``last_error``, ``stale_since`` (epoch seconds since the poller last succeeded, set on poll errors),
+``last_poll_at`` (epoch seconds of the last successful poll), ``mode`` ("live" | "mock"),
+``hint`` (key hint text), ``message``, ``projections`` (``dict[player_id, Projection]`` used to show
+my roster's projected points).
 """
 from __future__ import annotations
 
@@ -37,12 +39,14 @@ from ..models import DraftState, Pick, Player, PlayerValue, Projection, Recommen
 
 log = logging.getLogger(__name__)
 
-__all__ = ["Dashboard", "render_text", "scoring_description", "action_style"]
+__all__ = ["Dashboard", "render_text", "scoring_description", "action_style", "clock_start", "staleness"]
 
 #: Below this many columns the opponent-needs panel is dropped.
 COMPACT_WIDTH = 150
 #: Below this many rows the per-position tables show fewer candidates.
 COMPACT_HEIGHT = 42
+#: A live draft whose last successful poll is older than this (seconds) is flagged "stale" in the header.
+STALE_AFTER_S = 15.0
 
 _ACTION_STYLE = {"TAKE NOW": "bold white on red", "SOON": "bold black on yellow", "WAIT": "bold black on green",
                  "SKIP": "dim"}
@@ -115,13 +119,52 @@ def _points_of(pid: str, projections: Mapping[str, Projection] | None) -> float 
     return None if pr is None else float(pr.points)
 
 
+def clock_start(state: DraftState, noticed_at: float | None) -> float | None:
+    """When Sleeper's pick clock really started for the pick on the clock.
+
+    Sleeper starts the clock at the previous pick (``draft.last_picked``, epoch ms); the time *we*
+    noticed the turn (``noticed_at``) is later whenever the tool was (re)started mid-turn or the
+    bootstrap took a while, so the earlier of the two is used. For pick #1 (no previous pick) only
+    the noticed time is known.
+    """
+    lp = state.draft.last_picked
+    real = None
+    if lp and state.picks and lp > 1e12:
+        real = lp / 1000.0
+        timer = int(state.draft.pick_timer or 0)
+        if timer > 0 and time.time() - real > 2 * timer:
+            # a clock that old would already have expired (autopick): last_picked is not this pick's
+            # clock (draft paused / resumed, or the timer is not enforced) - fall back to the noticed time
+            real = None
+    if noticed_at is None:
+        return real
+    return min(float(noticed_at), real) if real is not None else float(noticed_at)
+
+
 def _countdown(state: DraftState, status: Mapping) -> int | None:
-    """Seconds left on my pick clock (None when no timer / not my turn)."""
+    """Seconds left on my pick clock (None when no timer / not my turn / the draft is paused)."""
     timer = int(state.draft.pick_timer or 0)
-    started = status.get("turn_started_at")
-    if timer <= 0 or started is None:
+    noticed = status.get("turn_started_at")
+    if timer <= 0 or noticed is None or state.draft.status == "paused":
         return None
-    return max(0, int(round(timer - (time.time() - float(started)))))
+    started = clock_start(state, noticed)
+    if started is None:
+        return None
+    return max(0, int(round(timer - (time.time() - started))))
+
+
+def staleness(state: DraftState, status: Mapping, now: float | None = None) -> float | None:
+    """Seconds the board has been stale (poll errors, or no successful poll for a while), else None."""
+    now = time.time() if now is None else now
+    since = status.get("stale_since")
+    if since is not None:
+        return max(0.0, now - float(since))
+    last = status.get("last_poll_at")
+    if last is not None and state.draft.status not in ("pre_draft", "complete") and not state.is_complete:
+        age = now - float(last)
+        if age > STALE_AFTER_S:
+            return age
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -198,8 +241,10 @@ class Dashboard:
     def start(self) -> None:
         """Enter the live display (idempotent)."""
         if self._live is None:
+            # stderr (log warnings from the poller / client retries) is routed above the live display
+            # instead of painting over it
             self._live = Live(Text("starting…"), console=self.console, refresh_per_second=self.refresh_per_second,
-                              screen=False, transient=False, redirect_stderr=False, redirect_stdout=False)
+                              screen=False, transient=False, redirect_stderr=True, redirect_stdout=False)
             self._live.start()
 
     def stop(self) -> None:
@@ -318,6 +363,9 @@ class Dashboard:
         if claude:
             style = {"thinking": "yellow", "ready": "green", "error": "red", "off": "dim"}.get(str(claude), "")
             parts.append(f" • Claude: {claude}", style=style)
+        stale = staleness(state, status)
+        if stale is not None:
+            parts.append(f" • stale {stale:.0f}s", style="bold white on red")
         err = status.get("last_error")
         if err:
             parts.append(f" • {_trunc(str(err), 40)}", style="red")
@@ -485,7 +533,7 @@ class Dashboard:
         recent = sorted(state.picks, key=lambda p: p.pick_no)[-n:]
         my_slot = state.my_slot
         for pk in reversed(recent):
-            slot = pk.draft_slot
+            slot = state.slot_of_pick(pk)         # traded picks: the drafter, not the original slot
             mine = my_slot is not None and slot == my_slot
             style = "bold cyan" if mine else ""
             cells = [str(pk.pick_no), state.slot_label(slot), _player_name(pk.player_id, players, pk),
@@ -598,7 +646,8 @@ def render_text(rec: Recommendation | None, state: DraftState, players: dict[str
     if state.picks:
         last = sorted(state.picks, key=lambda p: p.pick_no)[-3:]
         lines.append("Last picks: " + "; ".join(
-            f"#{p.pick_no} {state.slot_label(p.draft_slot)}: {_player_name(p.player_id, players, p)} ({_player_pos(p.player_id, players, p)})"
+            f"#{p.pick_no} {state.slot_label(state.slot_of_pick(p))}: {_player_name(p.player_id, players, p)} "
+            f"({_player_pos(p.player_id, players, p)})"
             for p in last))
     if rec is None:
         lines.append("(no recommendation yet)")

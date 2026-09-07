@@ -34,7 +34,7 @@ DEFAULT_WEIGHTS: dict[str, float] = {"sleeper": 0.40, "ml": 0.25, "ecr": 0.35}
 GAMES_SHRINK = 0.6
 GAMES_SHRINK_TARGET = 16.0
 #: Cap on the ML season std as a fraction of projected points.
-MAX_ML_CV = 0.25
+MAX_ML_CV = 0.30
 #: Preseason expectation = replacement + MARKET_SHRINK * (realized rank curve - replacement).
 MARKET_SHRINK = 0.75
 
@@ -46,6 +46,10 @@ DEFAULT_GAMES_OTHER = 16.0
 #: Std as a fraction of points when no source provides an uncertainty.
 DEFAULT_CV = 0.22
 MIN_STD_FRACTION = 0.08
+
+#: Sleeper projection keys that are not stat keys (fantasy-point summaries, games, ADP).
+_SLEEPER_SKIP_KEYS = frozenset({"gp", "gms_active", "pts_ppr", "pts_half_ppr", "pts_std"})
+_SLEEPER_SKIP_PREFIXES = ("adp", "pos_adp", "rank_", "pos_rank")
 
 PTS_BRACKETS = ["pts_allow_0", "pts_allow_1_6", "pts_allow_7_13", "pts_allow_14_20", "pts_allow_21_27",
                 "pts_allow_28_34", "pts_allow_35p"]
@@ -67,12 +71,12 @@ _PTS_TABLE: list[list[float]] = [
     [30.3, 0.000, 0.005, 0.036, 0.102, 0.259, 0.305, 0.294],
 ]
 _YDS_TABLE: list[list[float]] = [
-    [305.0, 0.0, 0.059, 0.471, 0.176, 0.235, 0.000, 0.000, 0.059, 0.000],
-    [321.0, 0.0, 0.079, 0.317, 0.250, 0.187, 0.115, 0.048, 0.000, 0.004],
-    [341.0, 0.0, 0.011, 0.292, 0.263, 0.210, 0.158, 0.050, 0.011, 0.004],
-    [360.0, 0.0, 0.013, 0.183, 0.258, 0.259, 0.173, 0.084, 0.022, 0.007],
-    [379.0, 0.0, 0.004, 0.151, 0.200, 0.237, 0.242, 0.112, 0.040, 0.014],
-    [409.0, 0.0, 0.001, 0.062, 0.158, 0.229, 0.259, 0.178, 0.086, 0.028],
+    [282.7, 0.015, 0.152, 0.413, 0.178, 0.171, 0.052, 0.015, 0.000, 0.004],
+    [307.0, 0.005, 0.074, 0.385, 0.242, 0.175, 0.087, 0.020, 0.007, 0.004],
+    [326.5, 0.001, 0.047, 0.314, 0.253, 0.215, 0.113, 0.041, 0.014, 0.002],
+    [344.9, 0.000, 0.036, 0.249, 0.227, 0.236, 0.160, 0.070, 0.016, 0.005],
+    [362.1, 0.000, 0.011, 0.222, 0.215, 0.252, 0.169, 0.081, 0.040, 0.011],
+    [390.0, 0.000, 0.007, 0.106, 0.162, 0.272, 0.252, 0.125, 0.052, 0.024],
 ]
 
 
@@ -98,7 +102,7 @@ def def_bracket_rates(mean_pts_allow: float) -> dict[str, float]:
 def yds_bracket_rates(mean_yds_allow: float) -> dict[str, float]:
     """Per-game probability of each ``yds_allow_*`` bracket for a mean yards allowed."""
     if mean_yds_allow is None or not np.isfinite(mean_yds_allow):
-        mean_yds_allow = 360.0
+        mean_yds_allow = 340.6
     return _interp_table(_YDS_TABLE, YDS_BRACKETS, float(mean_yds_allow))
 
 
@@ -180,15 +184,21 @@ def sleeper_stats_to_projection(stats: Mapping[str, float], engine: ScoringEngin
     """Score a Sleeper season projection line -> ``(points, games, stat_line)``.
 
     Uses ``gp`` when present (else 17). Derived totals that Sleeper may omit are
-    filled (``pass_inc``, ``fga``, ``xpa``, ``fgm_50p``, position reception bonus);
-    per-game threshold bonuses are *not* derived from season totals.
+    filled (``pass_inc``, ``fga``, ``xpa``, ``fgm_50p``, position reception bonus,
+    DEF ``pts_allow_*`` / ``yds_allow_*`` brackets from the season totals when the
+    bracket keys are absent); per-game threshold bonuses are *not* derived.
+
+    Only Sleeper's own fantasy-point summaries (``pts_ppr`` & co.), ``gp`` and the
+    ADP keys are dropped - ``pts_allow`` and its brackets are real stat keys.
     """
     line: dict[str, float] = {}
     for k, v in stats.items():
-        if k in ("gp",) or k.startswith("adp") or k.startswith("pts_") or k in ("gms_active",):
+        if k in _SLEEPER_SKIP_KEYS or k.startswith(_SLEEPER_SKIP_PREFIXES):
             continue
         if _finite(v):
             line[k] = float(v)
+    games = stats.get("gp")
+    games = float(games) if _finite(games) and float(games) > 0 else float(GAMES_PER_TEAM)
     if "pass_att" in line and "pass_cmp" in line:
         line.setdefault("pass_inc", max(0.0, line["pass_att"] - line["pass_cmp"]))
     if "fgm_50p" not in line and ("fgm_50_59" in line or "fgm_60p" in line):
@@ -199,8 +209,15 @@ def sleeper_stats_to_projection(stats: Mapping[str, float], engine: ScoringEngin
         line["xpa"] = line["xpm"] + line["xpmiss"]
     if "rec" in line:
         line.setdefault(f"bonus_rec_{position.lower()}", line["rec"])
-    games = stats.get("gp")
-    games = float(games) if _finite(games) and float(games) > 0 else float(GAMES_PER_TEAM)
+    if position == "DEF":
+        # Sleeper ships the points-allowed brackets but not the yards-allowed ones;
+        # derive whichever bracket family is missing from the season total per game.
+        if "pts_allow" in line and not any(k in line for k in PTS_BRACKETS):
+            for k, v in def_bracket_rates(line["pts_allow"] / games).items():
+                line[k] = v * games
+        if "yds_allow" in line and not any(k in line for k in YDS_BRACKETS):
+            for k, v in yds_bracket_rates(line["yds_allow"] / games).items():
+                line[k] = v * games
     return engine.score(line, position), games, line
 
 
@@ -467,7 +484,13 @@ class Projector:
             return None
         games = row.get("pred_games")
         games = float(games) if _finite(games) else DEFAULT_GAMES.get(pl.position, DEFAULT_GAMES_OTHER)
-        games = float(np.clip(games, 0.0, GAMES_PER_TEAM))
+        games_raw = float(np.clip(games, 0.0, GAMES_PER_TEAM))
+        games = games_raw
+        if pl.position != "DEF" and games < GAMES_SHRINK_TARGET:
+            # the games model is trained on realized seasons (injuries, benchings); for a draft
+            # we want the expectation for a healthy starter, so shrink toward a full season.
+            # This has to reach the season *total*, not just the games label (PROJ-2).
+            games = games + GAMES_SHRINK * (GAMES_SHRINK_TARGET - games)
         points, ppg, line = rates_to_season(rates, games, self.engine, pl.position)
         ppg_ppr = _PPR_ENGINE.score(derive_rate_keys(rates, pl.position), pl.position)
         std_ppg_ppr = row.get("ppg_std_ppr")
@@ -476,7 +499,8 @@ class Projector:
             scale = (ppg / ppg_ppr) if ppg_ppr > 0 and ppg > 0 else 1.0
             std_ppg = float(std_ppg_ppr) * scale
         rookie = bool(_finite(row.get("rookie_flag")) and float(row.get("rookie_flag")) > 0)
-        return {"points": points, "ppg": ppg, "games": games, "line": line, "std_ppg": std_ppg, "rookie": rookie}
+        return {"points": points, "ppg": ppg, "games": games, "games_raw": games_raw, "line": line,
+                "std_ppg": std_ppg, "rookie": rookie}
 
     # -- main ----------------------------------------------------------------------
     def project(self, players: Mapping[str, Player], ml_pred: pd.DataFrame | None = None,
@@ -550,16 +574,10 @@ class Projector:
             return Projection(player_id=pl.player_id, position=pos, points=0.0, std=0.0, ppg=0.0, games=0.0,
                               weekly=[0.0] * season_weeks, flags=["no_data"])
 
-        points, weights = _blend(comps, self.weights)
-        # games: ML and Sleeper only
+        # games: ML (already shrunk toward a healthy season in _ml_source) and Sleeper only
         gvals = {}
         if m is not None:
-            g_ml = float(m["games"])
-            if pos in ("QB", "RB", "WR", "TE", "K") and g_ml < GAMES_SHRINK_TARGET:
-                # the games model is trained on realized seasons (injuries, benchings); for a draft
-                # we want the expectation for a healthy starter, so shrink toward a full season
-                g_ml = g_ml + GAMES_SHRINK * (GAMES_SHRINK_TARGET - g_ml)
-            gvals["ml"] = g_ml
+            gvals["ml"] = float(m["games"])
         if s is not None:
             gvals["sleeper"] = s["games"]
         if gvals:
@@ -568,50 +586,67 @@ class Projector:
             games = DEFAULT_GAMES.get(pos, DEFAULT_GAMES_OTHER)
             flags.append("ecr_only")
         games = float(np.clip(games, 0.0, GAMES_PER_TEAM))
-        ppg = points / games if games > 0 else 0.0
 
-        # std from ML blended with ECR sd in points. The model's ppg std is the
-        # out-of-fold *season-level* error of points per game, so the season total
-        # scales with games (not sqrt(games), which would only cover game-to-game noise).
-        svals: dict[str, float] = {}
+        # uncertainty on the pre-adjustment blend. The model's ppg std is the out-of-fold
+        # *season-level* error of points per game, so the season total scales with games
+        # (not sqrt(games), which would only cover game-to-game noise). The ECR sd (expert
+        # disagreement) is an independent error source, so it adds in quadrature rather
+        # than being averaged in - averaging let a tight consensus hide real outcome risk.
+        points0, _ = _blend(comps, self.weights)
+        ppg0 = points0 / games if games > 0 else 0.0
+        svals: list[float] = []
         if m is not None and m.get("std_ppg") is not None:
-            ml_std = m["std_ppg"] * max(games, 1.0) * (ppg / m["ppg"] if m["ppg"] > 0 and ppg > 0 else 1.0)
-            svals["ml"] = min(ml_std, MAX_ML_CV * max(points, 1.0))
+            ml_std = m["std_ppg"] * max(games, 1.0) * (ppg0 / m["ppg"] if m["ppg"] > 0 and ppg0 > 0 else 1.0)
+            svals.append(min(ml_std, MAX_ML_CV * max(points0, 1.0)))
         if ecr_sd_pts is not None and ecr_sd_pts > 0:
-            svals["ecr"] = ecr_sd_pts
-        std = _blend(svals, self.weights)[0] if svals else DEFAULT_CV * points
-        rookie = pl.is_rookie or bool(m and m.get("rookie"))
+            svals.append(float(ecr_sd_pts))
+        std = math.sqrt(sum(v * v for v in svals)) if svals else DEFAULT_CV * points0
+        # only a genuine first-year player is a rookie: unknown years_exp (every DEF, some
+        # Sleeper veterans) must not inflate std or print a "rookie" flag
+        rookie = pos != "DEF" and (pl.years_exp == 0 or bool(m and m.get("rookie")))
         if rookie:
             std *= 1.25
             flags.append("rookie")
 
         # ---- adjustments (games / points / std) -------------------------------------
+        # Injury / suspension deductions hit the stats-based sources (ML, Sleeper) only:
+        # the market (ECR) already prices a known IR stint, so cutting the blended total
+        # would count it twice.
         status = (pl.injury_status or "").strip()
         st = status.upper()
+        games_adj = games
         if st in ("IR", "PUP", "NFI"):
-            games = max(0.0, games - 6.0)
+            games_adj = max(0.0, games - 6.0)
             if (pl.status or "") == "Injured Reserve" and pl.ecr is None:
-                games *= 0.3
+                games_adj *= 0.3
             flags.append(f"injury:{status}")
         elif st in ("OUT", "DOUBTFUL"):
-            games = max(0.0, games - 1.0)
+            games_adj = max(0.0, games - 1.0)
             flags.append(f"injury:{status}")
         elif st in ("SUS", "SUSPENDED"):
-            games = max(0.0, games - 4.0)
+            games_adj = max(0.0, games - 4.0)
             flags.append(f"injury:{status}")
         elif status:
             flags.append(f"injury:{status}")
+        if games_adj != games:
+            factor = games_adj / games if games > 0 else 0.0
+            for k in ("ml", "sleeper"):
+                if k in comps:
+                    comps[k] *= factor
+            games = games_adj
+        points, weights = _blend(comps, self.weights)
         if pl.depth_chart_order is not None and pl.depth_chart_order >= 3 and pos in ("RB", "WR"):
             if pl.ecr is None or pl.ecr >= 100:
-                ppg *= 0.8
+                points *= 0.8
                 flags.append(f"depth{pl.depth_chart_order}")
         if note is not None:
             r = float(np.clip(note.injury_risk, 0.0, 1.0))
             c = float(np.clip(note.role_certainty, 0.0, 1.0))
             games *= (1.0 - 0.25 * r)
+            points *= (1.0 - 0.25 * r)
             std *= (1.3 - 0.3 * c)
         games = float(np.clip(games, 0.0, GAMES_PER_TEAM))
-        points = ppg * games
+        ppg = points / games if games > 0 else 0.0
         std = max(std, MIN_STD_FRACTION * points)
         floor = max(0.0, points - 0.84 * std)
         ceiling = points + 0.84 * std

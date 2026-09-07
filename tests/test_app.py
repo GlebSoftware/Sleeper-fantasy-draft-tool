@@ -147,3 +147,174 @@ def test_ecr_only_projections_monotone(fixture_players):
         pts = [proj[p.player_id].points for p in group]
         assert pts == sorted(pts, reverse=True)
         assert all(proj[p.player_id].std > 0 and proj[p.player_id].flags == ["ecr_only"] for p in group)
+
+
+# ---------------------------------------------------------------------------
+# review regressions: PROJ-3 (cache fingerprint), R1 (notes reach projections), F5/R7 (prep)
+# ---------------------------------------------------------------------------
+
+import asyncio  # noqa: E402
+import copy  # noqa: E402
+import gzip  # noqa: E402
+import json  # noqa: E402
+
+from draftadvisor.app import prep, projection_fingerprint, rebuild_projections  # noqa: E402
+from draftadvisor.models import ResearchNote  # noqa: E402
+
+
+def _live(settings, league, players_json, projections_json, **kw):
+    return build_context(settings, league, None, sleeper_players=players_json, sleeper_proj=projections_json,
+                         use_model=False, **kw)
+
+
+def test_projection_cache_is_fingerprinted(patched_loaders, players_json, projections_json, league_json):
+    league = parse_league(league_json)
+    settings = Settings(league_id=league.league_id)
+    ctx = _live(settings, league, players_json, projections_json)
+    assert ctx.sources["projections"] != "cache"
+    chase = ctx.projections["7564"]
+    assert _live(settings, league, players_json, projections_json).sources["projections"] == "cache"
+    # the offline path must not be served a live build ...
+    off = build_context(settings, league, None, offline=True, sleeper_players=players_json, use_model=False)
+    assert off.sources["projections"] != "cache" and "sleeper" not in off.projections["7564"].weights
+    # ... and the live path must never be served the offline build
+    live2 = _live(settings, league, players_json, projections_json)
+    assert live2.sources["projections"] != "cache" and live2.projections["7564"].points == pytest.approx(chase.points)
+    # edited scoring settings rebuild
+    league2 = parse_league(league_json)
+    league2.scoring_settings = {**league2.scoring_settings, "rec": 1.5}
+    assert _live(settings, league2, players_json, projections_json).sources["projections"] != "cache"
+    # an injury designation that appeared during the day rebuilds (and lowers the games)
+    pj = copy.deepcopy(players_json)
+    pj["7564"]["injury_status"] = "IR"
+    hurt = _live(settings, league, pj, projections_json)
+    assert hurt.sources["projections"] != "cache" and hurt.projections["7564"].games < chase.games
+    # a changed Sleeper projection line for a relevant player rebuilds too
+    pr = copy.deepcopy(projections_json)
+    pr["7564"] = {**pr["7564"], "gp": 3, "rec": 5, "rec_yd": 40, "rec_td": 0}
+    short = _live(settings, league, players_json, pr)
+    assert short.sources["projections"] != "cache" and short.projections["7564"].points < chase.points
+    # use_model is part of the key
+    assert build_context(settings, league, None, sleeper_players=players_json, sleeper_proj=projections_json,
+                         use_model=True).sources["projections"] != "cache"
+
+
+def test_load_cached_projections_checks_fingerprint(tmp_path, players_json, league_json):
+    p = tmp_path / "projections_x.json.gz"
+    proj = {"a": Projection("a", "RB", 200.0, 30.0, 12.0, 16.5, 175.0, 225.0)}
+    save_projections(p, proj, {"league_id": "x", "fingerprint": "abc"})
+    assert load_cached_projections(p, fingerprint="abc") is not None
+    assert load_cached_projections(p, fingerprint="xyz") is None
+    assert load_cached_projections(p) is not None                       # no fingerprint requested
+    save_projections(p, proj, {"league_id": "x"})                       # pre-fingerprint cache file
+    assert load_cached_projections(p, fingerprint="abc") is None
+    # the fingerprint itself reacts to every input it covers
+    league = parse_league(league_json)
+    players = players_from_sleeper(players_json)
+    base = dict(sleeper_proj=None, sleeper_players=players_json, use_model=True, notes=None)
+    fp = projection_fingerprint(league, players, **base)
+    assert fp == projection_fingerprint(league, players, **base)
+    assert fp != projection_fingerprint(league, players, **{**base, "use_model": False})
+    assert fp != projection_fingerprint(league, players, **{**base, "sleeper_proj": {"7564": {"rec": 1}}})
+    note = ResearchNote("7564", "x", injury_risk=0.5, role_certainty=0.5, upside="", downside="")
+    assert fp != projection_fingerprint(league, players, **{**base, "notes": {"7564": note}})
+    players["7564"].injury_status = "Out"
+    assert fp != projection_fingerprint(league, players, **base)
+
+
+class _StubResearcher(app._DisabledResearcher):
+    """Offline researcher: ``load_notes`` returns fixed notes; ``research_players`` writes one."""
+
+    def __init__(self, notes=None, enabled=False, injury_risk=1.0):
+        self.notes = dict(notes or {})
+        self.enabled = enabled
+        self.injury_risk = injury_risk
+        self.calls: list[dict] = []
+        self.seen_projections: dict = {}
+
+    def load_notes(self):
+        return dict(self.notes)
+
+    async def research_players(self, players, projections=None, **kw):
+        self.calls.append(kw)
+        self.seen_projections = dict(projections or {})
+        if kw.get("progress") is not None:
+            kw["progress"](1, len(players), players[0].name)
+        pl = players[0]
+        note = ResearchNote(pl.player_id, "hurt", injury_risk=self.injury_risk, role_certainty=1.0, upside="", downside="")
+        self.notes[pl.player_id] = note
+        return {pl.player_id: note}
+
+
+def test_rebuild_projections_applies_notes_and_recaches(patched_loaders, players_json, projections_json, league_json,
+                                                       monkeypatch):
+    league = parse_league(league_json)
+    settings = Settings(league_id=league.league_id)
+    ctx = _live(settings, league, players_json, projections_json)
+    before = ctx.projections["7564"]
+    old_advisor, old_proj = ctx.advisor, ctx.projections
+    note = ResearchNote("7564", "torn ACL", injury_risk=1.0, role_certainty=1.0, upside="", downside="")
+    assert rebuild_projections(ctx, {"7564": note}) is ctx
+    after = ctx.projections["7564"]
+    assert after.games == pytest.approx(before.games * 0.75) and after.points < before.points
+    assert ctx.notes["7564"] is note and ctx.sources["notes"] == 1
+    assert ctx.advisor is not old_advisor and ctx.projections is not old_proj
+    assert old_proj["7564"].points == pytest.approx(before.points)   # the old snapshot is untouched
+    # the draft command (refresh=False) finds the re-blended numbers in the cache when the note is on disk
+    monkeypatch.setattr(app, "_make_researcher", lambda s: _StubResearcher({"7564": note}))
+    ctx2 = _live(settings, league, players_json, projections_json)
+    assert ctx2.sources["projections"] == "cache" and ctx2.projections["7564"].points == pytest.approx(after.points)
+    # ... and never a stale one when the notes differ
+    monkeypatch.setattr(app, "_make_researcher", lambda s: _StubResearcher())
+    ctx3 = _live(settings, league, players_json, projections_json)
+    assert ctx3.sources["projections"] != "cache" and ctx3.projections["7564"].points == pytest.approx(before.points)
+
+
+@pytest.fixture
+def prep_env(patched_loaders, fixture_players, monkeypatch):
+    """prep() offline: no canonical download, fixture universe, and a recording SleeperClient."""
+    import draftadvisor.data.nflverse as nv
+    import draftadvisor.sleeper.client as sc
+
+    contacts: list[str] = []
+
+    class _RecordingClient:
+        def __init__(self, *a, **k):
+            contacts.append("SleeperClient")
+            raise RuntimeError("no network in tests")
+
+    monkeypatch.setattr(sc, "SleeperClient", _RecordingClient)
+    monkeypatch.setattr(nv, "load_canonical", lambda *a, **k: pd.DataFrame())
+    monkeypatch.setattr(app, "_build_players", lambda cw, season, sp: (dict(fixture_players), "offline"))
+    return contacts
+
+
+def test_prep_offline_never_contacts_sleeper(prep_env):
+    msgs: list[str] = []
+    ctx = asyncio.run(prep(Settings(), train=False, progress=msgs.append, offline=True))
+    assert prep_env == [] and isinstance(ctx, AppContext) and ctx.projections
+    assert any("Sleeper skipped" in m for m in msgs) and not any("contacting Sleeper" in m for m in msgs)
+    # without offline the client is opened (and its failure is swallowed as before)
+    ctx2 = asyncio.run(prep(Settings(), train=False, offline=False))
+    assert prep_env == ["SleeperClient"] and ctx2.projections
+
+
+def test_prep_research_reblends_and_reports_progress(prep_env, monkeypatch):
+    stub = _StubResearcher(enabled=True, injury_risk=1.0)
+    monkeypatch.setattr(app, "_make_researcher", lambda s: stub)
+    msgs: list[str] = []
+    ctx = asyncio.run(prep(Settings(), research=True, train=False, top=5, progress=msgs.append, offline=True))
+    assert stub.calls and stub.calls[0].get("progress") is not None                 # R7
+    assert any(m.startswith("research 1/5") for m in msgs)
+    (pid, note), = stub.notes.items()
+    assert ctx.sources["research"] == 1 and ctx.notes[pid] is note
+    pre = stub.seen_projections[pid]                                                 # projections before research
+    assert ctx.projections[pid].games == pytest.approx(pre.games * 0.75)             # R1: the note reached points
+    assert ctx.projections[pid].points < pre.points
+    with gzip.open(projections_cache_path("default"), "rt", encoding="utf-8") as fh:
+        payload = json.load(fh)
+    assert payload["meta"]["notes"] == 1
+    assert payload["projections"][pid]["games"] == pytest.approx(ctx.projections[pid].games)
+    # a later build with the same notes on disk is served from that cache
+    ctx2 = build_context(Settings(), None, None, offline=True, use_model=True)
+    assert ctx2.sources["projections"] == "cache" and ctx2.projections[pid].games == pytest.approx(ctx.projections[pid].games)

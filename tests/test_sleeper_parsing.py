@@ -261,3 +261,54 @@ def test_state_from_sleeper_spectator(draft_json, picks_json):
     assert st.my_slot is None and st.my_user_id is None
     assert st.my_next_pick_no is None and not st.is_my_turn
     assert len(st.managers) == 12  # placeholders from draft_order
+
+
+# ---------------------------------------------------------------------------
+# Review findings: keepers (F2), rostered players / player_type (F3)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_draft_player_type(draft_json):
+    assert parse_draft(draft_json).player_type == 0
+    raw = copy.deepcopy(draft_json)
+    raw["settings"]["player_type"] = "1"
+    assert parse_draft(raw).player_type == 1
+    raw["settings"].pop("player_type")
+    assert parse_draft(raw).player_type == 0
+
+
+def test_rostered_player_ids_from_rosters(rosters_json):
+    from draftadvisor.sleeper.parsing import rostered_player_ids
+
+    rosters = copy.deepcopy(rosters_json)
+    rosters[0]["players"] = ["4034", 6794]
+    rosters[0]["reserve"] = ["9509"]
+    rosters[1]["taxi"] = ["11111"]
+    rosters[1]["players"] = None
+    ids = rostered_player_ids(rosters)
+    assert ids == {"4034", "6794", "9509", "11111"}
+    assert rostered_player_ids(None) == set() and rostered_player_ids([{"roster_id": 1}]) == set()
+
+
+def test_state_from_sleeper_carries_rostered_ids(draft_json, picks_json, users_json, rosters_json):
+    rosters = copy.deepcopy(rosters_json)
+    rosters[2]["players"] = ["4034", "6794"]
+    rosters[2]["reserve"] = ["9509"]
+    st = state_from_sleeper(draft_json, picks_json, users_raw=users_json, rosters_raw=rosters, username="gleb")
+    assert st.rostered_ids == {"4034", "6794", "9509"}
+    assert st.unavailable_ids == st.drafted_ids | {"4034", "6794", "9509"}
+    # redraft league: empty rosters -> nothing extra is excluded
+    assert state_from_sleeper(draft_json, picks_json, users_raw=users_json, rosters_raw=rosters_json).rostered_ids == set()
+
+
+def test_state_from_sleeper_keeper_at_my_pick_number(draft_json, picks_json, users_json, rosters_json):
+    """F2: a keeper on the board at #48 (slot 1's round-4 pick) is skipped in my_future_picks."""
+    picks = copy.deepcopy(picks_json)
+    keeper = copy.deepcopy(picks[0])
+    keeper.update({"pick_no": 48, "round": 4, "draft_slot": 1, "player_id": "keeper-1", "is_keeper": True})
+    st = state_from_sleeper(draft_json, picks + [keeper], users_raw=users_json, rosters_raw=rosters_json,
+                            username="gleb")
+    assert st.next_pick_no == 21
+    assert 48 not in st.my_future_picks()
+    assert st.my_future_picks()[:4] == [24, 25, 49, 72]
+    assert "keeper-1" in st.drafted_ids

@@ -16,7 +16,7 @@ from ..models import LeagueSettings, Player, Projection
 
 log = logging.getLogger(__name__)
 
-__all__ = ["FLEX_SHARES", "starter_demand", "replacement_levels", "vorp", "tiers"]
+__all__ = ["FLEX_SHARES", "starter_demand", "remaining_demand", "replacement_levels", "vorp", "tiers"]
 
 #: How each multi-position starting slot is typically filled, by position.
 FLEX_SHARES: dict[str, dict[str, float]] = {
@@ -88,19 +88,41 @@ def _points_by_position(
     return by_pos
 
 
+def remaining_demand(demand: float, drafted: int, remaining_fraction: float = 1.0) -> float:
+    """Players the league still 'needs' at a position, given ``drafted`` already taken.
+
+    ``demand - drafted`` is the natural count, but leagues draft more RB/WR than the
+    demand model allows for, so it would hit zero by the middle rounds and make the
+    best available player the replacement level.  The floor ``demand × remaining
+    fraction of the draft`` keeps the level meaningful: if the draft goes as the
+    demand model expects both terms agree (and the level is the full-pool one), an
+    over-drafted position drifts down towards what the waiver wire will really
+    offer, and an under-drafted position keeps the full-pool level.
+    """
+    frac = min(1.0, max(0.0, float(remaining_fraction)))
+    return max(0.0, float(demand) - int(drafted), float(demand) * frac)
+
+
 def replacement_levels(
     projections: Mapping[str, Projection],
     players: Mapping[str, Player],
     league: LeagueSettings,
     available: Iterable[str | Player] | None = None,
+    drafted_counts: Mapping[str, int] | None = None,
+    remaining_fraction: float = 1.0,
 ) -> dict[str, float]:
     """Points of the player at rank ``round(demand) + 1`` per position.
 
     Computed on ``available`` (ids or Players) when given, else on every projected
     player.  Positions with fewer players than the demand use the last player
-    (or 0.0 when the pool is empty).
+    (or 0.0 when the pool is empty).  With ``drafted_counts`` (players already
+    drafted per position) and ``remaining_fraction`` (share of the draft still to
+    come) the demand is reduced to :func:`remaining_demand` so the level does not
+    sink into deep-bench filler as the available pool shrinks.
     """
     demand = starter_demand(league)
+    if drafted_counts is not None:
+        demand = {p: remaining_demand(d, drafted_counts.get(p, 0), remaining_fraction) for p, d in demand.items()}
     by_pos = _points_by_position(projections, players, available)
     return {pos: _level_at(by_pos[pos], demand[pos]) for pos in SKILL_POSITIONS}
 

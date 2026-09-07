@@ -259,3 +259,90 @@ def test_assign_roster_slots_fills_dedicated_then_flex_then_bench():
     assert by_slot["K"] == ["k1"]
     assert by_slot["QB"] == [None]
     assert "BN" not in by_slot or all(x is None for x in by_slot["BN"])
+
+
+# ---------------------------------------------------------------------------
+# Review findings: traded picks (F5), staleness (F1), pick clock (F3), stderr redirect (F1)
+# ---------------------------------------------------------------------------
+
+
+def _traded_state() -> DraftState:
+    """Round-3 pick of slot 1 traded to slot 2 (roster 2) and made by roster 2."""
+    state = make_state(8)                                  # picks 1..8 made, #9 = round 3 slot 1
+    d = state.draft
+    d.traded_picks[(3, 1)] = 2
+    pl = PLAYERS["te2"]
+    state.picks.append(Pick(9, 3, 1, "te2", roster_id=2, metadata={"first_name": "Trey", "last_name": "McBride",
+                                                                     "position": "TE", "team": pl.team}))
+    return state
+
+
+def test_recent_picks_attribute_traded_pick_to_drafter():
+    state = _traded_state()
+    assert state.my_slot == 2 and state.slot_of_pick(state.picks[-1]) == 2
+    console = _console()
+    Dashboard(console, projections=PROJ).update(state, make_rec(state), PLAYERS, {})
+    text = console.export_text()
+    line = next(l for l in text.splitlines() if "McBride" in l and "Recent" not in l)
+    assert "Team 2" in line and "Team 1" not in line
+    plain = render_text(make_rec(state), state, PLAYERS)
+    assert "#9 Team 2: Trey McBride" in plain
+
+
+def test_header_shows_stale_and_error():
+    from draftadvisor.ui.dashboard import staleness
+
+    state = make_state(5)
+    now = time.time()
+    assert staleness(state, {}) is None
+    assert staleness(state, {"stale_since": now - 37}, now) == pytest.approx(37.0)
+    assert staleness(state, {"last_poll_at": now - 3}, now) is None
+    assert staleness(state, {"last_poll_at": now - 40}, now) == pytest.approx(40.0)
+    state.draft.status = "pre_draft"
+    assert staleness(state, {"last_poll_at": now - 40}, now) is None
+    state.draft.status = "drafting"
+    assert staleness(state, {"stale_since": None, "last_poll_at": now - 1}, now) is None
+    _, _, text = _render(status={"latency_ms": 120, "claude": "off", "stale_since": now - 37,
+                                 "last_error": "ConnectError: boom"})
+    assert "stale 37s" in text and "ConnectError" in text
+    _, _, text2 = _render(status={"latency_ms": 120, "claude": "off", "stale_since": None, "last_error": None})
+    assert "stale" not in text2
+
+
+def test_countdown_uses_sleeper_last_picked_and_pauses():
+    from draftadvisor.ui.dashboard import _countdown, clock_start
+
+    state = make_state(6)
+    assert state.is_my_turn and state.draft.pick_timer == 30
+    now = time.time()
+    # the tool noticed the turn 5 s ago but Sleeper's clock started 20 s ago (restart mid-turn)
+    state.draft.last_picked = int((now - 20) * 1000)
+    assert clock_start(state, now - 5) == pytest.approx(now - 20, abs=0.05)
+    assert 9 <= _countdown(state, {"turn_started_at": now - 5}) <= 11
+    assert _countdown(state, {}) is None                   # turn not noticed by the loop
+    # a normal turn: last_picked is later than the noticed time only when we were early - keep the earlier one
+    state.draft.last_picked = int((now - 2) * 1000)
+    assert 24 <= _countdown(state, {"turn_started_at": now - 5}) <= 26
+    # paused draft: no countdown
+    state.draft.status = "paused"
+    assert _countdown(state, {"turn_started_at": now - 5}) is None
+    state.draft.status = "drafting"
+    # a last_picked far older than the clock (draft paused / resumed) cannot be this pick's clock
+    state.draft.last_picked = int((now - 600) * 1000)
+    assert 24 <= _countdown(state, {"turn_started_at": now - 5}) <= 26
+    # pick #1: no previous pick -> noticed time
+    first = make_state(0)
+    first.draft.last_picked = int((now - 20) * 1000)
+    assert clock_start(first, now - 5) == pytest.approx(now - 5, abs=0.05)
+    state.draft.last_picked = int((now - 20) * 1000)
+    _, _, text = _render(n_picks=6, status={"turn_started_at": now - 5})
+    assert "s left" in text
+
+
+def test_live_redirects_stderr_above_the_display():
+    db = Dashboard(_console(), projections=PROJ)
+    db.start()
+    try:
+        assert db._live is not None and db._live._redirect_stderr is True
+    finally:
+        db.stop()

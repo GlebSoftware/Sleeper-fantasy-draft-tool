@@ -24,8 +24,10 @@ log = logging.getLogger(__name__)
 __all__ = [
     "optimal_lineup",
     "starter_thresholds",
+    "starter_displacements",
     "bench_usefulness",
     "bench_depth_factor",
+    "bench_value",
     "marginal_lineup_value",
     "roster_summary",
     "summarize_roster",
@@ -141,21 +143,25 @@ def optimal_lineup(
     return assignment, total, bench
 
 
-def starter_thresholds(
+def starter_displacements(
     assignment: Mapping[int, tuple[str, float]], slots: Sequence[str]
-) -> dict[str, float]:
-    """Displacement threshold per position for an optimal lineup.
+) -> dict[str, tuple[float, int | None]]:
+    """``(threshold, displaced slot index)`` per position for an optimal lineup.
 
     ``assignment`` maps slot index -> ``(position, points)`` of its occupant.  For a
     candidate at position ``p`` the lineup gain is ``max(0, x - t_p)``; ``t_p`` is 0
-    when a reachable slot is empty and ``inf`` when ``p`` can start nowhere.
+    when a reachable slot is empty and ``inf`` when ``p`` can start nowhere.  The
+    slot index is that of the weakest reachable starter — the player who goes to
+    the bench when the candidate starts — or ``None`` when the candidate would
+    fill an empty slot (or can start nowhere).
     """
     elig = [SLOT_ELIGIBILITY.get(s, frozenset()) for s in slots]
-    out: dict[str, float] = {}
+    out: dict[str, tuple[float, int | None]] = {}
     for p in SKILL_POSITIONS:
         reach = {p}
         seen: set[int] = set()
         t = _INF
+        weakest: int | None = None
         frontier = True
         while frontier:
             frontier = False
@@ -165,17 +171,24 @@ def starter_thresholds(
                 seen.add(i)
                 occ = assignment.get(i)
                 if occ is None:
-                    t = 0.0
+                    t, weakest = 0.0, None
                     break
                 if occ[1] < t:
-                    t = occ[1]
+                    t, weakest = occ[1], i
                 if occ[0] not in reach:
                     reach.add(occ[0])
                     frontier = True
             if t == 0.0:
                 break
-        out[p] = t
+        out[p] = (t, weakest)
     return out
+
+
+def starter_thresholds(
+    assignment: Mapping[int, tuple[str, float]], slots: Sequence[str]
+) -> dict[str, float]:
+    """Displacement threshold per position (see :func:`starter_displacements`)."""
+    return {p: t for p, (t, _) in starter_displacements(assignment, slots).items()}
 
 
 # ---------------------------------------------------------------------------
@@ -224,6 +237,36 @@ def phantom_starters(league: LeagueSettings, replacement: Mapping[str, float]) -
 
 def is_phantom(player_id: str) -> bool:
     return player_id.startswith(_PHANTOM_PREFIX)
+
+
+def bench_value(
+    bench_ids: Sequence[str],
+    pos_of: Mapping[str, str],
+    pts_of: Mapping[str, float],
+    league: LeagueSettings,
+    bench_discount: float,
+    replacement: Mapping[str, float] | None = None,
+) -> float:
+    """Discounted value of a bench, priced the way the advisor prices bench picks.
+
+    Each benched player is worth ``bench_discount`` × bench usefulness of his
+    position × the depth factor for the same-position players ahead of him × his
+    points over the position's replacement level (0 when below it).  ``bench_ids``
+    should be in points-descending order (what :func:`optimal_lineup` returns);
+    unknown positions (IDP, ``UNK``) and K/DEF add nothing.
+    """
+    rep = replacement or {}
+    seen: dict[str, int] = {}
+    total = 0.0
+    for pid in bench_ids:
+        if is_phantom(pid):
+            continue
+        pos = pos_of.get(pid, "UNK")
+        n_before = seen.get(pos, 0)
+        seen[pos] = n_before + 1
+        over = max(0.0, float(pts_of.get(pid, 0.0)) - float(rep.get(pos, 0.0)))
+        total += bench_discount * bench_usefulness(pos, league) * bench_depth_factor(n_before, pos) * over
+    return total
 
 
 def marginal_lineup_value(

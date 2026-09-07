@@ -69,3 +69,12 @@ def test_mixed_offense_defense_frame_no_bracket_leak():
     df = pd.DataFrame([{"position": "WR", "rec": 3}, {"position": "DEF", "pts_allow": 0, "yds_allow": 50}])
     ScoringEngine.add_derived_keys(df)
     assert e.score_frame(df).tolist() == [3.0, 15.0]
+
+
+def test_stat_key_lists_consistent():
+    """DS-3: advertised derivable keys include the 40+ play counts and exclude the TD-distance keys."""
+    from draftadvisor.scoring.engine import NON_DERIVABLE_STAT_KEYS, SLEEPER_STAT_KEYS
+    assert {"rec_40p", "rush_40p", "pass_cmp_40p"} <= set(SLEEPER_STAT_KEYS)
+    assert {"rec_td_40p", "rush_td_50p", "pass_td_40p"} <= set(NON_DERIVABLE_STAT_KEYS)
+    assert not set(SLEEPER_STAT_KEYS) & set(NON_DERIVABLE_STAT_KEYS)
+    assert len(set(SLEEPER_STAT_KEYS)) == len(SLEEPER_STAT_KEYS)

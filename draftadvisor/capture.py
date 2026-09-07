@@ -461,6 +461,12 @@ class LeagueSnapshot:
                 who = self.managers.get(self.my_user_id or "")
                 label = (who.team_name or who.display_name) if who else "you"
                 t2.add_row("You", f"slot {self.my_slot} ({label}, roster {self.my_roster_id}) — picks {mine}")
+            elif self.my_user_id is not None and not dr.draft_order:
+                who = self.managers.get(self.my_user_id)
+                label = (who.team_name or who.display_name) if who else self.my_user_id
+                t2.add_row("You", Text(f"{label} — draft order not set yet; your slot and pick numbers "
+                                       "resolve when the commissioner sets the order / the draft starts",
+                                       style="yellow"))
             else:
                 t2.add_row("You", "[red]not identified — pass --username / --user-id / --slot[/red]")
         else:
@@ -526,7 +532,7 @@ async def capture_league(client, league_id: str | None = None, draft_id: str | N
     ``client`` is a :class:`draftadvisor.sleeper.client.SleeperClient` (or anything with the same
     async ``get_*`` methods). Either ``league_id`` or ``draft_id`` is required.
     """
-    from .sleeper.client import SleeperNotFound
+    from .sleeper.client import SleeperAPIError
     from .sleeper.parsing import parse_draft, parse_league, parse_managers, parse_picks, resolve_my_slot
 
     if not league_id and not draft_id:
@@ -539,6 +545,15 @@ async def capture_league(client, league_id: str | None = None, draft_id: str | N
         log.info("nfl state unavailable: %s", e)
         raw["state"] = {}
 
+    async def optional(name: str, coro, default):
+        """Optional endpoints degrade like the poller's ``_fetch_optional``: a 404 *or* a 5xx / 429
+        that exhausted the client's retries must not discard the whole capture."""
+        try:
+            return await coro
+        except SleeperAPIError as e:
+            log.warning("%s unavailable (%s); continuing without it", name, e)
+            return default
+
     draft_raw: dict | None = None
     if draft_id:
         draft_raw = await client.get_draft(draft_id)
@@ -549,18 +564,9 @@ async def capture_league(client, league_id: str | None = None, draft_id: str | N
     drafts_raw: list[dict] = []
     if league_id:
         league_raw = await client.get_league(league_id)
-        try:
-            users_raw = await client.get_league_users(league_id)
-        except SleeperNotFound:
-            users_raw = []
-        try:
-            rosters_raw = await client.get_league_rosters(league_id)
-        except SleeperNotFound:
-            rosters_raw = []
-        try:
-            drafts_raw = await client.get_league_drafts(league_id)
-        except SleeperNotFound:
-            drafts_raw = []
+        users_raw = await optional("league users", client.get_league_users(league_id), []) or []
+        rosters_raw = await optional("league rosters", client.get_league_rosters(league_id), []) or []
+        drafts_raw = await optional("league drafts", client.get_league_drafts(league_id), []) or []
         if draft_raw is None:
             chosen = _pick_draft(drafts_raw, draft_id or league_raw.get("draft_id"), int(league_raw.get("season") or season))
             if chosen is not None:
@@ -572,14 +578,8 @@ async def capture_league(client, league_id: str | None = None, draft_id: str | N
     traded_raw: list[dict] = []
     picks_raw: list[dict] = []
     if draft_raw is not None and draft_id:
-        try:
-            traded_raw = await client.get_traded_picks(draft_id)
-        except SleeperNotFound:
-            traded_raw = []
-        try:
-            picks_raw = await client.get_draft_picks(draft_id)
-        except SleeperNotFound:
-            picks_raw = []
+        traded_raw = await optional("traded picks", client.get_traded_picks(draft_id), []) or []
+        picks_raw = await optional("draft picks", client.get_draft_picks(draft_id), []) or []
     raw.update({"league": league_raw, "draft": draft_raw, "users": users_raw, "rosters": rosters_raw,
                 "traded_picks": traded_raw, "picks": picks_raw, "drafts": drafts_raw})
 
@@ -589,10 +589,21 @@ async def capture_league(client, league_id: str | None = None, draft_id: str | N
     picks = parse_picks(picks_raw)
     my_uid, my_slot = (None, None)
     if draft:
-        my_uid, my_slot = resolve_my_slot(draft, managers, username=username, user_id=user_id, slot=slot)
+        # ``users`` lets a Sleeper *username* that differs from the display name resolve too
+        my_uid, my_slot = resolve_my_slot(draft, managers, username=username, user_id=user_id, slot=slot,
+                                          users=users_raw)
         if (username or user_id) and my_slot is None:
-            names = ", ".join(sorted(f"{m.display_name}" + (f" ({m.team_name})" if m.team_name else "") for m in managers.values()))
-            raise ValueError(f"could not find {username or user_id!r} in the draft order. Managers: {names}")
+            names = ", ".join(sorted(f"{m.display_name}" + (f" ({m.team_name})" if m.team_name else "")
+                                     for m in managers.values()))
+            if draft.draft_order:
+                # the order is published and the user is not in it: a typo or the wrong league
+                raise ValueError(f"could not find {username or user_id!r} in the draft order. Managers: {names}")
+            if my_uid is None and managers:
+                # no order yet, but the league's members are known and the user is not one of them
+                raise ValueError(f"could not find {username or user_id!r} among the league's managers: {names}")
+            # order not set yet (typical before the draft starts): keep the identity, resolve the slot later
+            log.info("draft order not set yet for draft %s; slot for %r resolves when the draft starts",
+                     draft.draft_id, username or user_id)
     my_roster = draft.original_roster_for_slot(my_slot) if (draft and my_slot is not None) else None
     my_picks = draft.picks_for_slot(my_slot) if (draft and my_slot is not None) else []
     snap = LeagueSnapshot(

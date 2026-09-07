@@ -1,0 +1,11 @@
+data/
+tests/
+scripts/
+.venv/
+venv/
+*.pkl
+*.csv
+*.csv.gz
+__pycache__/
+.pytest_cache/
+DESIGN.md

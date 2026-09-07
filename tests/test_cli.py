@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import time
 from pathlib import Path
 
 import pytest
@@ -299,3 +300,225 @@ def test_mock_auto_real_offline_universe(capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "Mock draft complete" in out and "Your lineup ranks" in out
+
+
+# ---------------------------------------------------------------------------
+# Review findings: poll errors reach the UI (F1), countdown seed (F3), not-found (F6), --poll (F7),
+# plain text output (F9), global flags (F10), research progress (R7), prep --offline (F5)
+# ---------------------------------------------------------------------------
+
+
+class ErrorPoller:
+    """Poller-like source: one state, then a run of failures reported through on_error, then a recovery."""
+
+    def __init__(self):
+        self.last_latency_ms = 120.0
+        self.last_error = None
+        self.poll_count = 1
+        self.last_poll_at = None
+
+    async def run(self, on_update, stop=None, on_error=None):
+        self.last_poll_at = time.time()
+        await on_update(make_state(3))
+        for _ in range(3):
+            self.poll_count += 1
+            self.last_error = "SleeperAPIError: HTTP 503"
+            if on_error is not None:
+                r = on_error(RuntimeError("HTTP 503"))
+                if asyncio.iscoroutine(r):
+                    await r
+            await asyncio.sleep(0.02)
+        self.last_error = None
+        self.last_latency_ms = 250.0
+        self.poll_count += 1
+        self.last_poll_at = time.time()
+        await asyncio.sleep(0.03)
+        await on_update(make_state(5))
+        return make_state(5)
+
+
+class RecordingDashboard(FakeDashboard):
+    """Also keeps the status of every refresh (the error path refreshes: there is no new state to update with)."""
+
+    def __init__(self):
+        super().__init__()
+        self.refresh_status = []
+
+    def refresh(self, status=None):
+        super().refresh(status)
+        self.refresh_status.append(dict(status or {}))
+
+
+async def test_loop_reports_poll_errors_and_recovery_to_dashboard():
+    advisor, dashboard = FakeAdvisor(), RecordingDashboard()
+    status = {}
+    loop = DraftLoop(advisor, PLAYERS, dashboard, status=status, refresh_seconds=0.01)
+    await loop.run(ErrorPoller())
+    assert loop.status is status                       # shared by reference (the web server reads it)
+    # the errors reached the dashboard while no new state arrived ...
+    seen = dashboard.refresh_status
+    assert any(u.get("last_error") and "503" in str(u["last_error"]) for u in seen), seen
+    assert any(u.get("stale_since") for u in seen)
+    # ... and were cleared again after the recovery (None, not merely absent, so a refresh drops them)
+    assert status["last_error"] is None and status["stale_since"] is None
+    assert status["latency_ms"] == 250.0 and status["poll_count"] == 5
+    assert not dashboard.updates[-1][2].get("last_error")
+
+
+async def test_loop_tick_pulls_source_stats_between_updates():
+    """F1: latency / errors appear on the 1 s tick, not only when a new state arrives."""
+    class Quiet:
+        last_latency_ms = 10.0
+        last_error = None
+        poll_count = 1
+        last_poll_at = None
+
+        async def run(self, on_update, stop=None, on_error=None):
+            await on_update(make_state(3))
+            self.last_latency_ms, self.last_error, self.poll_count = 9000.0, "ConnectError: no route", 7
+            await asyncio.sleep(0.06)
+            return make_state(3)
+
+    dashboard = FakeDashboard()
+    loop = DraftLoop(FakeAdvisor(), PLAYERS, dashboard, refresh_seconds=0.01)
+    await loop.run(Quiet())
+    assert loop.status["latency_ms"] == 9000.0 and loop.status["poll_count"] == 7
+    assert "ConnectError" in loop.status["last_error"] and loop.status["stale_since"]
+
+
+async def test_loop_no_tui_prints_poll_errors():
+    out = []
+    loop = DraftLoop(FakeAdvisor(), PLAYERS, None, tui=False, out=out.append)
+    await loop.run(ErrorPoller())
+    assert any("poll error" in s and "503" in s for s in out)
+
+
+async def test_track_turn_seeds_countdown_from_last_picked():
+    loop = DraftLoop(FakeAdvisor(), PLAYERS, None, tui=False, out=lambda s: None)
+    state = make_state(6)
+    assert state.is_my_turn
+    state.draft.last_picked = int((time.time() - 20) * 1000)
+    await loop.handle(state)
+    assert loop.status["turn_started_at"] == pytest.approx(time.time() - 20, abs=0.5)
+
+
+def test_not_found_is_not_a_network_error(monkeypatch, capsys):
+    from draftadvisor.sleeper.client import SleeperAPIError, SleeperNotFound
+
+    nf = SleeperNotFound("not found", status_code=404, url="https://api.sleeper.app/v1/draft/12345")
+    assert cli._is_not_found_error(nf) and not cli._is_network_error(nf)
+    assert cli._is_not_found_error(SleeperAPIError("bad request", status_code=400))
+    assert cli._is_network_error(SleeperAPIError("HTTP 503", status_code=503))
+    assert cli._is_network_error(SleeperAPIError("HTTP 429", status_code=429))
+
+    async def boom(*a, **k):
+        raise nf
+
+    monkeypatch.setattr(cli, "_draft_async", boom)
+    rc = main(["draft", "--draft", "12345"])
+    out = capsys.readouterr().out
+    assert rc == cli.EXIT_USAGE
+    assert "Sleeper has no draft 12345" in out and "draftadvisor ids" in out
+    assert "Could not reach" not in out
+
+
+def test_poll_is_clamped_to_minimum():
+    for raw in ("0", "-1", "0.1"):
+        args = build_parser().parse_args(["draft", "--draft", "D", "--poll", raw])
+        assert cli._settings_from_args(args).poll_seconds == cli.MIN_POLL_SECONDS
+    args = build_parser().parse_args(["draft", "--draft", "D", "--poll", "3"])
+    assert cli._settings_from_args(args).poll_seconds == 3.0
+    args = build_parser().parse_args(["draft", "--draft", "D"])
+    assert cli._settings_from_args(args).poll_seconds == 2.0
+
+
+def test_plain_printer_ignores_rich_markup():
+    console = Console(record=True, file=io.StringIO(), width=120, force_terminal=False, color_system=None)
+    out = cli._plain_printer(console)
+    out("note [source] here and a stray [/x] tag")     # would drop text / raise MarkupError with markup on
+    assert "note [source] here and a stray [/x] tag" in console.export_text()
+
+
+@pytest.mark.parametrize("argv", [
+    ["mock", "--offline"],
+    ["--offline", "mock"],
+    ["draft", "--draft", "D", "--offline"],
+    ["prep", "--offline", "--no-train"],
+])
+def test_global_flags_accepted_after_subcommand(argv):
+    args = build_parser().parse_args(argv)
+    assert args.offline is True
+
+
+def test_global_flags_after_subcommand_values():
+    args = build_parser().parse_args(["draft", "--draft", "D", "-vv", "--home", "/tmp/y", "--season", "2025"])
+    assert args.verbose == 2 and args.home == "/tmp/y" and args.season == 2025 and args.offline is False
+    args = build_parser().parse_args(["-v", "--home", "/tmp/z", "mock"])
+    assert args.verbose == 1 and args.home == "/tmp/z" and args.season is None and args.offline is False
+    assert main(["draft", "--draft", "D", "--offline"]) == cli.EXIT_USAGE      # refused, not an argparse error
+
+
+class _RecordingResearcher:
+    enabled = True
+    last_error = None
+
+    def __init__(self, fail_one: bool = True):
+        self.kwargs = None
+        self.fail_one = fail_one
+
+    def load_notes(self):
+        return {}
+
+    async def research_players(self, players, projections=None, **kw):
+        from draftadvisor.models import ResearchNote
+        from draftadvisor.research.claude import UNAVAILABLE_SUMMARY
+
+        self.kwargs = kw
+        out = {}
+        for i, pl in enumerate(players):
+            if kw.get("progress"):
+                kw["progress"](i + 1, len(players), pl.name)
+            if self.fail_one and i == 0:
+                self.last_error = "AuthenticationError: invalid x-api-key"
+                out[pl.player_id] = ResearchNote(pl.player_id, UNAVAILABLE_SUMMARY, 0.0, 0.5, "", "")
+            else:
+                out[pl.player_id] = ResearchNote(pl.player_id, f"{pl.name} looks fine", 0.1, 0.8, "up", "down")
+        return out
+
+
+def test_cmd_research_shows_progress_and_counts(monkeypatch, capsys):
+    from draftadvisor.config import Settings
+
+    ctx = _fake_context(Settings(), __import__("tests.test_dashboard", fromlist=["x"])._league(), None)
+    ctx.researcher = _RecordingResearcher()
+    monkeypatch.setattr(cli, "_build", lambda settings, args, **kw: ctx)
+    rc = main(["--offline", "research", "--top", "3"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert ctx.researcher.kwargs is not None and callable(ctx.researcher.kwargs.get("progress"))
+    assert "[1/3]" in out and "[3/3]" in out
+    assert "2 researched, 1 failed, 0 cached" in out
+    assert "invalid x-api-key" in out
+
+
+def test_cmd_prep_passes_offline_and_reports_research_error(monkeypatch, capsys):
+    import draftadvisor.app as app
+    from draftadvisor.config import Settings
+
+    league = __import__("tests.test_dashboard", fromlist=["x"])._league()
+    ctx = _fake_context(Settings(), league, None)
+    ctx.researcher = _RecordingResearcher()
+    ctx.researcher.last_error = "AuthenticationError: invalid x-api-key"
+    ctx.sources.update({"research": 3, "snapshot": None, "metrics": {}})
+    seen = {}
+
+    async def fake_prep(settings, **kw):
+        seen.update(kw)
+        return ctx
+
+    monkeypatch.setattr(app, "prep", fake_prep)
+    rc = main(["prep", "--offline", "--no-train", "--research"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert seen["offline"] is True and seen["train"] is False and seen["research"] is True
+    assert "research notes written: 3" in out and "invalid x-api-key" in out
