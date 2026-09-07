@@ -272,6 +272,7 @@ def _snapshot_payload(sess: Session) -> dict | None:
         "league": {
             "name": league.name if league else None, "league_id": league.league_id if league else None,
             "season": league.season if league else None, "teams": league.total_rosters if league else None,
+            "total_rosters": league.total_rosters if league else None,
             "roster_positions": list(league.roster_positions) if league else [],
             "settings": {k: v for k, v in (league.settings.items() if league else []) if isinstance(v, (int, float, str))},
             "scoring_settings": dict(league.scoring_settings) if league else {},
@@ -321,6 +322,7 @@ def build_state_payload(sess: Session) -> dict:
         d["seconds_left"] = None
     payload["ts"] = now
     payload["mode"] = sess.mode
+    payload["autopilot"] = sess.autopilot
     payload["claude"] = {"status": sess.status.get("claude", "off"), "advice": rec.claude_advice if rec else None}
     payload["status"] = {k: v for k, v in sess.status.items() if isinstance(v, (int, float, str, type(None)))}
     payload["status"]["sources"] = {k: v for k, v in (ctx.sources or {}).items() if isinstance(v, (int, float, str, bool))}

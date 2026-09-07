@@ -1,0 +1,1386 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>draftadvisor</title>
+<link rel="icon" href="data:,">
+<style>
+/* =====================================================================
+   Theme tokens — change colours here. `data-theme="light"` on <html>
+   swaps the palette (toggle button in the top bar).
+   ===================================================================== */
+:root {
+  --bg: #0e1116;        /* page background            */
+  --bg2: #151a21;       /* panels                     */
+  --bg3: #1c2330;       /* table header / hover rows  */
+  --bg4: #232c3a;       /* inputs                     */
+  --border: #2a3441;
+  --fg: #e7eaf0;
+  --fg2: #a3adbb;       /* secondary text             */
+  --fg3: #6b7583;       /* muted text                 */
+  --accent: #5b9cff;
+  --accent-bg: rgba(91, 156, 255, 0.16);
+  --mine: rgba(91, 156, 255, 0.14);
+  --top: rgba(255, 196, 0, 0.12);
+  --green: #3ecf7a;
+  --green-bg: rgba(62, 207, 122, 0.18);
+  --amber: #f5b731;
+  --amber-bg: rgba(245, 183, 49, 0.18);
+  --red: #ff5c5c;
+  --red-bg: rgba(255, 92, 92, 0.18);
+  --grey: #7b8594;
+  --grey-bg: rgba(123, 133, 148, 0.18);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 6px;
+}
+html[data-theme="light"] {
+  --bg: #f3f5f8; --bg2: #ffffff; --bg3: #eef1f5; --bg4: #f7f9fc; --border: #d5dbe3;
+  --fg: #1a1f26; --fg2: #4a5361; --fg3: #7b8593;
+  --accent: #2563eb; --accent-bg: rgba(37, 99, 235, 0.12); --mine: rgba(37, 99, 235, 0.10);
+  --top: rgba(245, 158, 11, 0.16);
+  --green: #15803d; --green-bg: rgba(21, 128, 61, 0.14);
+  --amber: #b45309; --amber-bg: rgba(180, 83, 9, 0.14);
+  --red: #dc2626; --red-bg: rgba(220, 38, 38, 0.12);
+  --grey: #6b7280; --grey-bg: rgba(107, 114, 128, 0.14);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+/* ---------- base ---------- */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--fg); font: 13px/1.4 var(--font);
+  font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); }
+h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg2); margin: 0 0 8px; }
+h3 { font-size: 12px; margin: 14px 0 6px; color: var(--fg2); }
+.muted { color: var(--fg3); }
+.mono { font-family: var(--mono); font-size: 12px; }
+.small { font-size: 11px; }
+.nowrap { white-space: nowrap; }
+.right { text-align: right; }
+[hidden] { display: none !important; }
+
+button, input, select, textarea {
+  font: inherit; color: var(--fg); background: var(--bg4); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 5px 8px;
+}
+input[type="checkbox"] { width: auto; padding: 0; vertical-align: -2px; margin-right: 4px; }
+input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+button { cursor: pointer; background: var(--bg3); }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button.danger { color: var(--red); border-color: var(--red); background: transparent; }
+button.small { padding: 2px 7px; font-size: 12px; }
+button.big { font-size: 15px; padding: 9px 16px; }
+label { display: inline-flex; align-items: center; gap: 4px; }
+form label { display: flex; flex-direction: column; align-items: stretch; gap: 3px; font-size: 12px; color: var(--fg2); }
+form label.inline { flex-direction: row; align-items: center; }
+form label > select, form label > input { width: 100%; min-width: 0; }
+select { max-width: 100%; text-overflow: ellipsis; }
+form .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+form .row > label { flex: 1 1 120px; }
+
+/* ---------- top bar ---------- */
+#topbar {
+  position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 12px;
+  height: 44px; padding: 0 14px; background: var(--bg2); border-bottom: 1px solid var(--border);
+}
+#topbar .brand { font-weight: 700; letter-spacing: 0.02em; }
+#tabs { display: flex; gap: 2px; }
+#tabs button { background: transparent; border: 1px solid transparent; color: var(--fg2); padding: 5px 10px; }
+#tabs button.active { background: var(--accent-bg); color: var(--fg); border-color: var(--border); }
+.topstatus { margin-left: auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
+#top-msg { color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
+.pill {
+  display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  background: var(--grey-bg); color: var(--fg2); border: 1px solid var(--border); white-space: nowrap;
+}
+.pill.ok { background: var(--green-bg); color: var(--green); }
+.pill.warn { background: var(--amber-bg); color: var(--amber); }
+.pill.bad { background: var(--red-bg); color: var(--red); }
+.pill.info { background: var(--accent-bg); color: var(--accent); }
+.spinner {
+  width: 12px; height: 12px; border: 2px solid var(--fg3); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- layout ---------- */
+main { padding: 12px 14px 40px; }
+.tab { display: none; }
+.tab.active { display: block; }
+.panel { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+.panel + .panel { margin-top: 10px; }
+.empty { padding: 30px; text-align: center; color: var(--fg3); }
+.setup-grid { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 12px; align-items: start; }
+@media (max-width: 1100px) { .setup-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 760px) { .setup-grid { grid-template-columns: 1fr; } }
+
+/* ---------- tables ---------- */
+table { border-collapse: collapse; width: 100%; }
+th, td { padding: 3px 6px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; white-space: nowrap; }
+th { font-size: 11px; font-weight: 600; color: var(--fg3); text-transform: uppercase; letter-spacing: 0.04em; background: var(--bg2); position: sticky; top: 0; }
+td.n, th.n { text-align: right; }
+tr.top td { background: var(--top); font-weight: 600; }
+tr.mine td { background: var(--mine); }
+tr.me td { background: var(--mine); font-weight: 600; }
+tr[data-pid] { cursor: pointer; }
+tr[data-pid]:hover td { background: var(--bg3); }
+td.why { color: var(--fg2); }
+td.name { max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
+.warn-flag { color: var(--red); font-weight: 700; cursor: help; margin-left: 4px; }
+.tier { display: inline-block; min-width: 20px; text-align: center; border-radius: 3px; background: var(--grey-bg); font-size: 11px; padding: 0 3px; }
+.tier.t1 { background: var(--green-bg); color: var(--green); }
+.tier.t2 { background: var(--accent-bg); color: var(--accent); }
+.tier.t3 { background: var(--amber-bg); color: var(--amber); }
+/* exactly one cell per table gets .fill: it absorbs the remaining width and truncates with an ellipsis */
+td.fill { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tscroll { overflow: auto; max-height: 60vh; }
+.panel { overflow-x: auto; }
+#roster-tbl td, #roster-tbl th, #recent-tbl td, #recent-tbl th, #opp-tbl td, #opp-tbl th { padding: 3px 4px; font-size: 12px; }
+#roster-tbl td.slot { color: var(--fg3); font-size: 11px; }
+
+/* ---------- setup ---------- */
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.chip { padding: 2px 9px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); background: var(--grey-bg); color: var(--fg2); }
+.chip.ok { background: var(--green-bg); color: var(--green); border-color: transparent; }
+.chip.bad { background: var(--red-bg); color: var(--red); border-color: transparent; }
+.kv { display: flex; gap: 10px; padding: 2px 0; font-size: 12px; }
+.kv > span:first-child { color: var(--fg3); min-width: 70px; }
+.kv > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
+.log { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; height: 260px; overflow: auto; margin: 0; font-family: var(--mono); font-size: 11.5px; white-space: pre-wrap; color: var(--fg2); }
+.hint { font-size: 12px; color: var(--fg3); margin-top: 6px; }
+
+/* ---------- draft header ---------- */
+.dhead {
+  position: sticky; top: 44px; z-index: 20; display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px;
+  align-items: center; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 8px 12px; margin-bottom: 10px;
+}
+.dh-left { min-width: 0; }
+.dh-league { font-size: 15px; font-weight: 600; }
+.dh-league .muted { font-weight: 400; font-size: 12px; margin-left: 6px; }
+.dh-pick { font-size: 13px; margin-top: 2px; }
+.dh-pick b { color: var(--fg); }
+.dh-center { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.dh-right { display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex-wrap: wrap; }
+.banner {
+  font-size: 20px; font-weight: 800; letter-spacing: 0.06em; padding: 6px 22px; border-radius: var(--radius);
+  background: var(--red); color: #fff; animation: pulse 1.2s ease-in-out infinite; white-space: nowrap;
+}
+.banner .cd { font-family: var(--mono); font-weight: 600; margin-left: 10px; font-size: 18px; opacity: 0.95; }
+.banner.done { background: var(--green); animation: none; color: #06210f; }
+.banner.paused { background: var(--grey); animation: none; }
+@keyframes pulse { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.25); } }
+#mock-controls { display: flex; gap: 10px; align-items: center; }
+.toggle { font-size: 12px; color: var(--fg2); }
+
+/* ---------- draft columns ---------- */
+.cols { display: grid; grid-template-columns: 300px minmax(0, 1fr) 280px; gap: 10px; align-items: start; }
+@media (max-width: 1000px) { .cols { grid-template-columns: 1fr; } .dhead { grid-template-columns: 1fr; } .dh-right { justify-content: flex-start; } }
+.pos-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+@media (max-width: 1300px) { .pos-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.pos { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; min-width: 0; }
+.pos .ph { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.pos .ph b { font-size: 14px; }
+.pos .rat { font-size: 11.5px; color: var(--fg2); margin-bottom: 6px; min-height: 2.6em; }
+.pos table td { padding: 2px 4px; font-size: 12px; }
+.pos table td.name { max-width: 0; width: 100%; }
+.badge { padding: 1px 7px; border-radius: 3px; font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; white-space: nowrap; }
+.badge.take { background: var(--red); color: #fff; }
+.badge.soon { background: var(--amber); color: #2b1d00; }
+.badge.wait { background: var(--green); color: #06210f; }
+.badge.skip { background: var(--grey-bg); color: var(--fg2); }
+.roster-meta { margin-top: 8px; font-size: 12px; color: var(--fg2); display: grid; gap: 3px; }
+.roster-meta b { color: var(--fg); }
+.foot { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 10px; }
+@media (max-width: 1000px) { .foot { grid-template-columns: 1fr; } }
+.claude-box { white-space: pre-wrap; font-size: 13px; }
+.claude-box.off { color: var(--fg3); }
+#notes { margin: 0; padding-left: 18px; }
+.avail-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.avail-bar input[type="search"] { flex: 1 1 160px; }
+
+/* ---------- popover card ---------- */
+.pop {
+  position: fixed; z-index: 50; width: 360px; max-height: 80vh; overflow: auto; background: var(--bg2);
+  border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 10px 12px; font-size: 12px;
+}
+.pop .pn { font-size: 15px; font-weight: 700; }
+.pop .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px 8px; margin: 8px 0; }
+.pop .grid div { white-space: nowrap; }
+.pop .grid span { color: var(--fg3); font-size: 10.5px; display: block; text-transform: uppercase; letter-spacing: 0.04em; }
+.pop ul { margin: 4px 0; padding-left: 16px; }
+.pop .warn { color: var(--red); }
+.pop .note { margin-top: 6px; border-top: 1px solid var(--border); padding-top: 6px; color: var(--fg2); }
+.pop .pinhint { color: var(--fg3); font-size: 11px; margin-top: 6px; }
+.pop .explain { margin-top: 6px; white-space: pre-wrap; color: var(--fg2); }
+
+/* ---------- board / league / ask ---------- */
+.bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.bar .seg button { border-radius: 0; margin-left: -1px; }
+.bar .seg button:first-child { border-radius: var(--radius) 0 0 var(--radius); margin-left: 0; }
+.bar .seg button:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+.bar .seg button.active { background: var(--accent-bg); border-color: var(--accent); color: var(--fg); }
+.league-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
+@media (max-width: 1000px) { .league-grid { grid-template-columns: 1fr; } }
+.flags li { margin: 2px 0; }
+tr.added td.val { color: var(--green); }
+tr.removed td.val { color: var(--red); text-decoration: line-through; }
+tr.changed td.val { color: var(--amber); }
+.kind { font-size: 10.5px; text-transform: uppercase; }
+#ask-q { width: 100%; min-height: 90px; resize: vertical; }
+#ask-answer { white-space: pre-wrap; font-family: var(--font); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; min-height: 60px; margin: 10px 0 0; }
+
+/* ---------- toasts ---------- */
+#toasts { position: fixed; right: 14px; bottom: 14px; z-index: 100; display: flex; flex-direction: column; gap: 6px; max-width: 420px; }
+.toast { background: var(--bg3); border: 1px solid var(--red); color: var(--fg); padding: 8px 12px; border-radius: var(--radius); box-shadow: var(--shadow); cursor: pointer; font-size: 12px; }
+.toast.ok { border-color: var(--green); }
+.toast.info { border-color: var(--accent); }
+kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; }
+</style>
+</head>
+<body>
+
+<!-- ===================================================================== top bar -->
+<header id="topbar">
+  <div class="brand">draftadvisor</div>
+  <nav id="tabs">
+    <button data-tab="setup">Setup</button>
+    <button data-tab="draft">Draft</button>
+    <button data-tab="board">Board</button>
+    <button data-tab="league">League</button>
+    <button data-tab="ask">Ask</button>
+  </nav>
+  <div class="topstatus">
+    <span id="busy-dot" class="spinner" hidden title="working"></span>
+    <span id="top-msg"></span>
+    <span id="conn-pill" class="pill bad" hidden title="the local server is not answering">offline</span>
+    <span id="mode-pill" class="pill">idle</span>
+    <button id="theme-btn" class="small" title="Toggle light / dark">◐</button>
+  </div>
+</header>
+
+<main>
+
+<!-- ===================================================================== Setup -->
+<section id="tab-setup" class="tab">
+  <div class="setup-grid">
+    <div class="panel">
+      <h2>Readiness</h2>
+      <div class="chips" id="ready-chips">
+        <span class="chip" data-k="data">data</span>
+        <span class="chip" data-k="model">model</span>
+        <span class="chip" data-k="claude">Claude key</span>
+        <span class="chip" data-k="sleeper">Sleeper reachable</span>
+      </div>
+      <div class="kv"><span>Season</span><span id="st-season">–</span></div>
+      <div class="kv"><span>Home</span><span id="st-home" class="mono">–</span></div>
+      <div class="kv"><span>Session</span><span id="st-session">none</span></div>
+      <div class="kv"><span>Status</span><span id="st-message">–</span></div>
+      <div class="actions">
+        <button id="prep-btn" class="primary">Prepare data &amp; train model</button>
+        <label class="small"><input type="checkbox" id="prep-refresh"> re-download</label>
+        <label class="small"><input type="checkbox" id="prep-research"> Claude research</label>
+        <button id="stop-btn" class="danger">Stop</button>
+      </div>
+      <div class="hint">Prep downloads nflverse data (~70 MB the first time), trains the projection model and caches
+        projections. Run it once before draft day. Progress appears in the log.</div>
+      <h3>Log</h3>
+      <pre id="log" class="log"></pre>
+    </div>
+
+    <div class="panel">
+      <h2>Live draft (Sleeper)</h2>
+      <form id="live-form" autocomplete="off">
+        <div class="row">
+          <label>Sleeper username
+            <span style="display:flex;gap:6px"><input id="live-username" style="flex:1" placeholder="your Sleeper username">
+              <button type="button" id="lookup-btn">Look up</button></span>
+          </label>
+        </div>
+        <div id="lookup-info" class="hint" style="margin:0 0 8px">Enter your username and click Look up to list your leagues and drafts.</div>
+        <div class="row"><label>League <select id="live-league"><option value="">— none —</option></select></label></div>
+        <div class="row"><label>Draft <select id="live-draft"><option value="">— none —</option></select></label></div>
+        <div class="row">
+          <label>Slot override <input type="number" id="live-slot" min="1" max="20" placeholder="auto (from username)"></label>
+          <label class="inline" style="align-self:flex-end"><input type="checkbox" id="live-claude" checked> use Claude</label>
+        </div>
+        <div class="actions"><button type="submit" id="live-start" class="primary">Start live draft</button></div>
+        <div class="hint">Needs a league or draft id (pick from the lists after look-up). The tool captures the league,
+          builds projections in your league's scoring, then follows the draft.</div>
+      </form>
+    </div>
+
+    <div class="panel">
+      <h2>Mock draft</h2>
+      <form id="mock-form" autocomplete="off">
+        <div class="row">
+          <label>Teams <input type="number" id="mock-teams" min="8" max="16" value="12"></label>
+          <label>Rounds <input type="number" id="mock-rounds" min="10" max="20" value="15"></label>
+          <label>My slot <input type="number" id="mock-slot" min="1" max="16" value="5"></label>
+        </div>
+        <div class="row">
+          <label>Scoring <select id="mock-scoring">
+            <option value="half_ppr">Half PPR</option><option value="ppr">PPR</option><option value="std">Standard</option></select></label>
+          <label>Seed <input type="number" id="mock-seed" placeholder="random"></label>
+          <label>Bot delay (s) <input type="number" id="mock-delay" min="0" max="30" step="0.5" value="1"></label>
+        </div>
+        <div class="row">
+          <label class="inline"><input type="checkbox" id="mock-superflex"> superflex</label>
+          <label class="inline"><input type="checkbox" id="mock-autopilot"> autopilot (advisor picks for me)</label>
+        </div>
+        <div class="actions"><button type="submit" id="mock-start" class="primary">Start mock draft</button></div>
+        <div class="hint">Bots draft by ADP with some noise. On your turn: <kbd>Enter</kbd> takes the recommendation,
+          or click any player row.</div>
+      </form>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== Draft -->
+<section id="tab-draft" class="tab">
+  <div class="dhead" id="draft-head">
+    <div class="dh-left">
+      <div class="dh-league"><span id="dh-name">No draft</span><span class="muted" id="dh-scoring"></span></div>
+      <div class="dh-pick"><b id="dh-round"></b> <span id="dh-otc" class="muted"></span></div>
+      <div class="dh-next small" id="dh-next"></div>
+    </div>
+    <div class="dh-center">
+      <div id="turn-banner" class="banner" hidden>YOUR PICK<span class="cd" id="countdown"></span></div>
+      <div id="mock-controls" hidden>
+        <button id="take-btn" class="primary big">Take recommended: <span id="take-name">…</span></button>
+        <label class="toggle"><input type="checkbox" id="autopilot"> autopilot</label>
+      </div>
+    </div>
+    <div class="dh-right">
+      <span id="dh-claude" class="pill">Claude: off</span>
+      <span id="dh-lat" class="muted small mono"></span>
+      <button id="stop-btn2" class="danger small">Stop</button>
+    </div>
+  </div>
+
+  <div id="draft-empty" class="empty">No draft running — start a live or mock draft from the Setup tab.</div>
+
+  <div id="draft-body" class="cols" hidden>
+    <aside class="col-left">
+      <div class="panel">
+        <h2>My roster</h2>
+        <table id="roster-tbl">
+          <thead><tr><th>Slot</th><th>Player</th><th>Pos</th><th class="n">Bye</th><th class="n">Proj</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="roster-meta" id="roster-meta"></div>
+      </div>
+    </aside>
+
+    <div class="col-center">
+      <div class="panel">
+        <h2>Best picks now</h2>
+        <div class="tscroll" style="max-height:none">
+        <table id="best-tbl" class="pickable">
+          <thead><tr><th>#</th><th>Player</th><th>Pos</th><th class="n">Bye</th><th class="n">Proj</th><th class="n">VORP</th>
+            <th class="n">Tier</th><th class="n">ADP</th><th class="n">Avail</th><th class="n">Score</th><th>Why</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        </div>
+      </div>
+      <div class="pos-grid" id="pos-grid"></div>
+      <div class="panel" style="margin-top:10px">
+        <h2>Available players</h2>
+        <div class="avail-bar">
+          <input type="search" id="avail-q" placeholder="filter by name or team…">
+          <select id="avail-pos"><option value="">All positions</option><option>QB</option><option>RB</option><option>WR</option>
+            <option>TE</option><option>K</option><option>DEF</option></select>
+          <select id="avail-sort"><option value="score">Sort: score</option><option value="points">Sort: projection</option>
+            <option value="adp">Sort: ADP</option><option value="availability_next">Sort: availability</option>
+            <option value="vorp">Sort: VORP</option></select>
+          <span class="muted small" id="avail-count"></span>
+        </div>
+        <div class="tscroll">
+        <table id="avail-tbl" class="pickable">
+          <thead><tr><th>Player</th><th>Pos</th><th class="n">Bye</th><th class="n">Proj</th><th class="n">VORP</th>
+            <th class="n">Tier</th><th class="n">ADP</th><th class="n">Avail</th><th class="n">Score</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        </div>
+        <div class="actions"><button id="avail-more" class="small">Show more</button></div>
+      </div>
+    </div>
+
+    <aside class="col-right">
+      <div class="panel">
+        <h2>Recent picks</h2>
+        <table id="recent-tbl"><thead><tr><th>Pick</th><th>Team</th><th>Player</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="panel">
+        <h2>Opponents' needs</h2>
+        <table id="opp-tbl"><thead><tr><th>Team</th><th>Needs</th><th class="n">Next</th></tr></thead><tbody></tbody></table>
+      </div>
+    </aside>
+  </div>
+
+  <div class="foot" id="draft-foot" hidden>
+    <div class="panel"><h2>Claude</h2><div id="claude-box" class="claude-box off"></div></div>
+    <div class="panel"><h2>Notes</h2><ul id="notes"></ul><div id="last-error" class="small" style="color:var(--red)"></div></div>
+  </div>
+</section>
+
+<!-- ===================================================================== Board -->
+<section id="tab-board" class="tab">
+  <div class="panel">
+    <div class="bar">
+      <span class="seg" id="board-pos">
+        <button data-pos="" class="active">All</button><button data-pos="QB">QB</button><button data-pos="RB">RB</button>
+        <button data-pos="WR">WR</button><button data-pos="TE">TE</button><button data-pos="K">K</button><button data-pos="DEF">DEF</button>
+      </span>
+      <input type="search" id="board-q" placeholder="search name / team…" style="flex:1 1 200px">
+      <select id="board-top"><option>50</option><option selected>100</option><option>200</option><option>400</option></select>
+      <button id="board-reload" class="small">Reload</button>
+      <button id="board-load" class="primary" hidden>Load board</button>
+      <span id="board-info" class="muted small"></span>
+    </div>
+    <div class="tscroll" style="max-height:78vh">
+    <table id="board-tbl" class="pickable">
+      <thead><tr><th>#</th><th>Player</th><th>Pos</th><th>Team</th><th class="n">Bye</th><th class="n">Proj</th><th class="n">Floor</th>
+        <th class="n">Ceil</th><th class="n">Std</th><th class="n">PPG</th><th class="n">Games</th><th class="n">ADP</th><th class="n">ECR</th><th>Flags</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== League -->
+<section id="tab-league" class="tab">
+  <div id="league-empty" class="empty">No league captured yet — start a live draft (or a mock draft) to see the league report here.</div>
+  <div class="league-grid" id="league-body" hidden>
+    <div>
+      <div class="panel"><h2>Draft facts</h2><div id="lg-facts"></div></div>
+      <div class="panel"><h2>Strategy flags</h2><ul id="lg-flags" class="flags"></ul></div>
+      <div class="panel"><h2>Scoring vs Sleeper base</h2><div id="lg-diff-head" class="hint" style="margin:0 0 6px"></div>
+        <table id="lg-diff"><thead><tr><th>Rule</th><th class="n">Sleeper base</th><th class="n">This league</th><th>Key</th><th>Kind</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+    <div>
+      <div class="panel"><h2>Draft order</h2>
+        <table id="lg-order"><thead><tr><th class="n">Slot</th><th>Manager</th><th>Team</th><th class="n">Roster</th><th>First picks</th></tr></thead><tbody></tbody></table>
+        <div class="hint" id="lg-mypicks"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== Ask -->
+<section id="tab-ask" class="tab">
+  <div class="panel" style="max-width:900px">
+    <h2>Ask Claude</h2>
+    <textarea id="ask-q" placeholder="e.g. Should I take a TE in round 3, or wait for the next tier of RBs?"></textarea>
+    <div class="actions">
+      <button id="ask-btn" class="primary">Ask Claude</button>
+      <span id="ask-hint" class="hint" style="margin:0"></span>
+    </div>
+    <pre id="ask-answer" hidden></pre>
+  </div>
+</section>
+
+</main>
+
+<div id="card-pop" class="pop" hidden></div>
+<div id="toasts"></div>
+
+<script>
+'use strict';
+/* =====================================================================
+   draftadvisor frontend. Sections:
+     1. helpers      — DOM / formatting / safe accessors
+     2. api          — fetch with timeout, POST wrapper, toasts
+     3. state store  — S (last status, last state, UI state)
+     4. renderers    — top bar, Setup, Draft, Board, League, Ask, popover
+     5. polling loop — status / state polling + countdown ticker
+     6. event wiring — tabs, forms, keyboard, hover / click
+   The page never rebuilds inputs: only table bodies / text nodes are
+   re-rendered, and only when their HTML actually changed.
+   ===================================================================== */
+
+// ---------------------------------------------------------------- 1. helpers
+const $ = (id) => document.getElementById(id);
+const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+/** Safe nested accessor: get(obj, 'draft.on_the_clock.label', '?') */
+function get(obj, path, def) {
+  let cur = obj;
+  for (const k of path.split('.')) {
+    if (cur == null || typeof cur !== 'object') return def;
+    cur = cur[k];
+  }
+  return cur == null ? def : cur;
+}
+function num(v) { const n = typeof v === 'number' ? v : parseFloat(v); return Number.isFinite(n) ? n : null; }
+function fmt(v, d) { const n = num(v); return n == null ? '–' : n.toFixed(d || 0); }
+function signed(v, d) { const n = num(v); return n == null ? '–' : (n > 0 ? '+' : '') + n.toFixed(d || 0); }
+function pct(v) { const n = num(v); return n == null ? '–' : Math.round(n * 100) + '%'; }
+function fmtTime(sec) {
+  const n = num(sec); if (!n) return '–';
+  const ms = n > 1e11 ? n : n * 1000;   // accept epoch ms or s
+  try { return new Date(ms).toLocaleString(); } catch (e) { return String(sec); }
+}
+function fmtClock(s) { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+function posTeam(c) { return esc(c.position || '?') + (c.team ? '<span class="muted"> · ' + esc(c.team) + '</span>' : ''); }
+function tierHTML(t) { const n = num(t); return n == null ? '–' : '<span class="tier t' + Math.min(n, 4) + '">T' + n + '</span>'; }
+function warnHTML(c) {
+  const w = Array.isArray(c.warnings) ? c.warnings : [];
+  return w.length ? '<span class="warn-flag" title="' + esc(w.join('\n')) + '">!</span>' : '';
+}
+function actionClass(a) {
+  a = String(a || '').toUpperCase();
+  return a === 'TAKE NOW' ? 'take' : a === 'SOON' ? 'soon' : a === 'WAIT' ? 'wait' : 'skip';
+}
+/** Set innerHTML / textContent only when it changed (keeps hover + scroll stable). */
+const _lastHTML = new WeakMap();
+function setHTML(el, html) { if (el && _lastHTML.get(el) !== html) { _lastHTML.set(el, html); el.innerHTML = html; } }
+function setText(el, text) { text = text == null ? '' : String(text); if (el && el.textContent !== text) el.textContent = text; }
+function show(el, on) { if (el) el.hidden = !on; }
+function setClass(el, cls) { if (el && el.className !== cls) el.className = cls; }
+
+// ---------------------------------------------------------------- 2. api helpers
+class ApiError extends Error { constructor(msg, status) { super(msg); this.status = status; } }
+
+/** fetch JSON with a timeout; throws ApiError with the server's `detail` when not 2xx. */
+async function api(path, opts) {
+  opts = opts || {};
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), opts.timeout || 15000);
+  try {
+    const res = await fetch(path, {
+      method: opts.method || 'GET',
+      headers: opts.body !== undefined ? { 'Content-Type': 'application/json' } : {},
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      signal: ctl.signal, cache: 'no-store',
+    });
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch (e) { data = { detail: text.slice(0, 200) }; }
+    if (!res.ok) {
+      const detail = data && (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data));
+      throw new ApiError(detail || (res.status + ' ' + res.statusText), res.status);
+    }
+    return data;
+  } catch (e) {
+    if (e instanceof ApiError) throw e;
+    if (e.name === 'AbortError') throw new ApiError('timeout after ' + ((opts.timeout || 15000) / 1000) + 's', 0);
+    throw new ApiError(e.message || 'network error', 0);
+  } finally { clearTimeout(timer); }
+}
+/** POST helper: shows a toast on failure and returns null. */
+async function post(path, body, label) {
+  try { const r = await api(path, { method: 'POST', body: body || {} }); return r == null ? {} : r; }
+  catch (e) { toast((label || path) + ': ' + e.message); return null; }
+}
+function toast(msg, kind, ms) {
+  const box = $('toasts'); if (!box) return;
+  msg = String(msg);
+  for (const t of box.children) if (t.dataset.msg === msg) return;   // de-duplicate identical toasts
+  const el = document.createElement('div');
+  el.className = 'toast ' + (kind || 'error'); el.dataset.msg = msg; el.textContent = msg; el.title = 'click to dismiss';
+  el.addEventListener('click', () => el.remove());
+  box.appendChild(el);
+  setTimeout(() => el.remove(), ms || (kind === 'error' || !kind ? 7000 : 4000));
+}
+
+// ---------------------------------------------------------------- 3. state store
+const S = {
+  status: null, statusAt: 0,          // last GET /api/status and when we got it
+  state: null, stateAt: 0,            // last GET /api/state and when we got it
+  clockSkew: 0,                       // local epoch seconds − server `ts` (for the countdown)
+  mode: 'idle',                       // idle | prepping | starting | live | mock
+  failures: 0,                        // consecutive polling failures
+  board: { rows: null, position: '', top: 100, q: '', loading: false, error: null, loaded: false },
+  ui: {
+    tab: 'setup', hoverId: null, pinnedId: null, availLimit: 40, availQ: '', availPos: '', availSort: 'score',
+    autopilot: false, lookup: null, asking: false, explain: {}, lastLogLen: -1, picking: false,
+  },
+};
+const LIVE_MODES = { live: true, mock: true };
+const isLive = () => !!LIVE_MODES[S.mode];
+const isMock = () => S.mode === 'mock';
+const isBusy = () => !!get(S.status, 'busy', false);
+const myTurn = () => !!get(S.state, 'draft.is_my_turn', false);
+
+/** Find a card by player id in any of the state lists. */
+function findCard(pid) {
+  if (!pid || !S.state) return null;
+  const st = S.state;
+  const lists = [st.best, st.available];
+  for (const p of POSITIONS) lists.push(get(st, 'by_position.' + p + '.candidates', []));
+  for (const l of lists) if (Array.isArray(l)) for (const c of l) if (c && String(c.player_id) === String(pid)) return c;
+  for (const s of get(st, 'me.slots', [])) if (s && s.player && String(s.player.player_id) === String(pid)) return s.player;
+  if (Array.isArray(S.board.rows)) for (const c of S.board.rows) if (c && String(c.player_id) === String(pid)) return c;
+  return null;
+}
+
+// ---------------------------------------------------------------- 4. renderers
+function renderAll() {
+  renderTop();
+  const t = S.ui.tab;
+  if (t === 'setup') renderSetup();
+  else if (t === 'draft') renderDraft();
+  else if (t === 'board') renderBoard();
+  else if (t === 'league') renderLeague();
+  else if (t === 'ask') renderAsk();
+  renderPop();
+}
+
+// ---- top bar --------------------------------------------------------------
+function renderTop() {
+  const mode = S.mode || 'idle';
+  const pill = $('mode-pill');
+  setText(pill, mode);
+  setClass(pill, 'pill ' + (mode === 'live' ? 'bad' : mode === 'mock' ? 'info' : mode === 'idle' ? '' : 'warn'));
+  show($('busy-dot'), isBusy());
+  setText($('top-msg'), get(S.status, 'message', ''));
+  show($('conn-pill'), S.failures >= 2);
+  $$('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === S.ui.tab));
+}
+
+// ---- Setup ----------------------------------------------------------------
+function renderSetup() {
+  const st = S.status || {};
+  const ready = st.ready || {};
+  $$('#ready-chips .chip').forEach((chip) => {
+    const v = ready[chip.dataset.k];
+    const cls = v === true ? 'chip ok' : v === false ? 'chip bad' : 'chip';
+    setClass(chip, cls);
+    chip.title = v === true ? 'ready' : v === false ? 'not ready' : 'unknown';
+  });
+  setText($('st-season'), st.season != null ? st.season : '–');
+  setText($('st-home'), st.home || '–');
+  setText($('st-message'), st.message || '–');
+  const sess = st.session;
+  setText($('st-session'), sess ? (sess.mode + ' — ' + (sess.league_name || sess.draft_id || '') + (sess.my_slot ? ' (slot ' + sess.my_slot + ')' : '')) : 'none');
+
+  const busy = isBusy();
+  $('prep-btn').disabled = busy || isLive();
+  $('live-start').disabled = busy || isLive();
+  $('mock-start').disabled = busy || isLive();
+  $('lookup-btn').disabled = busy;
+  $('stop-btn').disabled = !(isLive() || busy || S.mode === 'prepping' || S.mode === 'starting');
+
+  const log = Array.isArray(st.log) ? st.log : [];
+  const el = $('log');
+  const text = log.join('\n') || '(no log yet)';
+  if (el.textContent !== text) {
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
+    el.textContent = text;
+    if (atBottom || S.ui.lastLogLen < 0) el.scrollTop = el.scrollHeight;
+    S.ui.lastLogLen = log.length;
+  }
+}
+
+/** Fill the league/draft <select>s from a /api/lookup response. */
+function renderLookup() {
+  const lk = S.ui.lookup;
+  const lsel = $('live-league'), dsel = $('live-draft');
+  if (!lk) return;
+  const user = lk.user || {};
+  setText($('lookup-info'), user.display_name ? ('Found ' + user.display_name + ' (' + (user.username || '') + ', id ' + (user.user_id || '?') + '): ' +
+    (lk.leagues || []).length + ' leagues, ' + (lk.drafts || []).length + ' drafts.') : 'User not found.');
+  let h = '<option value="">— none —</option>';
+  for (const l of lk.leagues || []) {
+    h += '<option value="' + esc(l.league_id) + '" data-draft="' + esc(l.draft_id || '') + '">' + esc(l.name || l.league_id) +
+      ' — ' + esc(l.season || '') + ', ' + esc(l.total_rosters || '?') + ' teams, ' + esc(l.scoring_type || '') + ' [' + esc(l.status || '') + ']</option>';
+  }
+  lsel.innerHTML = h;
+  h = '<option value="">— none —</option>';
+  for (const d of lk.drafts || []) {
+    h += '<option value="' + esc(d.draft_id) + '" data-league="' + esc(d.league_id || '') + '">' + esc(d.name || d.draft_id) +
+      ' — ' + esc(d.type || '') + ' ' + esc(d.teams || '?') + '×' + esc(d.rounds || '?') + ' [' + esc(d.status || '') + ']' +
+      (d.start_time ? ' ' + esc(fmtTime(d.start_time)) : '') + '</option>';
+  }
+  dsel.innerHTML = h;
+  if (lsel.options.length > 1) { lsel.selectedIndex = 1; syncDraftToLeague(); }
+}
+function syncDraftToLeague() {
+  const lsel = $('live-league'), dsel = $('live-draft');
+  const opt = lsel.options[lsel.selectedIndex];
+  const did = opt && opt.dataset.draft;
+  if (did) for (const o of dsel.options) if (o.value === did) { dsel.value = did; break; }
+}
+
+// ---- Draft: header --------------------------------------------------------
+function renderDraft() {
+  const st = S.state;
+  const live = isLive() && st;
+  show($('draft-empty'), !live);
+  show($('draft-body'), !!live);
+  show($('draft-foot'), !!live);
+  $('stop-btn2').disabled = !isLive();
+  if (!live) {
+    setText($('dh-name'), 'No draft');
+    setText($('dh-scoring'), '');
+    setText($('dh-round'), ''); setText($('dh-otc'), ''); setText($('dh-next'), '');
+    show($('turn-banner'), false); show($('mock-controls'), false);
+    setText($('dh-lat'), '');
+    renderClaudePill(null);
+    return;
+  }
+  const d = st.draft || {}, lg = st.league || {};
+  setText($('dh-name'), lg.name || get(S.status, 'session.league_name', '') || (isMock() ? 'Mock draft' : 'Draft'));
+  const teams = lg.teams || d.teams;
+  setText($('dh-scoring'), [lg.scoring_description || lg.scoring_type || '', teams ? teams + ' teams' : '', d.type || ''].filter(Boolean).join(' • '));
+
+  if (d.is_complete) {
+    setText($('dh-round'), 'Draft complete');
+    setText($('dh-otc'), '');
+  } else {
+    setText($('dh-round'), 'Round ' + (d.current_round != null ? d.current_round : '?') + ' • Pick ' + (d.next_pick_no != null ? d.next_pick_no : '?') +
+      (d.total_picks ? ' of ' + d.total_picks : ''));
+    const otc = d.on_the_clock;
+    setText($('dh-otc'), d.is_my_turn ? '— you are on the clock' : otc && otc.label ? '— on the clock: ' + otc.label + (otc.slot ? ' (slot ' + otc.slot + ')' : '') :
+      d.status === 'pre_draft' ? '— waiting for the draft to start' : d.status === 'paused' ? '— paused' : '');
+  }
+  const mine = [];
+  if (d.is_complete) mine.push('All picks made.');
+  else if (d.is_my_turn) {
+    if (d.my_pick_after_next) mine.push('After this pick your next is #' + d.my_pick_after_next + '.');
+  } else if (d.my_next_pick_no) {
+    const k = d.picks_until_my_turn;
+    mine.push('You pick in ' + (k != null ? k : '?') + ' (#' + d.my_next_pick_no + ')' + (d.my_pick_after_next ? ', then #' + d.my_pick_after_next : '') + '.');
+  } else mine.push('You have no picks left.');
+  if (d.my_slot) mine.push('Your slot: ' + d.my_slot + '.');
+  setText($('dh-next'), mine.join(' '));
+
+  // banner + mock controls
+  const banner = $('turn-banner');
+  if (d.is_complete) { show(banner, true); setClass(banner, 'banner done'); banner.firstChild.textContent = 'DRAFT COMPLETE'; }
+  else if (d.is_my_turn) { show(banner, true); setClass(banner, 'banner'); banner.firstChild.textContent = 'YOUR PICK'; }
+  else show(banner, false);
+  renderCountdown();
+  const showMock = isMock() && !d.is_complete;
+  show($('mock-controls'), showMock);
+  if (showMock) {
+    const top = (st.best || [])[0];
+    setText($('take-name'), top ? top.name + ' (' + (top.position || '?') + ')' : '…');
+    $('take-btn').disabled = !d.is_my_turn || !top || S.ui.picking;
+    const ap = get(st, 'autopilot', get(st, 'draft.autopilot', null));
+    if (typeof ap === 'boolean') S.ui.autopilot = ap;
+    if ($('autopilot').checked !== S.ui.autopilot) $('autopilot').checked = S.ui.autopilot;
+  }
+  const s = st.status || {};
+  setText($('dh-lat'), [s.latency_ms != null ? 'poll ' + fmt(s.latency_ms) + ' ms' : '', s.compute_ms != null ? 'compute ' + fmt(s.compute_ms) + ' ms' : '',
+    s.poll_count != null ? '#' + s.poll_count : ''].filter(Boolean).join(' • '));
+  renderClaudePill(st.claude);
+
+  renderRoster(st);
+  renderBest(st);
+  renderPositions(st);
+  renderRecent(st);
+  renderOpponents(st);
+  renderFooter(st);
+  renderAvailable(st);
+}
+
+function renderClaudePill(cl) {
+  const el = $('dh-claude');
+  const status = cl && cl.status ? String(cl.status) : (get(S.status, 'ready.claude', false) ? 'idle' : 'off');
+  const cls = { off: '', idle: 'ok', ready: 'ok', thinking: 'warn', error: 'bad', 'no answer': 'warn' }[status] || '';
+  setText(el, 'Claude: ' + status + (status === 'thinking' ? '…' : ''));
+  setClass(el, 'pill ' + cls);
+}
+
+/** Countdown text; called every second and on every render. */
+function renderCountdown() {
+  const d = get(S.state, 'draft', null);
+  const el = $('countdown');
+  if (!d || !d.is_my_turn || !isLive()) { setText(el, ''); return; }
+  const left = secondsLeft(d);
+  setText(el, left == null ? '' : fmtClock(left));
+}
+function secondsLeft(d) {
+  const timer = num(d.pick_timer), started = num(d.turn_started_at);
+  if (timer && timer > 0 && started) {
+    const nowServer = Date.now() / 1000 - S.clockSkew;
+    return Math.max(0, timer - (nowServer - started));
+  }
+  const sl = num(d.seconds_left);
+  if (sl != null) return Math.max(0, sl - (Date.now() - S.stateAt) / 1000);
+  return null;
+}
+
+// ---- Draft: left column ---------------------------------------------------
+const SLOT_ABBR = { SUPER_FLEX: 'SFLEX', WRRB_FLEX: 'WR/RB', REC_FLEX: 'WR/TE', FLEX: 'FLEX' };
+function renderRoster(st) {
+  const me = st.me || {};
+  const slots = Array.isArray(me.slots) ? me.slots : [];
+  let h = '';
+  for (const s of slots) {
+    const p = s && s.player;
+    if (p) {
+      h += '<tr data-pid="' + esc(p.player_id) + '"><td class="slot">' + esc(SLOT_ABBR[s.slot] || s.slot) + '</td><td class="fill" title="' + esc(p.name) + '">' + esc(p.name) + warnHTML(p) +
+        (p.team ? ' <span class="muted small">' + esc(p.team) + '</span>' : '') + '</td><td>' + esc(p.position || '?') +
+        '</td><td class="n">' + esc(p.bye != null ? p.bye : '–') + '</td><td class="n">' + fmt(p.points) + '</td></tr>';
+    } else {
+      h += '<tr><td class="slot">' + esc(SLOT_ABBR[(s && s.slot)] || (s && s.slot)) + '</td><td class="muted" colspan="4">— open —</td></tr>';
+    }
+  }
+  if (!slots.length) h = '<tr><td colspan="5" class="muted">roster empty</td></tr>';
+  setHTML($('roster-tbl').querySelector('tbody'), h);
+
+  const needs = Array.isArray(me.needs) ? me.needs : [];
+  const clashes = me.bye_clashes && typeof me.bye_clashes === 'object' ? Object.entries(me.bye_clashes) : [];
+  const counts = me.position_counts && typeof me.position_counts === 'object' ? me.position_counts : {};
+  let m = '<div>Need: <b>' + (needs.length ? esc(needs.join(', ')) : 'nothing open') + '</b></div>';
+  if (clashes.length) m += '<div style="color:var(--amber)">Bye clashes: ' + clashes.map(([w, n]) => 'wk ' + esc(w) + ' ×' + esc(n)).join(', ') + '</div>';
+  m += '<div>Lineup <b>' + fmt(me.lineup_points) + '</b> pts • bench <b>' + fmt(me.bench_points) + '</b> pts</div>';
+  const cs = POSITIONS.filter((p) => counts[p]).map((p) => p + counts[p]).join(' ');
+  if (cs) m += '<div class="muted">' + esc(cs) + '</div>';
+  setHTML($('roster-meta'), m);
+}
+
+// ---- Draft: best picks ----------------------------------------------------
+function cardRow(c, i, opts) {
+  opts = opts || {};
+  const reason = Array.isArray(c.reasons) && c.reasons.length ? c.reasons[0] : '';
+  let h = '<tr data-pid="' + esc(c.player_id) + '" class="' + (i === 0 && opts.highlightFirst ? 'top' : '') + '">';
+  if (opts.rank) h += '<td class="n muted">' + (i + 1) + '</td>';
+  h += '<td class="' + (opts.why ? 'name' : 'fill') + '" title="' + esc(c.name) + '">' + esc(c.name) + warnHTML(c) + '</td><td>' + posTeam(c) + '</td>' +
+    '<td class="n">' + esc(c.bye != null ? c.bye : '–') + '</td><td class="n">' + fmt(c.points) + '</td><td class="n">' + signed(c.vorp) + '</td>' +
+    '<td class="n">' + tierHTML(c.tier) + '</td><td class="n">' + fmt(c.adp, 1) + '</td><td class="n">' + pct(c.availability_next) + '</td>' +
+    '<td class="n"><b>' + fmt(c.score, 1) + '</b></td>';
+  if (opts.why) h += '<td class="why fill" title="' + esc((c.reasons || []).join('\n')) + '">' + esc(reason) + '</td>';
+  return h + '</tr>';
+}
+function renderBest(st) {
+  const best = Array.isArray(st.best) ? st.best : [];
+  let h = '';
+  if (!best.length) h = '<tr><td colspan="11" class="muted">' + (get(st, 'draft.is_complete') ? 'draft complete' : 'computing…') + '</td></tr>';
+  else best.forEach((c, i) => { h += cardRow(c, i, { rank: true, why: true, highlightFirst: true }); });
+  setHTML($('best-tbl').querySelector('tbody'), h);
+}
+
+// ---- Draft: position panels ----------------------------------------------
+function renderPositions(st) {
+  const bp = st.by_position && typeof st.by_position === 'object' ? st.by_position : {};
+  const pressure = st.pressure && typeof st.pressure === 'object' ? st.pressure : {};
+  let h = '';
+  for (const pos of POSITIONS) {
+    const a = bp[pos];
+    h += '<div class="pos"><div class="ph"><b>' + pos + '</b>';
+    if (a) {
+      h += '<span class="badge ' + actionClass(a.action) + '">' + esc(a.action || '?') + '</span>';
+      if (num(pressure[pos]) != null) h += '<span class="muted small" title="expected picks at ' + pos + ' before your next turn">run ' + fmt(pressure[pos], 1) + '</span>';
+      h += '</div><div class="rat">' + esc(a.rationale || '') + '</div><table><tbody>';
+      const cands = Array.isArray(a.candidates) ? a.candidates : [];
+      for (const c of cands) {
+        h += '<tr data-pid="' + esc(c.player_id) + '"><td class="name" title="' + esc(c.name) + '">' + esc(c.name) + warnHTML(c) +
+          (c.team ? '<span class="muted small"> ' + esc(c.team) + '</span>' : '') + '</td><td class="n">' + fmt(c.points) +
+          '</td><td class="n">' + pct(c.availability_next) + '</td><td class="n">' + tierHTML(c.tier) + '</td></tr>';
+      }
+      if (!cands.length) h += '<tr><td class="muted">no candidates</td></tr>';
+      h += '</tbody></table>';
+      if (num(a.drop_off) != null) h += '<div class="muted small">drop-off ' + fmt(a.drop_off) + ' pts • next-time ' + fmt(a.expected_next_available) + '</div>';
+    } else {
+      h += '</div><div class="rat muted">computing…</div>';
+    }
+    h += '</div>';
+  }
+  setHTML($('pos-grid'), h);
+}
+
+// ---- Draft: right column --------------------------------------------------
+function renderRecent(st) {
+  const rec = Array.isArray(st.recent) ? st.recent : [];
+  let h = '';
+  for (const p of rec) {
+    h += '<tr class="' + (p.is_me ? 'mine' : '') + '"' + (p.player_id ? ' data-pid="' + esc(p.player_id) + '"' : '') + '><td class="n muted">' + esc(p.pick_no) +
+      (p.round ? ' <span class="small">(' + esc(p.round) + '.' + esc(p.slot) + ')</span>' : '') + '</td><td class="name" style="max-width:82px" title="' + esc(p.label || '') + '">' +
+      esc(p.label || 'slot ' + p.slot) + '</td><td class="fill" title="' + esc(p.name || '') + '">' + esc(p.name || p.player_id) + ' <span class="muted small">' + esc(p.position || '') +
+      (p.team ? ' ' + esc(p.team) : '') + '</span></td></tr>';
+  }
+  if (!rec.length) h = '<tr><td colspan="3" class="muted">no picks yet</td></tr>';
+  setHTML($('recent-tbl').querySelector('tbody'), h);
+}
+function renderOpponents(st) {
+  const opps = Array.isArray(st.opponents) ? st.opponents : [];
+  let h = '';
+  for (const o of opps) {
+    const needs = Array.isArray(o.needs) ? o.needs : [];
+    const players = Array.isArray(o.players) ? o.players.map((p) => (p.name || '') + ' (' + (p.position || '') + ')').join(', ') : '';
+    h += '<tr title="' + esc(players) + '"><td class="name" style="max-width:96px">' + esc(o.label || 'slot ' + o.slot) + '</td><td class="fill">' +
+      (needs.length ? esc(needs.join(' ')) : '<span class="muted">full</span>') + '</td><td class="n">' + (o.next_pick ? '#' + esc(o.next_pick) : '–') + '</td></tr>';
+  }
+  if (!opps.length) h = '<tr><td colspan="3" class="muted">computing…</td></tr>';
+  setHTML($('opp-tbl').querySelector('tbody'), h);
+}
+
+// ---- Draft: footer --------------------------------------------------------
+function renderFooter(st) {
+  const cl = st.claude || {};
+  const box = $('claude-box');
+  const status = cl.status || 'off';
+  if (status === 'off') { setText(box, 'Claude: off — set ANTHROPIC_API_KEY before starting to get on-the-clock advice.'); setClass(box, 'claude-box off'); }
+  else if (cl.advice) { setText(box, cl.advice); setClass(box, 'claude-box'); }
+  else { setText(box, status === 'thinking' ? 'Claude is thinking…' : status === 'error' ? 'Claude: error (see log)' : 'Claude: ' + status + ' — advice appears here when you are on the clock.'); setClass(box, 'claude-box off'); }
+  const notes = Array.isArray(st.notes) ? st.notes : [];
+  setHTML($('notes'), notes.length ? notes.map((n) => '<li>' + esc(n) + '</li>').join('') : '<li class="muted">no notes</li>');
+  setText($('last-error'), get(st, 'status.last_error', '') ? 'last error: ' + get(st, 'status.last_error', '') : '');
+}
+
+// ---- Draft: available players --------------------------------------------
+function filteredAvailable(st) {
+  const all = Array.isArray(st.available) ? st.available : [];
+  const q = S.ui.availQ.trim().toLowerCase(), pos = S.ui.availPos, key = S.ui.availSort;
+  let rows = all.filter((c) => c && (!pos || c.position === pos) &&
+    (!q || String(c.name || '').toLowerCase().includes(q) || String(c.team || '').toLowerCase().includes(q)));
+  const asc = key === 'adp';
+  rows = rows.slice().sort((a, b) => {
+    const x = num(a[key]), y = num(b[key]);
+    if (x == null && y == null) return 0;
+    if (x == null) return 1; if (y == null) return -1;
+    return asc ? x - y : y - x;
+  });
+  return rows;
+}
+function renderAvailable(st) {
+  const rows = filteredAvailable(st);
+  const shown = rows.slice(0, S.ui.availLimit);
+  let h = shown.map((c, i) => cardRow(c, i, {})).join('');
+  if (!rows.length) h = '<tr><td colspan="9" class="muted">' + (Array.isArray(st.available) && st.available.length ? 'no player matches' : 'computing…') + '</td></tr>';
+  setHTML($('avail-tbl').querySelector('tbody'), h);
+  setText($('avail-count'), rows.length ? shown.length + ' of ' + rows.length : '');
+  show($('avail-more'), rows.length > shown.length);
+}
+
+// ---- Board ----------------------------------------------------------------
+async function loadBoard() {
+  const b = S.board;
+  if (b.loading) return;
+  b.loading = true; b.error = null; renderBoard();
+  const qs = new URLSearchParams();
+  if (b.position) qs.set('position', b.position);
+  qs.set('top', String(b.top));
+  if (b.q) qs.set('q', b.q);
+  try {
+    const rows = await api('/api/projections?' + qs.toString(), { timeout: 20000 });
+    b.rows = Array.isArray(rows) ? rows : [];
+    b.loaded = true;
+  } catch (e) { b.error = e.message; b.rows = b.rows || []; }
+  b.loading = false;
+  renderBoard();
+}
+function renderBoard() {
+  const b = S.board;
+  const noSession = !get(S.status, 'session', null) && !isLive();
+  show($('board-load'), noSession);
+  $('board-load').disabled = isBusy();
+  $('board-reload').disabled = b.loading;
+  $$('#board-pos button').forEach((x) => x.classList.toggle('active', x.dataset.pos === b.position));
+  setText($('board-info'), b.loading ? 'loading…' : b.error ? 'error: ' + b.error : b.rows ? b.rows.length + ' players' : '');
+  const rows = Array.isArray(b.rows) ? b.rows : [];
+  let h = '';
+  rows.forEach((c, i) => {
+    const flags = [].concat(Array.isArray(c.flags) ? c.flags : [], c.injury_status ? ['inj:' + c.injury_status] : [], Array.isArray(c.warnings) ? c.warnings : []);
+    h += '<tr data-pid="' + esc(c.player_id) + '"><td class="n muted">' + (i + 1) + '</td><td class="name">' + esc(c.name) + '</td><td>' + esc(c.position) +
+      '</td><td>' + esc(c.team || 'FA') + '</td><td class="n">' + esc(c.bye != null ? c.bye : '–') + '</td><td class="n"><b>' + fmt(c.points) + '</b></td>' +
+      '<td class="n">' + fmt(c.floor) + '</td><td class="n">' + fmt(c.ceiling) + '</td><td class="n">' + fmt(c.std) + '</td><td class="n">' + fmt(c.ppg, 1) + '</td>' +
+      '<td class="n">' + fmt(c.games, 1) + '</td><td class="n">' + fmt(c.adp, 1) + '</td><td class="n">' + fmt(c.ecr, 1) + '</td>' +
+      '<td class="why fill" title="' + esc(flags.join('\n')) + '">' + esc(flags.join(', ')) + '</td></tr>';
+  });
+  if (!rows.length) h = '<tr><td colspan="14" class="muted">' + (b.loading ? 'loading…' : b.error ? 'could not load projections — ' + esc(b.error) +
+    (noSession ? ' (click "Load board" to build the default projections)' : '') : noSession ? 'No projections loaded yet — click "Load board".' : 'no players') + '</td></tr>';
+  setHTML($('board-tbl').querySelector('tbody'), h);
+}
+
+// ---- League ---------------------------------------------------------------
+function deltaKind(d) {
+  if (d.kind) return d.kind;
+  if (d.base == null) return 'added';
+  if (d.league == null) return 'removed';
+  return 'changed';
+}
+function renderLeague() {
+  const snap = get(S.state, 'snapshot', null);
+  const sess = get(S.status, 'session', null);
+  const has = !!(snap || sess);
+  show($('league-empty'), !has);
+  show($('league-body'), has);
+  if (!has) return;
+  const lg = (snap && snap.league) || {};
+  const dr = (snap && snap.draft) || {};
+  const stLeague = get(S.state, 'league', {});
+  const stDraft = get(S.state, 'draft', {});
+  const facts = [
+    ['League', lg.name || stLeague.name || (sess && sess.league_name) || '–'],
+    ['Season', lg.season || stLeague.season || get(S.status, 'season', '–')],
+    ['Teams', lg.total_rosters || lg.teams || stLeague.teams || dr.teams || '–'],
+    ['Scoring', stLeague.scoring_description || get(snap, 'diff.scoring_type', lg.scoring_type || '–')],
+    ['Roster', Array.isArray(lg.roster_positions) ? lg.roster_positions.join(' ') : Array.isArray(stLeague.roster_positions) ? stLeague.roster_positions.join(' ') : '–'],
+    ['Draft', (dr.type || stDraft.type || '–') + (dr.reversal_round ? ' (round-' + dr.reversal_round + ' reversal)' : '') + (dr.draft_id || (sess && sess.draft_id) ? ' — id ' + (dr.draft_id || sess.draft_id) : '')],
+    ['Rounds', dr.rounds || stDraft.rounds || '–'],
+    ['Clock', (num(dr.pick_timer) != null ? dr.pick_timer : num(stDraft.pick_timer) != null ? stDraft.pick_timer : null)],
+    ['Start', dr.start_time ? fmtTime(dr.start_time) : '–'],
+    ['Status', dr.status || stDraft.status || '–'],
+    ['Captured', snap && snap.captured_at ? fmtTime(snap.captured_at) : '–'],
+  ];
+  if (facts[7][1] != null) facts[7][1] = facts[7][1] > 0 ? facts[7][1] + ' s per pick' : 'no timer'; else facts[7][1] = '–';
+  setHTML($('lg-facts'), facts.map(([k, v]) => '<div class="kv"><span>' + esc(k) + '</span><span>' + esc(v) + '</span></div>').join(''));
+
+  const flags = snap && Array.isArray(snap.flags) ? snap.flags : [];
+  setHTML($('lg-flags'), flags.length ? flags.map((f) => '<li>' + esc(f) + '</li>').join('') : '<li class="muted">' + (snap ? 'no special flags — a plain league' : 'no snapshot yet') + '</li>');
+
+  const diff = snap && snap.diff ? snap.diff : null;
+  const deltas = diff && Array.isArray(diff.deltas) ? diff.deltas : [];
+  setText($('lg-diff-head'), diff ? ('Type ' + (diff.scoring_type || '?') + ' (' + fmt(diff.rec_points, 2) + ' per reception). ' +
+    (deltas.length ? deltas.length + ' rule(s) differ from Sleeper base; everything else is base.' : 'Scoring is identical to Sleeper base.')) : 'no scoring snapshot');
+  const fv = (v) => v == null ? '—' : fmt(v, 2).replace(/\.?0+$/, '');
+  setHTML($('lg-diff').querySelector('tbody'), deltas.length ? deltas.map((d) => {
+    const k = deltaKind(d);
+    return '<tr class="' + k + '"><td>' + esc(d.label || d.key) + '</td><td class="n">' + fv(d.base) + '</td><td class="n val">' + fv(d.league) +
+      '</td><td class="mono muted">' + esc(d.key) + '</td><td class="kind">' + k + '</td></tr>';
+  }).join('') : '<tr><td colspan="5" class="muted">no differences</td></tr>');
+
+  const order = snap && Array.isArray(snap.draft_order) ? snap.draft_order : [];
+  setHTML($('lg-order').querySelector('tbody'), order.length ? order.map((o) =>
+    '<tr class="' + (o.is_me ? 'me' : '') + '"><td class="n">' + esc(o.slot) + '</td><td>' + esc(o.display_name || '–') + '</td><td>' + esc(o.team_name || '–') +
+    '</td><td class="n">' + esc(o.roster_id != null ? o.roster_id : '–') + '</td><td class="muted">' + esc((Array.isArray(o.picks) ? o.picks.slice(0, 4) : []).join(', ')) + '</td></tr>').join('') :
+    '<tr><td colspan="5" class="muted">draft order not available' + (sess && sess.my_slot ? ' — your slot is ' + esc(sess.my_slot) : '') + '</td></tr>');
+  const mp = snap && Array.isArray(snap.my_picks) ? snap.my_picks : [];
+  setText($('lg-mypicks'), mp.length ? 'Your picks: ' + mp.join(', ') + (snap.my_slot ? ' (slot ' + snap.my_slot + ')' : '') : '');
+}
+
+// ---- Ask ------------------------------------------------------------------
+function renderAsk() {
+  const ok = !!get(S.status, 'ready.claude', false);
+  $('ask-btn').disabled = !ok || S.ui.asking;
+  $('ask-q').disabled = !ok;
+  setText($('ask-hint'), !ok ? 'Claude is off — set ANTHROPIC_API_KEY in the environment and restart the server.' : S.ui.asking ? 'asking…' :
+    'Claude answers with the current draft context (roster, board, needs).');
+}
+
+// ---- Popover player card ---------------------------------------------------
+function cardHTML(c) {
+  const g = (label, val) => '<div><span>' + label + '</span>' + val + '</div>';
+  let h = '<div class="pn">' + esc(c.name) + warnHTML(c) + '</div><div class="muted">' + posTeam(c) + (c.bye != null ? ' • bye ' + esc(c.bye) : '') +
+    (c.age != null ? ' • age ' + fmt(c.age) : '') + (c.years_exp != null ? ' • ' + esc(c.years_exp) + ' yr' : '') +
+    (c.injury_status ? ' • <span class="warn">' + esc(c.injury_status) + '</span>' : '') +
+    (c.depth_chart_order != null ? ' • depth ' + esc(c.depth_chart_order) : '') + (c.drafted_by ? ' • drafted by ' + esc(c.drafted_by) : '') + '</div>';
+  h += '<div class="grid">' + g('proj', fmt(c.points)) + g('floor', fmt(c.floor)) + g('ceiling', fmt(c.ceiling)) + g('std', fmt(c.std)) +
+    g('ppg', fmt(c.ppg, 1)) + g('games', fmt(c.games, 1)) + g('vorp', signed(c.vorp)) + g('vona', signed(c.vona)) +
+    g('lineup +', signed(c.marginal)) + g('score', fmt(c.score, 1)) + g('tier', c.tier != null ? 'T' + esc(c.tier) : '–') + g('pos rank', c.pos_rank != null ? esc(c.pos_rank) : '–') +
+    g('overall', c.overall_rank != null ? esc(c.overall_rank) : '–') + g('adp', fmt(c.adp, 1)) + g('ecr', fmt(c.ecr, 1)) +
+    g('avail next', pct(c.availability_next) + (num(c.availability_after_next) != null ? ' / ' + pct(c.availability_after_next) : '')) + '</div>';
+  const reasons = Array.isArray(c.reasons) ? c.reasons : [];
+  const warns = Array.isArray(c.warnings) ? c.warnings : [];
+  if (reasons.length) h += '<ul>' + reasons.map((r) => '<li>' + esc(r) + '</li>').join('') + '</ul>';
+  if (warns.length) h += '<ul class="warn">' + warns.map((r) => '<li>' + esc(r) + '</li>').join('') + '</ul>';
+  if (c.note && typeof c.note === 'object') {
+    const n = c.note;
+    h += '<div class="note"><b>Research:</b> ' + esc(n.summary || '') +
+      (num(n.injury_risk) != null || num(n.role_certainty) != null ? '<div class="muted small">injury risk ' + pct(n.injury_risk) + ' • role certainty ' + pct(n.role_certainty) + '</div>' : '') +
+      (n.upside ? '<div><span class="muted">Upside:</span> ' + esc(n.upside) + '</div>' : '') + (n.downside ? '<div><span class="muted">Downside:</span> ' + esc(n.downside) + '</div>' : '') + '</div>';
+  }
+  const ex = S.ui.explain[c.player_id];
+  if (ex) h += '<div class="explain">' + esc(ex) + '</div>';
+  if (S.ui.pinnedId === c.player_id) {
+    h += '<div class="pinhint">pinned — <kbd>Esc</kbd> closes' + (!ex ? ' • <a href="#" data-explain="' + esc(c.player_id) + '">explain</a>' : '') +
+      (isMock() && myTurn() ? ' • <a href="#" data-draft="' + esc(c.player_id) + '">draft him</a>' : '') + '</div>';
+  }
+  return h;
+}
+let _popAnchor = null, _popRoot = null;   // the hovered row and the table it lives in
+/** Rows are re-rendered on every poll: find the current row for the same player (or give up). */
+function popAnchor() {
+  const pid = S.ui.pinnedId || S.ui.hoverId;
+  if (_popAnchor && !_popAnchor.isConnected && _popRoot && pid) {
+    const again = _popRoot.querySelector('[data-pid="' + String(pid).replace(/"/g, '\\"') + '"]');
+    _popAnchor = again || null;
+  }
+  const a = _popAnchor;
+  if (!a || !a.isConnected || a.offsetParent === null) return null;   // gone, or in a hidden tab
+  return a;
+}
+function renderPop() {
+  const pop = $('card-pop');
+  const pid = S.ui.pinnedId || S.ui.hoverId;
+  const c = findCard(pid);
+  const a = popAnchor();
+  if (!pid || !c || !a) { show(pop, false); return; }
+  setHTML(pop, cardHTML(c));
+  show(pop, true);
+  placePop(pop);
+}
+function placePop(pop) {
+  const a = popAnchor();
+  if (!a) return;
+  const r = a.getBoundingClientRect();
+  const w = pop.offsetWidth || 360, hgt = pop.offsetHeight || 200;
+  let left = r.right + 8;
+  if (left + w > window.innerWidth - 8) left = r.left - w - 8;
+  if (left < 8) left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+  let top = r.top;
+  if (top + hgt > window.innerHeight - 8) top = Math.max(8, window.innerHeight - hgt - 8);
+  pop.style.left = left + 'px'; pop.style.top = top + 'px';
+}
+let _hideTimer = null;
+function hoverCard(pid, anchor, root) {
+  clearTimeout(_hideTimer);
+  if (S.ui.pinnedId) return;
+  S.ui.hoverId = pid; _popAnchor = anchor; _popRoot = root; renderPop();
+}
+function unhoverCard() {
+  clearTimeout(_hideTimer);
+  _hideTimer = setTimeout(() => { if (!S.ui.pinnedId) { S.ui.hoverId = null; renderPop(); } }, 150);
+}
+function pinCard(pid, anchor, root) {
+  S.ui.pinnedId = S.ui.pinnedId === pid ? null : pid;
+  if (S.ui.pinnedId) { _popAnchor = anchor; _popRoot = root; S.ui.hoverId = pid; }
+  renderPop();
+}
+function unpinCard() { clearTimeout(_hideTimer); S.ui.pinnedId = null; S.ui.hoverId = null; _popAnchor = null; renderPop(); }
+
+// ---------------------------------------------------------------- 5. polling loop
+let _pollTimer = null;
+function onOk() { if (S.failures) { S.failures = 0; renderTop(); } }
+function onFail(e) {
+  S.failures += 1;
+  if (S.failures === 1 || S.failures % 15 === 0) toast('server: ' + e.message);
+  renderTop();
+}
+async function loadStatus() {
+  try {
+    const st = await api('/api/status', { timeout: 8000 });
+    S.status = st || {}; S.statusAt = Date.now(); S.mode = S.status.mode || 'idle';
+    if (!isLive() && S.state) S.state = null;           // session ended: drop the stale draft view
+    onOk(); renderAll();
+  } catch (e) { onFail(e); }
+}
+async function loadState() {
+  try {
+    const st = await api('/api/state', { timeout: 8000 });
+    S.state = st || {}; S.stateAt = Date.now();
+    if (num(st.ts) != null) S.clockSkew = Date.now() / 1000 - st.ts;
+    if (st.mode) S.mode = st.mode;
+    onOk(); renderAll();
+  } catch (e) {
+    if (e.status === 404 || e.status === 409) { await loadStatus(); return; }   // session went away
+    onFail(e);
+  }
+}
+async function tick() {
+  if (isLive()) {
+    await loadState();
+    if (Date.now() - S.statusAt > 5000) await loadStatus();   // keep the log / readiness fresh, cheaply
+  } else {
+    await loadStatus();
+    if (isLive() && !S.state) await loadState();   // session just started: show the draft without waiting a poll
+  }
+  schedule();
+}
+function schedule(ms) {
+  clearTimeout(_pollTimer);
+  if (ms == null) ms = isLive() ? (myTurn() ? 1000 : 2000) : 2000;
+  _pollTimer = setTimeout(tick, ms);
+}
+/** Re-poll right now (after a POST that changes the mode). */
+function pokeNow() { schedule(50); }
+setInterval(() => { if (S.ui.tab === 'draft') renderCountdown(); }, 1000);
+
+// ---------------------------------------------------------------- 6. event wiring
+function showTab(name) {
+  if (S.ui.tab !== name) unpinCard();          // a card anchored in another tab must not linger
+  S.ui.tab = name;
+  $$('.tab').forEach((s) => s.classList.toggle('active', s.id === 'tab-' + name));
+  try { localStorage.setItem('da.tab', name); } catch (e) { /* private mode */ }
+  if (name === 'board' && !S.board.loaded && !S.board.loading) loadBoard();
+  renderAll();
+}
+$$('#tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+
+// theme
+$('theme-btn').addEventListener('click', () => {
+  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('da.theme', next); } catch (e) { /* ignore */ }
+});
+
+// ---- Setup actions
+async function stopSession() {
+  const r = await post('/api/stop', {}, 'stop');
+  if (r) { toast('Session stopped', 'info'); S.mode = 'idle'; S.state = null; S.ui.autopilot = false; unpinCard(); renderAll(); pokeNow(); }
+}
+$('stop-btn').addEventListener('click', stopSession);
+$('stop-btn2').addEventListener('click', stopSession);
+$('prep-btn').addEventListener('click', async () => {
+  $('prep-btn').disabled = true;
+  const r = await post('/api/prep', { refresh: $('prep-refresh').checked, research: $('prep-research').checked, top: 150 }, 'prep');
+  if (r) toast('Preparing… watch the log', 'info');
+  pokeNow();
+});
+$('lookup-btn').addEventListener('click', async () => {
+  const username = $('live-username').value.trim();
+  if (!username) { toast('enter your Sleeper username first'); return; }
+  $('lookup-btn').disabled = true;
+  setText($('lookup-info'), 'looking up ' + username + '…');
+  const r = await post('/api/lookup', { username: username }, 'lookup');
+  $('lookup-btn').disabled = false;
+  if (r) { S.ui.lookup = r; renderLookup(); } else setText($('lookup-info'), 'look-up failed.');
+});
+$('live-league').addEventListener('change', syncDraftToLeague);
+$('live-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const body = { use_claude: $('live-claude').checked };
+  const league_id = $('live-league').value, draft_id = $('live-draft').value, username = $('live-username').value.trim();
+  const slot = parseInt($('live-slot').value, 10);
+  if (league_id) body.league_id = league_id;
+  if (draft_id) body.draft_id = draft_id;
+  if (username) body.username = username;
+  if (get(S.ui.lookup, 'user.user_id', null)) body.user_id = S.ui.lookup.user.user_id;
+  if (slot > 0) body.slot = slot;
+  if (!league_id && !draft_id) { toast('pick a league or a draft first (use Look up)'); return; }
+  $('live-start').disabled = true;
+  const r = await post('/api/live/start', body, 'start live draft');
+  if (r) { toast('Starting live draft…', 'info'); showTab('draft'); }
+  pokeNow();
+});
+$('mock-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const teams = Math.min(16, Math.max(8, parseInt($('mock-teams').value, 10) || 12));
+  const rounds = Math.min(20, Math.max(10, parseInt($('mock-rounds').value, 10) || 15));
+  const slot = Math.min(teams, Math.max(1, parseInt($('mock-slot').value, 10) || 1));
+  const seedRaw = $('mock-seed').value.trim();
+  const body = {
+    teams: teams, rounds: rounds, slot: slot, scoring: $('mock-scoring').value, superflex: $('mock-superflex').checked,
+    seed: seedRaw === '' ? null : parseInt(seedRaw, 10), bot_delay: Math.max(0, parseFloat($('mock-delay').value) || 0),
+    autopilot: $('mock-autopilot').checked,
+  };
+  $('mock-start').disabled = true;
+  const r = await post('/api/mock/start', body, 'start mock draft');
+  if (r) { S.ui.autopilot = body.autopilot; toast('Mock draft starting…', 'info'); showTab('draft'); }
+  pokeNow();
+});
+
+// ---- Draft actions
+async function takeRecommended() {
+  if (!isMock() || !myTurn() || S.ui.picking) return;
+  S.ui.picking = true; $('take-btn').disabled = true;
+  const r = await post('/api/mock/auto', {}, 'take recommended');
+  S.ui.picking = false;
+  if (r) { unpinCard(); pokeNow(); }
+}
+async function draftPlayer(pid) {
+  if (!isMock() || !myTurn() || S.ui.picking) return;
+  const c = findCard(pid) || { name: pid };
+  if (!window.confirm('Draft ' + c.name + (c.position ? ' (' + c.position + (c.team ? ', ' + c.team : '') + ')' : '') + '?')) return;
+  S.ui.picking = true;
+  const r = await post('/api/mock/pick', { player_id: String(pid) }, 'pick');
+  S.ui.picking = false;
+  if (r) { unpinCard(); pokeNow(); }
+}
+$('take-btn').addEventListener('click', takeRecommended);
+$('autopilot').addEventListener('change', async (ev) => {
+  const enabled = ev.target.checked;
+  const r = await post('/api/mock/autopilot', { enabled: enabled }, 'autopilot');
+  if (r) { S.ui.autopilot = enabled; toast('Autopilot ' + (enabled ? 'on' : 'off'), 'info', 2000); pokeNow(); }
+  else ev.target.checked = S.ui.autopilot;
+});
+$('avail-q').addEventListener('input', (ev) => { S.ui.availQ = ev.target.value; S.ui.availLimit = 40; if (S.state) renderAvailable(S.state); });
+$('avail-pos').addEventListener('change', (ev) => { S.ui.availPos = ev.target.value; S.ui.availLimit = 40; if (S.state) renderAvailable(S.state); });
+$('avail-sort').addEventListener('change', (ev) => { S.ui.availSort = ev.target.value; if (S.state) renderAvailable(S.state); });
+$('avail-more').addEventListener('click', () => { S.ui.availLimit += 40; if (S.state) renderAvailable(S.state); });
+
+// hover / click on player rows (delegated; rows are re-rendered every poll)
+for (const id of ['best-tbl', 'avail-tbl', 'pos-grid', 'roster-tbl', 'recent-tbl', 'board-tbl']) {
+  const root = $(id);
+  root.addEventListener('mouseover', (ev) => {
+    const row = ev.target.closest('[data-pid]');
+    if (row && root.contains(row)) hoverCard(row.dataset.pid, row, root);
+  });
+  root.addEventListener('mouseleave', unhoverCard);
+  root.addEventListener('click', (ev) => {
+    const row = ev.target.closest('[data-pid]');
+    if (!row || !root.contains(row)) return;
+    const pid = row.dataset.pid;
+    const pickable = root.classList.contains('pickable') && id !== 'board-tbl';
+    if (pickable && isMock() && myTurn()) draftPlayer(pid);
+    else pinCard(pid, row, root);
+  });
+}
+$('card-pop').addEventListener('mouseenter', () => clearTimeout(_hideTimer));
+$('card-pop').addEventListener('mouseleave', unhoverCard);
+$('card-pop').addEventListener('click', async (ev) => {
+  const a = ev.target.closest('a[data-explain], a[data-draft]');
+  if (!a) return;
+  ev.preventDefault();
+  if (a.dataset.draft) { draftPlayer(a.dataset.draft); return; }
+  const pid = a.dataset.explain;
+  try {
+    const r = await api('/api/player/' + encodeURIComponent(pid), { timeout: 10000 });
+    S.ui.explain[pid] = (r && r.explain) || 'no explanation available';
+  } catch (e) { S.ui.explain[pid] = 'explain failed: ' + e.message; }
+  renderPop();
+});
+document.addEventListener('click', (ev) => {
+  // click outside the popover / tables unpins
+  if (S.ui.pinnedId && !ev.target.closest('#card-pop') && !ev.target.closest('[data-pid]')) unpinCard();
+});
+window.addEventListener('resize', () => { if (!$('card-pop').hidden) placePop($('card-pop')); });
+
+// keyboard: Enter = take recommended (mock, my turn), Esc = close card, 1-5 = tabs
+document.addEventListener('keydown', (ev) => {
+  const tag = (ev.target && ev.target.tagName || '').toLowerCase();
+  const typing = tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button';
+  if (ev.key === 'Escape') { unpinCard(); return; }
+  if (typing) return;
+  if (ev.key === 'Enter' && S.ui.tab === 'draft') { ev.preventDefault(); takeRecommended(); return; }
+  const tabs = ['setup', 'draft', 'board', 'league', 'ask'];
+  if (/^[1-5]$/.test(ev.key)) showTab(tabs[parseInt(ev.key, 10) - 1]);
+});
+
+// ---- Board actions
+$$('#board-pos button').forEach((b) => b.addEventListener('click', () => { S.board.position = b.dataset.pos; loadBoard(); }));
+let _qTimer = null;
+$('board-q').addEventListener('input', (ev) => { S.board.q = ev.target.value.trim(); clearTimeout(_qTimer); _qTimer = setTimeout(loadBoard, 300); });
+$('board-top').addEventListener('change', (ev) => { S.board.top = parseInt(ev.target.value, 10) || 100; loadBoard(); });
+$('board-reload').addEventListener('click', loadBoard);
+$('board-load').addEventListener('click', async () => {
+  $('board-load').disabled = true;
+  const r = await post('/api/board/load', {}, 'load board');
+  if (r) { toast('Building projections… reload the board in a moment', 'info'); await loadStatus(); loadBoard(); }
+  else $('board-load').disabled = false;
+});
+
+// ---- Ask actions
+$('ask-btn').addEventListener('click', async () => {
+  const q = $('ask-q').value.trim();
+  if (!q) { toast('type a question first'); return; }
+  S.ui.asking = true; renderAsk();
+  show($('ask-answer'), true); setText($('ask-answer'), 'thinking…');
+  try {
+    const r = await api('/api/ask', { method: 'POST', body: { question: q }, timeout: 90000 });
+    setText($('ask-answer'), (r && r.answer) || '(no answer)');
+  } catch (e) { setText($('ask-answer'), 'error: ' + e.message); toast('ask: ' + e.message); }
+  S.ui.asking = false; renderAsk();
+});
+$('ask-q').addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) $('ask-btn').click(); });
+
+// ---- boot
+(function boot() {
+  let theme = 'dark', tab = 'setup';
+  try { theme = localStorage.getItem('da.theme') || theme; tab = localStorage.getItem('da.tab') || tab; } catch (e) { /* ignore */ }
+  document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+  showTab(['setup', 'draft', 'board', 'league', 'ask'].includes(tab) ? tab : 'setup');
+  tick();
+})();
+</script>
+</body>
+</html>
