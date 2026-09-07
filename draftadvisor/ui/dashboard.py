@@ -40,7 +40,7 @@ log = logging.getLogger(__name__)
 __all__ = ["Dashboard", "render_text", "scoring_description", "action_style"]
 
 #: Below this many columns the opponent-needs panel is dropped.
-COMPACT_WIDTH = 130
+COMPACT_WIDTH = 150
 #: Below this many rows the per-position tables show fewer candidates.
 COMPACT_HEIGHT = 42
 
@@ -411,7 +411,7 @@ class Dashboard:
                 ("VORP", dict(width=4, justify="right")), ("T", dict(width=2, justify="right")),
                 ("ADP", dict(width=3, justify="right")), ("Avail", dict(width=5, justify="right")),
                 ("Score", dict(width=5, justify="right")), ("Why", dict(ratio=3, overflow="ellipsis", min_width=10))]
-        keep = [i for i, (name, _) in enumerate(cols) if not (compact and name in ("Bye", "T", "Score", "Why"))]
+        keep = [i for i, (name, _) in enumerate(cols) if not (compact and name in ("Bye", "T", "Score"))]
         for i in keep:
             name, kw = cols[i]
             t.add_column(name, no_wrap=True, **kw)

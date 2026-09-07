@@ -66,6 +66,7 @@ _LIKELY_THERE = 0.85
 _TIER_TOP_FRAC = 0.05
 _TIER_STD_FRAC = 0.35
 _LOOKAHEAD_TOP = 60
+_DEFER_EPS = 0.05          # certainty premium: prefer the scarcer player when plans tie
 _KDEF_EARLY_PENALTY = 0.25
 _RUN_MIN = 4
 _MAX_BYE = 24
@@ -94,6 +95,8 @@ class _Context:
     marginal: np.ndarray
     vona: np.ndarray
     score: np.ndarray
+    next_after: np.ndarray                  # expected marginal value of my next pick if I take this player now
+    e_next_marg: np.ndarray                 # per position: expected best marginal value available at my next pick
     order: np.ndarray                       # indices into avail, score descending
     overall_rank: np.ndarray
     my_summary: RosterSummary | None
@@ -399,7 +402,9 @@ class Advisor:
         if not fut:
             # this is my last pick: there is no next pick to plan for
             next_after = np.zeros_like(next_after)
-        score = marginal + next_after - float(s.risk_aversion) * std
+        # Two plans with equal expected value are not equal: the one that banks the scarcer
+        # player now carries less variance, so charge a small premium on value left at risk.
+        score = marginal + next_after - _DEFER_EPS * p_next * marginal - float(s.risk_aversion) * std
         teams = self._team[avail]
         stack_qb: dict[str, str] = lineup_info["stack_qb"]
         stack_pc: dict[str, str] = lineup_info["stack_pc"]
@@ -425,7 +430,7 @@ class Advisor:
             eval_pick=eval_pick, eval_after=eval_after,
             avail=avail, pos=pos, points=pts, rep=rep, vorp=vorp, tier=tier, n_tiers=n_tiers,
             pos_rank=pos_rank, p_next=p_next, p_after=p_after, marginal=marginal, vona=vona,
-            score=score, order=order, overall_rank=overall_rank,
+            score=score, next_after=next_after, e_next_marg=e_next_marg, order=order, overall_rank=overall_rank,
             my_summary=my_summary, opp_summaries=opp_summaries, pressure=pressure,
             e_next=e_next, best_now=best_now, need_open=lineup_info["need_open"],
             open_label=lineup_info["open_label"], bench_weight=lineup_info["bench_weight"],
@@ -607,6 +612,9 @@ class Advisor:
             action = "TAKE NOW"
             text = (f"Must fill: {len(ctx.open_slots)} open starter(s) ({' '.join(ctx.open_slots)}) and only "
                     f"{len(ctx.open_slots) + ctx.picks_spare} pick(s) left; {base}")
+        elif best.overall_rank == 1:
+            action = "TAKE NOW"
+            text = f"Best value on the board right now; {base}"
         elif not need and low_bench:
             action = "SKIP"
             text = f"{pos} starters are set and a bench {pos} adds little; {base}"
