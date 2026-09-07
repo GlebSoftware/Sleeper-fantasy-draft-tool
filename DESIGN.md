@@ -398,3 +398,25 @@ the fixture players with `use_model=False`).
 * Log with `logging.getLogger(__name__)`; no prints inside library code (CLI prints are fine).
 * Tests must pass offline: `python -m pytest tests -q`. Use the fixtures in `tests/fixtures/`.
 * Type hints everywhere; docstrings on public functions; keep functions small.
+
+### 3.7 `capture.py` — one-time pre-draft league info capture  (owner: integrator)
+
+When a league id (and/or draft id) is supplied, the tool performs a one-time **info capture** before the
+draft and persists it under `home_dir()/leagues/<league_id>.json` (raw payloads + derived summary):
+
+* league: name, season, status, number of teams, roster slots (starters / bench / IR / taxi), settings that
+  affect strategy (best ball, max keepers, taxi slots, reserve slots, playoff teams & start week, trade
+  deadline, waiver type, superflex / TE premium / 6-pt pass TD flags);
+* scoring: full `scoring_settings` and a **diff against Sleeper's base scoring** (added keys, changed values,
+  removed keys) with human-readable labels — so you know exactly how this league deviates from defaults;
+* draft: type, rounds, pick timer, reversal round, start time, status, draft order (slot -> manager /
+  team name / roster id), traded picks, keepers already on the board, and for the advised user: slot,
+  roster id and the full list of their pick numbers;
+* managers/rosters: user ids, display names, team names, roster ids, current rosters (dynasty/keeper).
+
+API: `capture_league(client, league_id=None, draft_id=None, *, username=None, user_id=None, slot=None)
+-> LeagueSnapshot` (async), `LeagueSnapshot.save()/load(league_id_or_draft_id)`, `LeagueSnapshot.report()`
+(rich renderable) and `.to_text()`. `scoring_diff(scoring_settings) -> ScoringDiff`.
+CLI: `draftadvisor capture --league ID [--draft ID] [--username U]`; `prep` and `draft` run the capture
+automatically (draft refreshes it at bootstrap because the draft order can change until the draft starts)
+and print the report once.
