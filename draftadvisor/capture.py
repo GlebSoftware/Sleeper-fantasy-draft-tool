@@ -239,7 +239,7 @@ def strategy_flags(league: LeagueSettings | None, draft: DraftSettings | None) -
         if draft.type == "auction":
             flags.append("Auction draft: this tool's pick-order advice does not apply")
         if draft.pick_timer:
-            flags.append(f"{draft.pick_timer}-second pick clock")
+            flags.append(f"{draft.pick_timer}-second pick clock at capture time (commissioners can change it; the live value is shown during the draft)")
     return flags
 
 

@@ -56,8 +56,10 @@ python run.py                                            # opens http://127.0.0.
    the league (scoring diff vs Sleeper base, draft order, your pick numbers → **League tab**), then the
    **Draft tab** refreshes every 2 seconds: best picks with reasons, TAKE NOW / SOON / WAIT / SKIP per position,
    your roster and needs, opponents' needs, recent picks, a searchable list of everyone still available,
-   Claude's take when you are on the clock, and a **chat** panel to argue with the recommendation
-   ("why not the WR?", "compare #1 and #2", "any red flags on my top 3?").
+   Claude's take when you are on the clock, and a **chat sidebar** (💬 button, floating button, or the `c` key;
+   a sidebar next to the board on a wide screen, full screen on a phone) to argue with the recommendation
+   ("why not the WR?", "compare #1 and #2", "any red flags on my top 3?"). The page works on a phone: the
+   tables drop secondary columns, player cards open as a bottom sheet.
 2. **Research**: *Research top N* runs Claude (Sonnet) with live web search per player — injuries, off-field
    issues (arrests, lawsuits, suspensions), holdouts, depth-chart changes, bust/breakout commentary — and
    stores `red_flags`, `injury_risk`, `role_certainty`, `offfield_risk` on each note. Flags show as a red ⚠ on

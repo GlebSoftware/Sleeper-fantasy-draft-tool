@@ -8,7 +8,7 @@
 <style>
 /* =====================================================================
    Theme tokens — change colours here. `data-theme="light"` on <html>
-   swaps the palette (toggle button in the top bar).
+   swaps the palette (◐ button / Settings → theme).
    ===================================================================== */
 :root {
   --bg: #0e1116;        /* page background            */
@@ -51,6 +51,7 @@ html[data-theme="light"] {
 /* ---------- base ---------- */
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; }
 body {
   background: var(--bg); color: var(--fg); font: 13px/1.4 var(--font);
   font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased;
@@ -79,12 +80,14 @@ button.danger { color: var(--red); border-color: var(--red); background: transpa
 button.small { padding: 2px 7px; font-size: 12px; }
 button.big { font-size: 15px; padding: 9px 16px; }
 label { display: inline-flex; align-items: center; gap: 4px; }
-form label { display: flex; flex-direction: column; align-items: stretch; gap: 3px; font-size: 12px; color: var(--fg2); }
-form label.inline { flex-direction: row; align-items: center; }
-form label > select, form label > input { width: 100%; min-width: 0; }
+form label, .fields label { display: flex; flex-direction: column; align-items: stretch; gap: 3px; font-size: 12px; color: var(--fg2); }
+form label.inline, .fields label.inline { flex-direction: row; align-items: center; }
+form label > select, form label > input, .fields label > select, .fields label > input { width: 100%; min-width: 0; }
 select { max-width: 100%; text-overflow: ellipsis; }
-form .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
-form .row > label { flex: 1 1 120px; }
+form .row, .fields .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+form .row > label, .fields .row > label { flex: 1 1 120px; }
+.inrow { display: flex; gap: 6px; align-items: center; }
+.inrow > input { flex: 1; min-width: 0; }
 
 /* ---------- top bar ---------- */
 #topbar {
@@ -96,7 +99,7 @@ form .row > label { flex: 1 1 120px; }
 #tabs button { background: transparent; border: 1px solid transparent; color: var(--fg2); padding: 5px 10px; }
 #tabs button.active { background: var(--accent-bg); color: var(--fg); border-color: var(--border); }
 .topstatus { margin-left: auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
-#top-msg { color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
+#top-msg { color: var(--fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 36vw; }
 .pill {
   display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
   background: var(--grey-bg); color: var(--fg2); border: 1px solid var(--border); white-space: nowrap;
@@ -107,7 +110,7 @@ form .row > label { flex: 1 1 120px; }
 .pill.info { background: var(--accent-bg); color: var(--accent); }
 .spinner {
   width: 12px; height: 12px; border: 2px solid var(--fg3); border-top-color: var(--accent);
-  border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block;
+  border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; flex: none;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -117,6 +120,11 @@ main { padding: 12px 14px 40px; }
 .tab.active { display: block; }
 .panel { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
 .panel + .panel { margin-top: 10px; }
+.panel.collapsible > h2 { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; }
+.panel.collapsible > h2 .tri { display: inline-block; transition: transform 0.15s; font-size: 9px; }
+.panel.collapsible.closed > h2 .tri { transform: rotate(-90deg); }
+.panel.collapsible.closed > h2 { margin-bottom: 0; }
+.panel.collapsible.closed > :not(h2) { display: none; }
 .empty { padding: 30px; text-align: center; color: var(--fg3); }
 .setup-grid { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 12px; align-items: start; }
 @media (max-width: 1100px) { .setup-grid { grid-template-columns: 1fr 1fr; } }
@@ -135,6 +143,7 @@ tr[data-pid]:hover td { background: var(--bg3); }
 td.why { color: var(--fg2); }
 td.name { max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
 .warn-flag { color: var(--red); font-weight: 700; cursor: help; margin-left: 4px; }
+.flag { display: inline-block; color: #fff; background: var(--red); border-radius: 3px; font-size: 10px; line-height: 14px; padding: 0 4px; margin-left: 4px; cursor: help; font-weight: 700; vertical-align: 1px; }
 .tier { display: inline-block; min-width: 20px; text-align: center; border-radius: 3px; background: var(--grey-bg); font-size: 11px; padding: 0 3px; }
 .tier.t1 { background: var(--green-bg); color: var(--green); }
 .tier.t2 { background: var(--accent-bg); color: var(--accent); }
@@ -145,46 +154,67 @@ td.fill { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; 
 .panel { overflow-x: auto; }
 #roster-tbl td, #roster-tbl th, #recent-tbl td, #recent-tbl th, #opp-tbl td, #opp-tbl th { padding: 3px 4px; font-size: 12px; }
 #roster-tbl td.slot { color: var(--fg3); font-size: 11px; }
+tr.fresh td { animation: slidein 0.5s ease-out both; }
+@keyframes slidein { from { opacity: 0; transform: translateX(-10px); background: var(--accent-bg); } to { opacity: 1; transform: none; } }
 
 /* ---------- setup ---------- */
 .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 .chip { padding: 2px 9px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); background: var(--grey-bg); color: var(--fg2); }
 .chip.ok { background: var(--green-bg); color: var(--green); border-color: transparent; }
 .chip.bad { background: var(--red-bg); color: var(--red); border-color: transparent; }
+.chip.warn { background: var(--amber-bg); color: var(--amber); border-color: transparent; }
 .kv { display: flex; gap: 10px; padding: 2px 0; font-size: 12px; }
-.kv > span:first-child { color: var(--fg3); min-width: 70px; }
+.kv > span:first-child { color: var(--fg3); min-width: 70px; flex: none; }
 .kv > span:last-child { overflow: hidden; text-overflow: ellipsis; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
-.log { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; height: 260px; overflow: auto; margin: 0; font-family: var(--mono); font-size: 11.5px; white-space: pre-wrap; color: var(--fg2); }
 .hint { font-size: 12px; color: var(--fg3); margin-top: 6px; }
+
+/* ---------- research ---------- */
+.progress { height: 8px; background: var(--bg4); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; margin: 6px 0; }
+.progress > div { height: 100%; background: var(--accent); width: 0; transition: width 0.3s; }
+.meter { display: grid; grid-template-columns: 90px 1fr 34px; gap: 6px; align-items: center; font-size: 11px; color: var(--fg2); margin: 2px 0; }
+.meter .bar { height: 6px; background: var(--bg4); border-radius: 999px; overflow: hidden; border: 1px solid var(--border); }
+.meter .bar > div { height: 100%; }
+.meter.good .bar > div { background: var(--green); }
+.meter.mid .bar > div { background: var(--amber); }
+.meter.bad .bar > div { background: var(--red); }
+.redflags { color: var(--red); margin: 4px 0; padding-left: 16px; }
 
 /* ---------- draft header ---------- */
 .dhead {
-  position: sticky; top: 44px; z-index: 20; display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px;
+  position: sticky; top: 44px; z-index: 20; display: grid; grid-template-columns: 1fr auto 1fr; grid-template-areas: "l c r"; gap: 12px;
   align-items: center; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 8px 12px; margin-bottom: 10px;
 }
-.dh-left { min-width: 0; }
+.dh-left { min-width: 0; grid-area: l; }
 .dh-league { font-size: 15px; font-weight: 600; }
 .dh-league .muted { font-weight: 400; font-size: 12px; margin-left: 6px; }
 .dh-pick { font-size: 13px; margin-top: 2px; }
 .dh-pick b { color: var(--fg); }
-.dh-center { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.dh-right { display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dh-center { display: flex; flex-direction: column; align-items: center; gap: 6px; grid-area: c; min-width: 0; }
+.dh-right { display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex-wrap: wrap; grid-area: r; }
 .banner {
   font-size: 20px; font-weight: 800; letter-spacing: 0.06em; padding: 6px 22px; border-radius: var(--radius);
-  background: var(--red); color: #fff; animation: pulse 1.2s ease-in-out infinite; white-space: nowrap;
+  background: var(--red); color: #fff; animation: pulse 1.2s ease-in-out infinite; white-space: nowrap; text-align: center;
 }
-.banner .cd { font-family: var(--mono); font-weight: 600; margin-left: 10px; font-size: 18px; opacity: 0.95; }
 .banner.done { background: var(--green); animation: none; color: #06210f; }
 .banner.paused { background: var(--grey); animation: none; }
 @keyframes pulse { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.25); } }
+.clock { font-family: var(--mono); font-size: 12px; color: var(--fg2); }
+.clock b { font-size: 15px; color: var(--fg); margin-left: 6px; }
+.clock.low b { color: var(--red); }
 #mock-controls { display: flex; gap: 10px; align-items: center; }
 .toggle { font-size: 12px; color: var(--fg2); }
 
 /* ---------- draft columns ---------- */
-.cols { display: grid; grid-template-columns: 300px minmax(0, 1fr) 280px; gap: 10px; align-items: start; }
-@media (max-width: 1000px) { .cols { grid-template-columns: 1fr; } .dhead { grid-template-columns: 1fr; } .dh-right { justify-content: flex-start; } }
+.cols { display: grid; grid-template-columns: 300px minmax(0, 1fr) 300px; gap: 10px; align-items: start; }
+@media (max-width: 1000px) {
+  .cols { grid-template-columns: 1fr; }
+  .col-center { order: 0; } .col-left { order: 1; } .col-right { order: 2; }   /* phones: best picks first */
+  .dhead { grid-template-columns: 1fr auto; grid-template-areas: "l r" "c c"; gap: 6px 10px; }
+  .dh-center { align-items: stretch; }
+  #mock-controls { justify-content: center; flex-wrap: wrap; }
+}
 .pos-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
 @media (max-width: 1300px) { .pos-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .pos { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; min-width: 0; }
@@ -202,15 +232,66 @@ td.fill { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; 
 .roster-meta b { color: var(--fg); }
 .foot { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 10px; }
 @media (max-width: 1000px) { .foot { grid-template-columns: 1fr; } }
-.claude-box { white-space: pre-wrap; font-size: 13px; }
+.claude-box { font-size: 13px; }
 .claude-box.off { color: var(--fg3); }
+.claude-box .md p { margin: 0 0 6px; }
 #notes { margin: 0; padding-left: 18px; }
 .avail-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
 .avail-bar input[type="search"] { flex: 1 1 160px; }
 
+/* ---------- chat drawer: a sidebar next to the board on wide screens, an overlay below 1200 px, full screen on phones ---------- */
+.drawer {
+  position: fixed; top: 44px; right: 0; bottom: 0; width: 420px; max-width: 100vw; z-index: 60; background: var(--bg2);
+  border-left: 1px solid var(--border); box-shadow: var(--shadow); display: flex; flex-direction: column;
+}
+.drawer-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.drawer-head h2 { margin: 0; }
+.drawer-head .muted { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drawer .chat { flex: 1; min-height: 0; padding: 10px 12px; }
+.drawer .chat .log { flex: 1; min-height: 0; max-height: none; }
+.drawer-bg { position: fixed; inset: 0; z-index: 59; background: rgba(0, 0, 0, 0.35); }
+@media (min-width: 1200px) {
+  .drawer-bg { display: none !important; }
+  body.chat-open main { margin-right: 420px; }         /* true sidebar: the board stays fully visible */
+  body.chat-open #toasts { right: 434px; }
+}
+@media (min-width: 1200px) and (max-width: 1750px) {   /* sidebar open on a laptop: two board columns, recent picks under the roster */
+  body.chat-open .cols { grid-template-columns: 280px minmax(0, 1fr); }
+  body.chat-open .col-left { grid-column: 1; grid-row: 1; }
+  body.chat-open .col-center { grid-column: 2; grid-row: 1 / span 2; }
+  body.chat-open .col-right { grid-column: 1; grid-row: 2; }
+  body.chat-open .pos-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.fab {
+  position: fixed; right: 14px; bottom: 14px; z-index: 55; width: 50px; height: 50px; border-radius: 50%; padding: 0;
+  background: var(--accent); border-color: var(--accent); color: #fff; font-size: 22px; line-height: 1; box-shadow: var(--shadow);
+}
+.fab.busy { animation: pulse 1.2s ease-in-out infinite; }
+
+/* ---------- chat ---------- */
+.chat { display: flex; flex-direction: column; gap: 8px; }
+.chat .log { display: flex; flex-direction: column; gap: 6px; overflow: auto; max-height: 46vh; padding: 2px; }
+.chat.full .log { max-height: 62vh; min-height: 200px; }
+.bubble { max-width: 92%; padding: 6px 10px; border-radius: 10px; font-size: 12.5px; white-space: normal; word-wrap: break-word; }
+.bubble.user { align-self: flex-end; background: var(--accent-bg); border: 1px solid var(--border); border-bottom-right-radius: 3px; }
+.bubble.assistant { align-self: flex-start; background: var(--bg3); border: 1px solid var(--border); border-bottom-left-radius: 3px; }
+.bubble.error { border-color: var(--red); color: var(--red); }
+.bubble .md p { margin: 0 0 6px; } .bubble .md p:last-child { margin: 0; }
+.md ul, .md ol { margin: 2px 0 6px; padding-left: 18px; }
+.md li { margin: 1px 0; }
+.md code { font-family: var(--mono); font-size: 11.5px; background: var(--bg4); padding: 0 3px; border-radius: 3px; }
+.cursor::after { content: "▌"; animation: blink 1s steps(2) infinite; color: var(--accent); }
+@keyframes blink { 50% { opacity: 0; } }
+.chat textarea { width: 100%; min-height: 54px; resize: vertical; }
+.chat.full textarea { min-height: 80px; }
+.qchips { display: flex; gap: 6px; flex-wrap: wrap; }
+.qchips button { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; }
+.chat .row2 { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.chat .row2 .muted { margin-left: auto; }
+
 /* ---------- popover card ---------- */
 .pop {
-  position: fixed; z-index: 50; width: 360px; max-height: 80vh; overflow: auto; background: var(--bg2);
+  position: fixed; z-index: 50; width: 380px; max-height: 84vh; overflow: auto; background: var(--bg2);
   border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 10px 12px; font-size: 12px;
 }
 .pop .pn { font-size: 15px; font-weight: 700; }
@@ -220,10 +301,12 @@ td.fill { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; 
 .pop ul { margin: 4px 0; padding-left: 16px; }
 .pop .warn { color: var(--red); }
 .pop .note { margin-top: 6px; border-top: 1px solid var(--border); padding-top: 6px; color: var(--fg2); }
+.pop .note b { color: var(--fg); }
 .pop .pinhint { color: var(--fg3); font-size: 11px; margin-top: 6px; }
 .pop .explain { margin-top: 6px; white-space: pre-wrap; color: var(--fg2); }
+.pop .srcs a { font-size: 11px; margin-right: 6px; }
 
-/* ---------- board / league / ask ---------- */
+/* ---------- board / league ---------- */
 .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 .bar .seg button { border-radius: 0; margin-left: -1px; }
 .bar .seg button:first-child { border-radius: var(--radius) 0 0 var(--radius); margin-left: 0; }
@@ -236,15 +319,83 @@ tr.added td.val { color: var(--green); }
 tr.removed td.val { color: var(--red); text-decoration: line-through; }
 tr.changed td.val { color: var(--amber); }
 .kind { font-size: 10.5px; text-transform: uppercase; }
-#ask-q { width: 100%; min-height: 90px; resize: vertical; }
-#ask-answer { white-space: pre-wrap; font-family: var(--font); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; min-height: 60px; margin: 10px 0 0; }
+
+/* ---------- settings modal ---------- */
+.modal-bg { position: fixed; inset: 0; z-index: 90; background: rgba(0, 0, 0, 0.55); display: flex; align-items: flex-start; justify-content: center; padding-top: 8vh; }
+.modal { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); width: 520px; max-width: 94vw; padding: 14px 16px; }
+.modal h2 { display: flex; align-items: center; }
+.modal h2 button { margin-left: auto; }
+.modal .fields label { margin-bottom: 8px; }
+.modal .msg { color: var(--amber); font-size: 12px; margin-bottom: 8px; }
 
 /* ---------- toasts ---------- */
-#toasts { position: fixed; right: 14px; bottom: 14px; z-index: 100; display: flex; flex-direction: column; gap: 6px; max-width: 420px; }
+#toasts { position: fixed; right: 74px; bottom: 14px; z-index: 100; display: flex; flex-direction: column; gap: 6px; max-width: 420px; }
 .toast { background: var(--bg3); border: 1px solid var(--red); color: var(--fg); padding: 8px 12px; border-radius: var(--radius); box-shadow: var(--shadow); cursor: pointer; font-size: 12px; }
 .toast.ok { border-color: var(--green); }
 .toast.info { border-color: var(--accent); }
 kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; }
+
+/* =====================================================================
+   Phones / narrow screens. Column hiding is by position (nth-child), so the
+   table markup and the JS renderers need no mobile branches:
+     ≤ 700 px drops the secondary numbers (bye, VORP, ADP, floor/ceiling/std…)
+     ≤ 480 px keeps only name / pos / projection / availability / score.
+   ===================================================================== */
+@media (max-width: 700px) {
+  #best-tbl th:nth-child(4), #best-tbl td:nth-child(4), #best-tbl th:nth-child(6), #best-tbl td:nth-child(6), #best-tbl th:nth-child(8), #best-tbl td:nth-child(8),
+  #avail-tbl th:nth-child(3), #avail-tbl td:nth-child(3), #avail-tbl th:nth-child(5), #avail-tbl td:nth-child(5), #avail-tbl th:nth-child(7), #avail-tbl td:nth-child(7),
+  #board-tbl th:nth-child(5), #board-tbl td:nth-child(5), #board-tbl th:nth-child(7), #board-tbl td:nth-child(7), #board-tbl th:nth-child(8), #board-tbl td:nth-child(8),
+  #board-tbl th:nth-child(9), #board-tbl td:nth-child(9), #board-tbl th:nth-child(11), #board-tbl td:nth-child(11),
+  #lg-order th:nth-child(4), #lg-order td:nth-child(4), #lg-diff th:nth-child(4), #lg-diff td:nth-child(4) { display: none; }
+}
+@media (max-width: 640px) {
+  #topbar { padding: 0 8px; gap: 6px; }
+  #topbar .brand, #top-msg, #theme-btn { display: none; }
+  #tabs { flex: 1; overflow-x: auto; scrollbar-width: none; }
+  #tabs::-webkit-scrollbar { display: none; }
+  #tabs button { padding: 5px 8px; font-size: 12px; white-space: nowrap; }
+  .topstatus { gap: 5px; }
+  main { padding: 8px 8px 84px; }
+  .panel { padding: 8px; }
+  .panel + .panel, .pos-grid, .foot { margin-top: 8px; }
+  th, td { padding: 3px 4px; }
+  input, select, textarea { font-size: 16px; }              /* stops iOS from zooming into focused fields */
+  .empty { padding: 20px 8px; }
+  form .row > label { flex: 1 1 100px; }
+  .kv > span:first-child { min-width: 60px; }
+  .dhead { padding: 6px 8px; }
+  .dh-league { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dh-league .muted { display: none; }
+  .dh-pick, .dh-next { font-size: 12px; }
+  #dh-lat, #chat-btn2 { display: none; }
+  .banner { font-size: 16px; padding: 4px 12px; }
+  .clock { text-align: center; }
+  button.big { font-size: 14px; padding: 8px 10px; flex: 1 1 100%; }
+  .pos-grid { grid-template-columns: 1fr; }
+  .pos .rat { min-height: 0; }
+  .tscroll { max-height: 55vh; }
+  .pop { left: 0 !important; right: 0; top: auto !important; bottom: 0; width: 100%; max-height: 72vh; border-radius: 10px 10px 0 0; box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45); }
+  .pop .grid { grid-template-columns: repeat(3, 1fr); }
+  #toasts { left: 8px; right: 8px; bottom: 72px; max-width: none; }
+  .modal-bg { padding-top: 3vh; }
+  .modal { padding: 10px 12px; }
+  .drawer { top: 0; width: 100vw; border-left: 0; }
+  .drawer .chat { padding: 8px; }
+  .chat textarea { min-height: 44px; }
+  .bubble { max-width: 96%; }
+  .fab { right: 12px; bottom: 12px; }
+  .bar .seg { display: flex; }
+  .bar .seg button { padding: 4px 6px; font-size: 12px; }
+  #board-top { width: 82px; }
+}
+@media (max-width: 480px) {
+  #best-tbl th:nth-child(7), #best-tbl td:nth-child(7), #best-tbl th:nth-child(11), #best-tbl td:nth-child(11),
+  #avail-tbl th:nth-child(6), #avail-tbl td:nth-child(6),
+  #board-tbl th:nth-child(4), #board-tbl td:nth-child(4), #board-tbl th:nth-child(10), #board-tbl td:nth-child(10), #board-tbl th:nth-child(13), #board-tbl td:nth-child(13),
+  #roster-tbl th:nth-child(4), #roster-tbl td:nth-child(4),
+  #lg-order th:nth-child(3), #lg-order td:nth-child(3), #lg-diff th:nth-child(5), #lg-diff td:nth-child(5) { display: none; }
+  td.name { max-width: 140px; }
+}
 </style>
 </head>
 <body>
@@ -257,13 +408,14 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
     <button data-tab="draft">Draft</button>
     <button data-tab="board">Board</button>
     <button data-tab="league">League</button>
-    <button data-tab="ask">Ask</button>
   </nav>
   <div class="topstatus">
     <span id="busy-dot" class="spinner" hidden title="working"></span>
     <span id="top-msg"></span>
-    <span id="conn-pill" class="pill bad" hidden title="the local server is not answering">offline</span>
+    <span id="conn-pill" class="pill bad" hidden title="the server is not answering">offline</span>
     <span id="mode-pill" class="pill">idle</span>
+    <button id="chat-btn" class="small" title="Chat with Claude (c)">💬 Chat</button>
+    <button id="settings-btn" class="small" title="Settings (API key, access code, model, theme)">⚙</button>
     <button id="theme-btn" class="small" title="Toggle light / dark">◐</button>
   </div>
 </header>
@@ -273,28 +425,39 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
 <!-- ===================================================================== Setup -->
 <section id="tab-setup" class="tab">
   <div class="setup-grid">
-    <div class="panel">
-      <h2>Readiness</h2>
-      <div class="chips" id="ready-chips">
-        <span class="chip" data-k="data">data</span>
-        <span class="chip" data-k="model">model</span>
-        <span class="chip" data-k="claude">Claude key</span>
-        <span class="chip" data-k="sleeper">Sleeper reachable</span>
+    <div>
+      <div class="panel">
+        <h2>Readiness</h2>
+        <div class="chips" id="ready-chips">
+          <span class="chip" data-k="server">server</span>
+          <span class="chip" data-k="data">data</span>
+          <span class="chip" data-k="claude">Claude key</span>
+          <span class="chip" data-k="access">access code</span>
+        </div>
+        <div class="kv"><span>Data</span><span id="st-bundle">–</span></div>
+        <div class="kv"><span>Claude</span><span id="st-claude">–</span></div>
+        <div class="kv"><span>Notes</span><span id="st-notes">–</span></div>
+        <div class="kv"><span>Server</span><span id="st-version" class="mono">–</span></div>
+        <div class="kv"><span>Session</span><span id="st-session">none</span></div>
+        <div class="actions">
+          <button id="settings-btn2">Settings…</button>
+          <button id="stop-btn" class="danger">New session</button>
+        </div>
+        <div class="hint">The server is stateless: this browser keeps the session (and every mock pick) in
+          <span class="mono">localStorage</span>, so a reload resumes where you were. "New session" forgets it.</div>
       </div>
-      <div class="kv"><span>Season</span><span id="st-season">–</span></div>
-      <div class="kv"><span>Home</span><span id="st-home" class="mono">–</span></div>
-      <div class="kv"><span>Session</span><span id="st-session">none</span></div>
-      <div class="kv"><span>Status</span><span id="st-message">–</span></div>
-      <div class="actions">
-        <button id="prep-btn" class="primary">Prepare data &amp; train model</button>
-        <label class="small"><input type="checkbox" id="prep-refresh"> re-download</label>
-        <label class="small"><input type="checkbox" id="prep-research"> Claude research</label>
-        <button id="stop-btn" class="danger">Stop</button>
+
+      <div class="panel" style="margin-top:10px">
+        <h2>Research</h2>
+        <div class="actions" style="margin-top:0">
+          <label class="inline small">top <input type="number" id="research-top" min="10" max="400" value="150" style="width:70px"></label>
+          <button id="research-btn" class="primary">Research top N players</button>
+          <button id="research-stop" class="danger small" hidden>Stop</button>
+        </div>
+        <div id="research-status" class="hint" style="margin:0">Claude (web search) writes a note per player: injury / role / off-field risk, red flags,
+          upside and downside. One player per request; resumable — fresh notes are skipped.</div>
+        <div class="progress" id="research-bar" hidden><div></div></div>
       </div>
-      <div class="hint">Prep downloads nflverse data (~70 MB the first time), trains the projection model and caches
-        projections. Run it once before draft day. Progress appears in the log.</div>
-      <h3>Log</h3>
-      <pre id="log" class="log"></pre>
     </div>
 
     <div class="panel">
@@ -302,7 +465,7 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
       <form id="live-form" autocomplete="off">
         <div class="row">
           <label>Sleeper username
-            <span style="display:flex;gap:6px"><input id="live-username" style="flex:1" placeholder="your Sleeper username">
+            <span class="inrow"><input id="live-username" placeholder="your Sleeper username">
               <button type="button" id="lookup-btn">Look up</button></span>
           </label>
         </div>
@@ -314,8 +477,8 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
           <label class="inline" style="align-self:flex-end"><input type="checkbox" id="live-claude" checked> use Claude</label>
         </div>
         <div class="actions"><button type="submit" id="live-start" class="primary">Start live draft</button></div>
-        <div class="hint">Needs a league or draft id (pick from the lists after look-up). The tool captures the league,
-          builds projections in your league's scoring, then follows the draft.</div>
+        <div class="hint">Needs a league or draft id (pick from the lists after look-up). The server captures the league,
+          builds projections in your league's scoring, then this page follows the draft (poll every 2 s).</div>
       </form>
     </div>
 
@@ -331,14 +494,14 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
           <label>Scoring <select id="mock-scoring">
             <option value="half_ppr">Half PPR</option><option value="ppr">PPR</option><option value="std">Standard</option></select></label>
           <label>Seed <input type="number" id="mock-seed" placeholder="random"></label>
-          <label>Bot delay (s) <input type="number" id="mock-delay" min="0" max="30" step="0.5" value="1"></label>
         </div>
         <div class="row">
           <label class="inline"><input type="checkbox" id="mock-superflex"> superflex</label>
+          <label class="inline"><input type="checkbox" id="mock-claude" checked> use Claude</label>
           <label class="inline"><input type="checkbox" id="mock-autopilot"> autopilot (advisor picks for me)</label>
         </div>
         <div class="actions"><button type="submit" id="mock-start" class="primary">Start mock draft</button></div>
-        <div class="hint">Bots draft by ADP with some noise. On your turn: <kbd>Enter</kbd> takes the recommendation,
+        <div class="hint">Bots draft by ADP with some noise, instantly, up to your turn. On your turn: <kbd>Enter</kbd> takes the recommendation,
           or click any player row.</div>
       </form>
     </div>
@@ -354,15 +517,18 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
       <div class="dh-next small" id="dh-next"></div>
     </div>
     <div class="dh-center">
-      <div id="turn-banner" class="banner" hidden>YOUR PICK<span class="cd" id="countdown"></span></div>
+      <div id="turn-banner" class="banner" hidden>YOUR PICK</div>
+      <div id="clock" class="clock" hidden>Sleeper clock<b id="countdown"></b></div>
       <div id="mock-controls" hidden>
         <button id="take-btn" class="primary big">Take recommended: <span id="take-name">…</span></button>
         <label class="toggle"><input type="checkbox" id="autopilot"> autopilot</label>
+        <span id="mock-busy" class="spinner" hidden title="bots are picking"></span>
       </div>
     </div>
     <div class="dh-right">
       <span id="dh-claude" class="pill">Claude: off</span>
       <span id="dh-lat" class="muted small mono"></span>
+      <button id="chat-btn2" class="small" title="Chat with Claude (c)">💬 Chat</button>
       <button id="stop-btn2" class="danger small">Stop</button>
     </div>
   </div>
@@ -378,6 +544,16 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
           <tbody></tbody>
         </table>
         <div class="roster-meta" id="roster-meta"></div>
+      </div>
+      <div class="panel collapsible closed" id="research-panel2">
+        <h2><span class="tri">▼</span>Research</h2>
+        <div class="actions" style="margin-top:0">
+          <label class="inline small">top <input type="number" id="research-top2" min="10" max="400" value="150" style="width:64px"></label>
+          <button id="research-btn2" class="small">Research top N</button>
+          <button id="research-stop2" class="danger small" hidden>Stop</button>
+        </div>
+        <div id="research-status2" class="hint" style="margin:0"></div>
+        <div class="progress" id="research-bar2" hidden><div></div></div>
       </div>
     </aside>
 
@@ -420,8 +596,8 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
         <h2>Recent picks</h2>
         <table id="recent-tbl"><thead><tr><th>Pick</th><th>Team</th><th>Player</th></tr></thead><tbody></tbody></table>
       </div>
-      <div class="panel">
-        <h2>Opponents' needs</h2>
+      <div class="panel collapsible" id="opp-panel">
+        <h2><span class="tri">▼</span>Opponents' needs</h2>
         <table id="opp-tbl"><thead><tr><th>Team</th><th>Needs</th><th class="n">Next</th></tr></thead><tbody></tbody></table>
       </div>
     </aside>
@@ -444,7 +620,6 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
       <input type="search" id="board-q" placeholder="search name / team…" style="flex:1 1 200px">
       <select id="board-top"><option>50</option><option selected>100</option><option>200</option><option>400</option></select>
       <button id="board-reload" class="small">Reload</button>
-      <button id="board-load" class="primary" hidden>Load board</button>
       <span id="board-info" class="muted small"></span>
     </div>
     <div class="tscroll" style="max-height:78vh">
@@ -477,42 +652,67 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
   </div>
 </section>
 
-<!-- ===================================================================== Ask -->
-<section id="tab-ask" class="tab">
-  <div class="panel" style="max-width:900px">
-    <h2>Ask Claude</h2>
-    <textarea id="ask-q" placeholder="e.g. Should I take a TE in round 3, or wait for the next tier of RBs?"></textarea>
-    <div class="actions">
-      <button id="ask-btn" class="primary">Ask Claude</button>
-      <span id="ask-hint" class="hint" style="margin:0"></span>
-    </div>
-    <pre id="ask-answer" hidden></pre>
-  </div>
-</section>
-
 </main>
+
+<!-- ===================================================================== Chat drawer (sidebar on wide screens, full-screen sheet on phones) -->
+<div id="chat-backdrop" class="drawer-bg" hidden></div>
+<aside id="chat-drawer" class="drawer" role="dialog" aria-label="Chat with Claude" hidden>
+  <div class="drawer-head">
+    <h2>Chat with Claude</h2>
+    <span class="muted small">argue with the pick — Claude sees the live board</span>
+    <button id="chat-close" class="small" title="close (Esc)">✕</button>
+  </div>
+  <div class="chat" id="chat-main"></div>
+</aside>
+<button id="chat-fab" class="fab" title="Chat with Claude (c)" aria-label="Chat with Claude">💬</button>
+
+<!-- ===================================================================== Settings modal -->
+<div id="settings-modal" class="modal-bg" hidden>
+  <div class="modal" role="dialog" aria-label="Settings">
+    <h2>Settings <button id="settings-close" class="small" title="close (Esc)">✕</button></h2>
+    <div id="settings-msg" class="msg" hidden></div>
+    <div class="fields">
+      <label>Anthropic API key <span class="muted small" id="key-server"></span>
+        <span class="inrow"><input type="password" id="set-key" placeholder="sk-ant-… (kept in this browser only)" autocomplete="off">
+          <button type="button" id="key-eye" class="small" title="show / hide">👁</button></span>
+      </label>
+      <label>Access code <span class="muted small" id="access-hint"></span>
+        <input type="password" id="set-access" placeholder="only if the server requires one" autocomplete="off">
+      </label>
+      <div class="row">
+        <label>Chat model <select id="set-model"><option value="claude-opus-5">claude-opus-5 (default)</option><option value="claude-sonnet-5">claude-sonnet-5</option></select></label>
+        <label>Theme <select id="set-theme"><option value="dark">dark</option><option value="light">light</option></select></label>
+      </div>
+    </div>
+    <div class="actions"><button id="settings-save" class="primary">Save</button>
+      <span class="hint" style="margin:0">Sent as <span class="mono">X-Anthropic-Key</span> / <span class="mono">X-Access-Code</span> headers on every request; never logged.</span></div>
+  </div>
+</div>
 
 <div id="card-pop" class="pop" hidden></div>
 <div id="toasts"></div>
-
 <script>
 'use strict';
 /* =====================================================================
-   draftadvisor frontend. Sections:
-     1. helpers      — DOM / formatting / safe accessors
-     2. api          — fetch with timeout, POST wrapper, toasts
-     3. state store  — S (last status, last state, UI state)
-     4. renderers    — top bar, Setup, Draft, Board, League, Ask, popover
-     5. polling loop — status / state polling + countdown ticker
-     6. event wiring — tabs, forms, keyboard, hover / click
-   The page never rebuilds inputs: only table bodies / text nodes are
-   re-rendered, and only when their HTML actually changed.
+   draftadvisor frontend (stateless API v2, DESIGN.md §3.9). Sections:
+     1. helpers      — DOM / formatting / safe accessors / markdown-lite
+     2. api          — fetch with timeout + auth headers, SSE reader, toasts
+     3. store        — S (status, session, state, advice, chat, research, settings) + localStorage
+     4. renderers    — top bar, Setup, Draft, Board, League, chat drawer, popover
+     5. session      — start / resume / stop, live polling, mock actions, autopilot, advice
+     6. chat / research
+     7. event wiring — tabs, forms, keyboard, hover / click, settings
+   The browser owns the session (localStorage `da.session`); the server is stateless.
+   The page never rebuilds inputs: only table bodies / text nodes are re-rendered, and only when changed.
    ===================================================================== */
 
 // ---------------------------------------------------------------- 1. helpers
 const $ = (id) => document.getElementById(id);
 const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
 const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
+const TABS = ['setup', 'draft', 'board', 'league'];
+const MODELS = ['claude-opus-5', 'claude-sonnet-5'];
+const QUICK_PROMPTS = ['Why this pick?', 'Compare #1 vs #2', 'Best WR instead of the recommendation?', 'Any red flags on my top 3?', 'What do I need most?'];
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -538,10 +738,6 @@ function fmtTime(sec) {
 function fmtClock(s) { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
 function posTeam(c) { return esc(c.position || '?') + (c.team ? '<span class="muted"> · ' + esc(c.team) + '</span>' : ''); }
 function tierHTML(t) { const n = num(t); return n == null ? '–' : '<span class="tier t' + Math.min(n, 4) + '">T' + n + '</span>'; }
-function warnHTML(c) {
-  const w = Array.isArray(c.warnings) ? c.warnings : [];
-  return w.length ? '<span class="warn-flag" title="' + esc(w.join('\n')) + '">!</span>' : '';
-}
 function actionClass(a) {
   a = String(a || '').toUpperCase();
   return a === 'TAKE NOW' ? 'take' : a === 'SOON' ? 'soon' : a === 'WAIT' ? 'wait' : 'skip';
@@ -552,19 +748,58 @@ function setHTML(el, html) { if (el && _lastHTML.get(el) !== html) { _lastHTML.s
 function setText(el, text) { text = text == null ? '' : String(text); if (el && el.textContent !== text) el.textContent = text; }
 function show(el, on) { if (el) el.hidden = !on; }
 function setClass(el, cls) { if (el && el.className !== cls) el.className = cls; }
+function lsGet(k, def) { try { const v = localStorage.getItem(k); return v == null ? def : JSON.parse(v); } catch (e) { return def; } }
+function lsSet(k, v) { try { if (v === undefined || v === null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode / quota */ } }
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+/** Markdown-lite → HTML: paragraphs, "-"/"*"/"•" bullets, "1." lists, **bold**, `code`, ### headings. Input is escaped first. */
+function mdHTML(text) {
+  const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+  const out = [];
+  for (const block of String(text || '').replace(/\r/g, '').split(/\n{2,}/)) {
+    const lines = block.split('\n').filter((l) => l.trim() !== '');
+    if (!lines.length) continue;
+    const bullet = lines.every((l) => /^\s*([-*•]|\d+[.)])\s+/.test(l));
+    if (bullet) {
+      const ordered = /^\s*\d+[.)]\s+/.test(lines[0]);
+      out.push('<' + (ordered ? 'ol' : 'ul') + '>' + lines.map((l) => '<li>' + inline(l.replace(/^\s*([-*•]|\d+[.)])\s+/, '')) + '</li>').join('') + '</' + (ordered ? 'ol' : 'ul') + '>');
+    } else if (/^#{1,4}\s+/.test(lines[0]) && lines.length === 1) {
+      out.push('<p><b>' + inline(lines[0].replace(/^#{1,4}\s+/, '')) + '</b></p>');
+    } else {
+      // a paragraph may still contain trailing bullet lines: split them out
+      const para = [], items = [];
+      for (const l of lines) { if (/^\s*([-*•]|\d+[.)])\s+/.test(l)) items.push(l); else para.push(l); }
+      if (para.length) out.push('<p>' + para.map(inline).join('<br>') + '</p>');
+      if (items.length) out.push('<ul>' + items.map((l) => '<li>' + inline(l.replace(/^\s*([-*•]|\d+[.)])\s+/, '')) + '</li>').join('') + '</ul>');
+    }
+  }
+  return '<div class="md">' + (out.join('') || '') + '</div>';
+}
 
 // ---------------------------------------------------------------- 2. api helpers
 class ApiError extends Error { constructor(msg, status) { super(msg); this.status = status; } }
 
+function authHeaders() {
+  const h = {};
+  if (S.settings.apiKey) h['X-Anthropic-Key'] = S.settings.apiKey;
+  if (S.settings.accessCode) h['X-Access-Code'] = S.settings.accessCode;
+  return h;
+}
+/** Every 401 means "access code missing/wrong": open Settings once and remember the demand. */
+function onUnauthorized(detail) {
+  S.ui.needAccess = true;
+  if (!S.ui.settingsOpen) openSettings('The server requires an access code' + (S.settings.accessCode ? ' (the saved one was rejected)' : '') + '. ' + (detail || ''));
+  renderTop();
+}
 /** fetch JSON with a timeout; throws ApiError with the server's `detail` when not 2xx. */
 async function api(path, opts) {
   opts = opts || {};
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), opts.timeout || 15000);
   try {
+    const headers = Object.assign({}, authHeaders(), opts.body !== undefined ? { 'Content-Type': 'application/json' } : {});
     const res = await fetch(path, {
-      method: opts.method || 'GET',
-      headers: opts.body !== undefined ? { 'Content-Type': 'application/json' } : {},
+      method: opts.method || 'GET', headers: headers,
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
       signal: ctl.signal, cache: 'no-store',
     });
@@ -573,6 +808,7 @@ async function api(path, opts) {
     try { data = text ? JSON.parse(text) : null; } catch (e) { data = { detail: text.slice(0, 200) }; }
     if (!res.ok) {
       const detail = data && (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data));
+      if (res.status === 401) onUnauthorized(detail);
       throw new ApiError(detail || (res.status + ' ' + res.statusText), res.status);
     }
     return data;
@@ -583,9 +819,50 @@ async function api(path, opts) {
   } finally { clearTimeout(timer); }
 }
 /** POST helper: shows a toast on failure and returns null. */
-async function post(path, body, label) {
-  try { const r = await api(path, { method: 'POST', body: body || {} }); return r == null ? {} : r; }
+async function post(path, body, label, timeout) {
+  try { const r = await api(path, { method: 'POST', body: body || {}, timeout: timeout }); return r == null ? {} : r; }
   catch (e) { toast((label || path) + ': ' + e.message); return null; }
+}
+/**
+ * POST and read a Server-Sent-Events body: every `data: {...}` line is parsed and passed to onEvent(obj).
+ * Resolves when the stream ends; rejects with ApiError on HTTP errors.
+ */
+async function sse(path, body, onEvent, signal) {
+  const res = await fetch(path, {
+    method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json', Accept: 'text/event-stream' }, authHeaders()),
+    body: JSON.stringify(body), signal: signal, cache: 'no-store',
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let detail = text.slice(0, 300);
+    try { const j = JSON.parse(text); if (j && j.detail) detail = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail); } catch (e) { /* not JSON */ }
+    if (res.status === 401) onUnauthorized(detail);
+    throw new ApiError(detail || (res.status + ' ' + res.statusText), res.status);
+  }
+  const handleLine = (line) => {
+    line = line.replace(/\r$/, '');
+    if (!line.startsWith('data:')) return;          // ignore comments / event: / id: lines
+    const payload = line.slice(5).trim();
+    if (!payload || payload === '[DONE]') return;
+    let obj = null;
+    try { obj = JSON.parse(payload); } catch (e) { obj = { delta: payload }; }
+    onEvent(obj);
+  };
+  if (!res.body || !res.body.getReader) {           // very old browsers: whole body at once
+    (await res.text()).split('\n').forEach(handleLine);
+    return;
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) { handleLine(buf.slice(0, i)); buf = buf.slice(i + 1); }
+  }
+  if (buf.trim()) handleLine(buf);
 }
 function toast(msg, kind, ms) {
   const box = $('toasts'); if (!box) return;
@@ -598,24 +875,85 @@ function toast(msg, kind, ms) {
   setTimeout(() => el.remove(), ms || (kind === 'error' || !kind ? 7000 : 4000));
 }
 
-// ---------------------------------------------------------------- 3. state store
+// ---------------------------------------------------------------- 3. store
 const S = {
-  status: null, statusAt: 0,          // last GET /api/status and when we got it
-  state: null, stateAt: 0,            // last GET /api/state and when we got it
-  clockSkew: 0,                       // local epoch seconds − server `ts` (for the countdown)
-  mode: 'idle',                       // idle | prepping | starting | live | mock
+  status: null, statusAt: 0,          // last GET /api/status
+  session: null,                      // the browser-owned session object (§3.9) or null
+  snapshot: null, leagueInfo: null,   // from POST /api/session/start
+  state: null, stateAt: 0,            // last render payload
+  clockSkew: 0,                       // local epoch seconds − server `ts`
   failures: 0,                        // consecutive polling failures
-  board: { rows: null, position: '', top: 100, q: '', loading: false, error: null, loaded: false },
+  settings: { apiKey: '', accessCode: '', model: 'claude-opus-5', theme: 'dark' },
+  advice: { version: null, status: 'idle', text: null, model: null, inflight: null, cache: {} },
+  chat: { key: 'none', messages: [], streaming: false, abort: null, draft: '' },
+  research: { running: false, done: 0, total: 0, remaining: null, current: '', stop: false, error: null, player: null },
+  notes: {},                          // player_id → note (GET /api/notes + research results)
+  board: { rows: null, position: '', top: 100, q: '', loading: false, error: null, loaded: false, leagueId: null },
   ui: {
     tab: 'setup', hoverId: null, pinnedId: null, availLimit: 40, availQ: '', availPos: '', availSort: 'score',
-    autopilot: false, lookup: null, asking: false, explain: {}, lastLogLen: -1, picking: false,
+    autopilot: false, lookup: null, explain: {}, picking: false, mockBusy: false, needAccess: false, settingsOpen: false,
+    fresh: {}, starting: false, chatOpen: false,
   },
 };
-const LIVE_MODES = { live: true, mock: true };
-const isLive = () => !!LIVE_MODES[S.mode];
-const isMock = () => S.mode === 'mock';
-const isBusy = () => !!get(S.status, 'busy', false);
+const mode = () => (S.session && S.session.mode) || 'idle';
+const isLive = () => mode() === 'live' || mode() === 'mock';
+const isMock = () => mode() === 'mock';
 const myTurn = () => !!get(S.state, 'draft.is_my_turn', false);
+const claudeAvailable = () => !!(S.settings.apiKey || get(S.status, 'claude.server_key', false));
+
+/** The session object exactly as §3.9 defines it (extra UI fields stripped). */
+function sessionPayload() {
+  const s = S.session; if (!s) return null;
+  const out = { mode: s.mode };
+  for (const k of ['draft_id', 'league_id', 'username', 'user_id', 'slot']) if (s[k] != null && s[k] !== '') out[k] = s[k];
+  out.use_claude = !!s.use_claude;
+  if (s.mode === 'mock') { out.mock = s.mock || {}; out.picks = Array.isArray(s.picks) ? s.picks : []; }
+  return out;
+}
+/** Query string for GET endpoints: flattened scalar fields + `picks` (comma list) + `session` (full JSON) so either parsing style works. */
+function sessionQuery(extra) {
+  const q = new URLSearchParams();
+  const s = sessionPayload();
+  if (s) {
+    for (const k of ['mode', 'draft_id', 'league_id', 'username', 'user_id', 'slot']) if (s[k] != null) q.set(k, String(s[k]));
+    q.set('use_claude', s.use_claude ? 'true' : 'false');
+    if (s.mock) for (const [k, v] of Object.entries(s.mock)) if (v != null) q.set('mock_' + k, String(v));
+    if (s.picks) q.set('picks', s.picks.join(','));
+    q.set('session', JSON.stringify(s));
+  }
+  if (extra) for (const [k, v] of Object.entries(extra)) if (v != null && v !== '') q.set(k, String(v));
+  return q.toString();
+}
+function saveSession() {
+  lsSet('da.session', S.session);
+  lsSet('da.snapshot', S.session ? { snapshot: S.snapshot, league: S.leagueInfo } : null);
+  lsSet('da.ui', { autopilot: S.ui.autopilot });
+}
+function loadSettings() {
+  const st = lsGet('da.settings', null) || {};
+  S.settings.apiKey = typeof st.apiKey === 'string' ? st.apiKey : '';
+  S.settings.accessCode = typeof st.accessCode === 'string' ? st.accessCode : '';
+  S.settings.model = MODELS.includes(st.model) ? st.model : 'claude-opus-5';
+  let theme = st.theme; try { theme = theme || localStorage.getItem('da.theme'); } catch (e) { /* ignore */ }
+  S.settings.theme = theme === 'light' ? 'light' : 'dark';
+}
+function saveSettings() { lsSet('da.settings', S.settings); lsSet('da.theme', S.settings.theme); applyTheme(); }
+function applyTheme() { document.documentElement.dataset.theme = S.settings.theme === 'light' ? 'light' : 'dark'; }
+
+/** Chat transcript is kept per draft (mock drafts share "mock-<seed>" when the seed is fixed, else the start time). */
+function chatKey() {
+  const s = S.session;
+  if (!s) return 'none';
+  return 'da.chat.' + (s.draft_id || (s.mode + '-' + (s.started_at || 'x')));
+}
+function loadChat() {
+  const k = chatKey();
+  if (S.chat.key === k) return;
+  S.chat.key = k;
+  const m = lsGet(k, []);
+  S.chat.messages = Array.isArray(m) ? m.filter((x) => x && (x.role === 'user' || x.role === 'assistant') && typeof x.content === 'string') : [];
+}
+function saveChat() { lsSet(S.chat.key, S.chat.messages.slice(-60)); }
 
 /** Find a card by player id in any of the state lists. */
 function findCard(pid) {
@@ -628,6 +966,14 @@ function findCard(pid) {
   if (Array.isArray(S.board.rows)) for (const c of S.board.rows) if (c && String(c.player_id) === String(pid)) return c;
   return null;
 }
+/** The research note for a card: the card's own `note`, else the /api/notes cache. */
+function noteFor(c) {
+  if (!c) return null;
+  const n = c.note && typeof c.note === 'object' ? c.note : S.notes[String(c.player_id)];
+  return n && typeof n === 'object' ? n : null;
+}
+function redFlags(n) { return n && Array.isArray(n.red_flags) ? n.red_flags.filter(Boolean).map(String) : []; }
+function hasRedFlag(n) { return !!n && (redFlags(n).length > 0 || (num(n.offfield_risk) != null && num(n.offfield_risk) >= 0.5)); }
 
 // ---------------------------------------------------------------- 4. renderers
 function renderAll() {
@@ -637,54 +983,57 @@ function renderAll() {
   else if (t === 'draft') renderDraft();
   else if (t === 'board') renderBoard();
   else if (t === 'league') renderLeague();
-  else if (t === 'ask') renderAsk();
+  renderChat();
   renderPop();
 }
 
 // ---- top bar --------------------------------------------------------------
 function renderTop() {
-  const mode = S.mode || 'idle';
+  const m = mode();
   const pill = $('mode-pill');
-  setText(pill, mode);
-  setClass(pill, 'pill ' + (mode === 'live' ? 'bad' : mode === 'mock' ? 'info' : mode === 'idle' ? '' : 'warn'));
-  show($('busy-dot'), isBusy());
-  setText($('top-msg'), get(S.status, 'message', ''));
+  setText(pill, m + (S.ui.needAccess ? ' · 401' : ''));
+  setClass(pill, 'pill ' + (S.ui.needAccess ? 'bad' : m === 'live' ? 'bad' : m === 'mock' ? 'info' : ''));
+  show($('busy-dot'), S.ui.mockBusy || S.ui.starting || S.research.running || S.chat.streaming || !!S.advice.inflight);
+  const msg = S.ui.starting ? 'starting session…' : S.research.running ? 'research ' + S.research.done + '/' + S.research.total : S.chat.streaming ? 'Claude is answering…' :
+    S.advice.inflight ? 'Claude is thinking…' : S.ui.mockBusy ? 'bots are picking…' : '';
+  setText($('top-msg'), msg);
   show($('conn-pill'), S.failures >= 2);
   $$('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === S.ui.tab));
+  const fab = $('chat-fab');
+  show(fab, !S.ui.chatOpen);
+  fab.classList.toggle('busy', S.chat.streaming);
+  for (const id of ['chat-btn', 'chat-btn2']) $(id).classList.toggle('active', S.ui.chatOpen);
 }
 
 // ---- Setup ----------------------------------------------------------------
 function renderSetup() {
   const st = S.status || {};
-  const ready = st.ready || {};
+  const bundle = st.bundle && typeof st.bundle === 'object' ? st.bundle : null;
+  const chips = {
+    server: S.status ? true : S.failures >= 2 ? false : null,
+    data: bundle ? (num(bundle.players) ? true : false) : (S.status ? false : null),
+    claude: S.status ? claudeAvailable() : null,
+    access: S.status ? (st.access_code_required ? (S.settings.accessCode && !S.ui.needAccess ? true : false) : null) : null,
+  };
   $$('#ready-chips .chip').forEach((chip) => {
-    const v = ready[chip.dataset.k];
-    const cls = v === true ? 'chip ok' : v === false ? 'chip bad' : 'chip';
-    setClass(chip, cls);
-    chip.title = v === true ? 'ready' : v === false ? 'not ready' : 'unknown';
+    const v = chips[chip.dataset.k];
+    setClass(chip, 'chip ' + (v === true ? 'ok' : v === false ? 'bad' : ''));
+    chip.title = chip.dataset.k === 'access' ? (st.access_code_required ? (v ? 'access code accepted' : 'access code required — set it in Settings') : 'no access code required') :
+      chip.dataset.k === 'claude' ? (S.settings.apiKey ? 'your key (browser)' : get(st, 'claude.server_key') ? 'server key' : 'no key: set one in Settings') : v === true ? 'ready' : v === false ? 'not ready' : 'unknown';
   });
-  setText($('st-season'), st.season != null ? st.season : '–');
-  setText($('st-home'), st.home || '–');
-  setText($('st-message'), st.message || '–');
-  const sess = st.session;
-  setText($('st-session'), sess ? (sess.mode + ' — ' + (sess.league_name || sess.draft_id || '') + (sess.my_slot ? ' (slot ' + sess.my_slot + ')' : '')) : 'none');
-
-  const busy = isBusy();
-  $('prep-btn').disabled = busy || isLive();
-  $('live-start').disabled = busy || isLive();
-  $('mock-start').disabled = busy || isLive();
-  $('lookup-btn').disabled = busy;
-  $('stop-btn').disabled = !(isLive() || busy || S.mode === 'prepping' || S.mode === 'starting');
-
-  const log = Array.isArray(st.log) ? st.log : [];
-  const el = $('log');
-  const text = log.join('\n') || '(no log yet)';
-  if (el.textContent !== text) {
-    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
-    el.textContent = text;
-    if (atBottom || S.ui.lastLogLen < 0) el.scrollTop = el.scrollHeight;
-    S.ui.lastLogLen = log.length;
-  }
+  setText($('st-bundle'), bundle ? ((bundle.players != null ? bundle.players + ' players' : 'bundle') + (bundle.seasons ? ', seasons ' + (Array.isArray(bundle.seasons) ? bundle.seasons.join('–') : bundle.seasons) : '') +
+    (bundle.built_at ? ', built ' + (typeof bundle.built_at === 'number' ? fmtTime(bundle.built_at) : bundle.built_at) : '')) : S.status ? 'no bundle — projections unavailable' : '–');
+  setText($('st-claude'), S.status ? (S.settings.apiKey ? 'your key (this browser)' + (get(st, 'claude.server_key') ? ' + server key' : '') : get(st, 'claude.server_key') ? 'server has a key' : 'no key — advice, chat and research are off') : '–');
+  setText($('st-notes'), st.notes ? (get(st, 'notes.count', 0) + ' research notes (' + (get(st, 'notes.store', '?')) + ')') : '–');
+  setText($('st-version'), st.version != null ? String(st.version) + (st.access_code_required ? ' • access code required' : '') : '–');
+  const s = S.session;
+  setText($('st-session'), s ? (s.mode + ' — ' + (get(S.leagueInfo, 'name', '') || s.draft_id || s.league_id || (s.mode === 'mock' ? get(s, 'mock.teams', '?') + ' teams × ' + get(s, 'mock.rounds', '?') : '')) +
+    (s.slot ? ' (slot ' + s.slot + ')' : '') + (s.mode === 'mock' ? ', ' + (s.picks || []).length + ' picks' : '')) : 'none');
+  $('live-start').disabled = S.ui.starting || isLive();
+  $('mock-start').disabled = S.ui.starting || isLive();
+  $('lookup-btn').disabled = S.ui.starting;
+  $('stop-btn').disabled = !isLive();
+  renderResearch();
 }
 
 /** Fill the league/draft <select>s from a /api/lookup response. */
@@ -717,6 +1066,26 @@ function syncDraftToLeague() {
   if (did) for (const o of dsel.options) if (o.value === did) { dsel.value = did; break; }
 }
 
+// ---- Research progress (Setup panel + Draft side panel share the state) ----
+function renderResearch() {
+  const r = S.research;
+  const ok = claudeAvailable();
+  const total = r.total || 0;
+  const txt = r.running ? ('Researching ' + r.done + '/' + total + (r.current ? ' — ' + r.current : '') + '…') :
+    r.error ? 'Research stopped: ' + r.error : r.remaining === 0 && total ? 'Done: ' + r.done + '/' + total + ' players have fresh notes.' :
+    r.total ? 'Stopped at ' + r.done + '/' + total + ' — click again to resume.' : '';
+  for (const sfx of ['', '2']) {
+    const btn = $('research-btn' + sfx), stop = $('research-stop' + sfx), bar = $('research-bar' + sfx), status = $('research-status' + sfx);
+    if (!btn) continue;
+    btn.disabled = r.running || !ok;
+    btn.title = ok ? '' : 'set an Anthropic API key in Settings first';
+    show(stop, r.running);
+    show(bar, r.running || (total > 0 && r.done > 0));
+    bar.firstElementChild.style.width = total ? Math.round(100 * r.done / total) + '%' : '0%';
+    if (sfx === '2' || txt) setText(status, txt || (ok ? '' : 'Research needs a Claude key (Settings).'));
+  }
+}
+
 // ---- Draft: header --------------------------------------------------------
 function renderDraft() {
   const st = S.state;
@@ -726,44 +1095,41 @@ function renderDraft() {
   show($('draft-foot'), !!live);
   $('stop-btn2').disabled = !isLive();
   if (!live) {
-    setText($('dh-name'), 'No draft');
+    setText($('draft-empty'), isLive() ? (S.ui.starting ? 'Starting the session…' : 'Loading the draft…') : 'No draft running — start a live or mock draft from the Setup tab.');
+    setText($('dh-name'), isLive() ? (get(S.leagueInfo, 'name', '') || (isMock() ? 'Mock draft' : 'Draft')) : 'No draft');
     setText($('dh-scoring'), '');
     setText($('dh-round'), ''); setText($('dh-otc'), ''); setText($('dh-next'), '');
-    show($('turn-banner'), false); show($('mock-controls'), false);
+    show($('turn-banner'), false); show($('mock-controls'), false); show($('clock'), false);
     setText($('dh-lat'), '');
-    renderClaudePill(null);
+    renderClaudePill();
     return;
   }
   const d = st.draft || {}, lg = st.league || {};
-  setText($('dh-name'), lg.name || get(S.status, 'session.league_name', '') || (isMock() ? 'Mock draft' : 'Draft'));
+  setText($('dh-name'), lg.name || get(S.leagueInfo, 'name', '') || (isMock() ? 'Mock draft' : 'Draft'));
   const teams = lg.teams || d.teams;
   setText($('dh-scoring'), [lg.scoring_description || lg.scoring_type || '', teams ? teams + ' teams' : '', d.type || ''].filter(Boolean).join(' • '));
 
-  if (d.is_complete) {
-    setText($('dh-round'), 'Draft complete');
-    setText($('dh-otc'), '');
-  } else {
-    setText($('dh-round'), 'Round ' + (d.current_round != null ? d.current_round : '?') + ' • Pick ' + (d.next_pick_no != null ? d.next_pick_no : '?') +
-      (d.total_picks ? ' of ' + d.total_picks : ''));
+  if (d.is_complete) { setText($('dh-round'), 'Draft complete'); setText($('dh-otc'), ''); }
+  else {
+    setText($('dh-round'), 'Round ' + (d.current_round != null ? d.current_round : '?') + ' • Pick ' + (d.next_pick_no != null ? d.next_pick_no : '?') + (d.total_picks ? ' of ' + d.total_picks : ''));
     const otc = d.on_the_clock;
     setText($('dh-otc'), d.is_my_turn ? '— you are on the clock' : otc && otc.label ? '— on the clock: ' + otc.label + (otc.slot ? ' (slot ' + otc.slot + ')' : '') :
       d.status === 'pre_draft' ? '— waiting for the draft to start' : d.status === 'paused' ? '— paused' : '');
   }
   const mine = [];
   if (d.is_complete) mine.push('All picks made.');
-  else if (d.is_my_turn) {
-    if (d.my_pick_after_next) mine.push('After this pick your next is #' + d.my_pick_after_next + '.');
-  } else if (d.my_next_pick_no) {
+  else if (d.is_my_turn) { if (d.my_pick_after_next) mine.push('After this pick your next is #' + d.my_pick_after_next + '.'); }
+  else if (d.my_next_pick_no) {
     const k = d.picks_until_my_turn;
     mine.push('You pick in ' + (k != null ? k : '?') + ' (#' + d.my_next_pick_no + ')' + (d.my_pick_after_next ? ', then #' + d.my_pick_after_next : '') + '.');
   } else mine.push('You have no picks left.');
   if (d.my_slot) mine.push('Your slot: ' + d.my_slot + '.');
   setText($('dh-next'), mine.join(' '));
 
-  // banner + mock controls
   const banner = $('turn-banner');
-  if (d.is_complete) { show(banner, true); setClass(banner, 'banner done'); banner.firstChild.textContent = 'DRAFT COMPLETE'; }
-  else if (d.is_my_turn) { show(banner, true); setClass(banner, 'banner'); banner.firstChild.textContent = 'YOUR PICK'; }
+  if (d.is_complete) { show(banner, true); setClass(banner, 'banner done'); setText(banner, 'DRAFT COMPLETE'); }
+  else if (d.is_my_turn) { show(banner, true); setClass(banner, 'banner'); setText(banner, 'YOUR PICK'); }
+  else if (d.status === 'paused') { show(banner, true); setClass(banner, 'banner paused'); setText(banner, 'PAUSED'); }
   else show(banner, false);
   renderCountdown();
   const showMock = isMock() && !d.is_complete;
@@ -771,15 +1137,14 @@ function renderDraft() {
   if (showMock) {
     const top = (st.best || [])[0];
     setText($('take-name'), top ? top.name + ' (' + (top.position || '?') + ')' : '…');
-    $('take-btn').disabled = !d.is_my_turn || !top || S.ui.picking;
-    const ap = get(st, 'autopilot', get(st, 'draft.autopilot', null));
-    if (typeof ap === 'boolean') S.ui.autopilot = ap;
+    $('take-btn').disabled = !d.is_my_turn || !top || S.ui.picking || S.ui.mockBusy;
     if ($('autopilot').checked !== S.ui.autopilot) $('autopilot').checked = S.ui.autopilot;
+    show($('mock-busy'), S.ui.mockBusy);
   }
   const s = st.status || {};
   setText($('dh-lat'), [s.latency_ms != null ? 'poll ' + fmt(s.latency_ms) + ' ms' : '', s.compute_ms != null ? 'compute ' + fmt(s.compute_ms) + ' ms' : '',
-    s.poll_count != null ? '#' + s.poll_count : ''].filter(Boolean).join(' • '));
-  renderClaudePill(st.claude);
+    st.version != null ? 'v' + st.version : ''].filter(Boolean).join(' • '));
+  renderClaudePill();
 
   renderRoster(st);
   renderBest(st);
@@ -788,37 +1153,57 @@ function renderDraft() {
   renderOpponents(st);
   renderFooter(st);
   renderAvailable(st);
+  renderChat();
+  renderResearch();
 }
 
-function renderClaudePill(cl) {
+function renderClaudePill() {
   const el = $('dh-claude');
-  const status = cl && cl.status ? String(cl.status) : (get(S.status, 'ready.claude', false) ? 'idle' : 'off');
+  const on = claudeAvailable() && !!get(S.session, 'use_claude', false);
+  const status = !on ? 'off' : S.advice.inflight ? 'thinking' : S.advice.status || 'idle';
   const cls = { off: '', idle: 'ok', ready: 'ok', thinking: 'warn', error: 'bad', 'no answer': 'warn' }[status] || '';
   setText(el, 'Claude: ' + status + (status === 'thinking' ? '…' : ''));
   setClass(el, 'pill ' + cls);
 }
-
-/** Countdown text; called every second and on every render. */
+/**
+ * Sleeper clock. Shown ONLY from what the latest poll reported: `pick_timer` (0/null → nothing) and
+ * `seconds_left` (preferred; ticks down locally until the next poll re-bases it). Never assumes a fixed length.
+ */
 function renderCountdown() {
   const d = get(S.state, 'draft', null);
-  const el = $('countdown');
-  if (!d || !d.is_my_turn || !isLive()) { setText(el, ''); return; }
+  const el = $('clock');
   const left = secondsLeft(d);
-  setText(el, left == null ? '' : fmtClock(left));
+  if (left == null || !isLive() || get(S.state, 'draft.is_complete', false)) { show(el, false); return; }
+  setText($('countdown'), fmtClock(left));
+  setClass(el, 'clock' + (left <= 10 && d.is_my_turn ? ' low' : ''));
+  show(el, true);
 }
 function secondsLeft(d) {
-  const timer = num(d.pick_timer), started = num(d.turn_started_at);
-  if (timer && timer > 0 && started) {
-    const nowServer = Date.now() / 1000 - S.clockSkew;
-    return Math.max(0, timer - (nowServer - started));
-  }
+  if (!d) return null;
+  const timer = num(d.pick_timer);
+  if (!timer || timer <= 0) return null;                     // no clock in this draft (or unknown) → show nothing
+  const elapsed = (Date.now() - S.stateAt) / 1000;
   const sl = num(d.seconds_left);
-  if (sl != null) return Math.max(0, sl - (Date.now() - S.stateAt) / 1000);
+  if (sl != null) return Math.max(0, sl - elapsed);
+  const started = num(d.turn_started_at);
+  if (started) { const nowServer = Date.now() / 1000 - S.clockSkew; return Math.max(0, timer - (nowServer - started)); }
   return null;
 }
 
 // ---- Draft: left column ---------------------------------------------------
 const SLOT_ABBR = { SUPER_FLEX: 'SFLEX', WRRB_FLEX: 'WR/RB', REC_FLEX: 'WR/TE', FLEX: 'FLEX' };
+/** "!" for engine warnings + a red ⚠ badge when the research note has red flags / off-field risk. */
+function warnHTML(c) {
+  const w = Array.isArray(c.warnings) ? c.warnings : [];
+  let h = w.length ? '<span class="warn-flag" title="' + esc(w.join('\n')) + '">!</span>' : '';
+  const n = noteFor(c);
+  if (hasRedFlag(n)) {
+    const fl = redFlags(n);
+    const tip = (fl.length ? fl.join('\n') : '') + (num(n.offfield_risk) != null && n.offfield_risk >= 0.5 ? (fl.length ? '\n' : '') + 'off-field risk ' + pct(n.offfield_risk) : '');
+    h += '<span class="flag" title="' + esc(tip) + '">⚠</span>';
+  }
+  return h;
+}
 function renderRoster(st) {
   const me = st.me || {};
   const slots = Array.isArray(me.slots) ? me.slots : [];
@@ -847,7 +1232,7 @@ function renderRoster(st) {
   setHTML($('roster-meta'), m);
 }
 
-// ---- Draft: best picks ----------------------------------------------------
+// ---- Draft: best picks / available ----------------------------------------
 function cardRow(c, i, opts) {
   opts = opts || {};
   const reason = Array.isArray(c.reasons) && c.reasons.length ? c.reasons[0] : '';
@@ -867,8 +1252,6 @@ function renderBest(st) {
   else best.forEach((c, i) => { h += cardRow(c, i, { rank: true, why: true, highlightFirst: true }); });
   setHTML($('best-tbl').querySelector('tbody'), h);
 }
-
-// ---- Draft: position panels ----------------------------------------------
 function renderPositions(st) {
   const bp = st.by_position && typeof st.by_position === 'object' ? st.by_position : {};
   const pressure = st.pressure && typeof st.pressure === 'object' ? st.pressure : {};
@@ -889,54 +1272,11 @@ function renderPositions(st) {
       if (!cands.length) h += '<tr><td class="muted">no candidates</td></tr>';
       h += '</tbody></table>';
       if (num(a.drop_off) != null) h += '<div class="muted small">drop-off ' + fmt(a.drop_off) + ' pts • next-time ' + fmt(a.expected_next_available) + '</div>';
-    } else {
-      h += '</div><div class="rat muted">computing…</div>';
-    }
+    } else h += '</div><div class="rat muted">computing…</div>';
     h += '</div>';
   }
   setHTML($('pos-grid'), h);
 }
-
-// ---- Draft: right column --------------------------------------------------
-function renderRecent(st) {
-  const rec = Array.isArray(st.recent) ? st.recent : [];
-  let h = '';
-  for (const p of rec) {
-    h += '<tr class="' + (p.is_me ? 'mine' : '') + '"' + (p.player_id ? ' data-pid="' + esc(p.player_id) + '"' : '') + '><td class="n muted">' + esc(p.pick_no) +
-      (p.round ? ' <span class="small">(' + esc(p.round) + '.' + esc(p.slot) + ')</span>' : '') + '</td><td class="name" style="max-width:82px" title="' + esc(p.label || '') + '">' +
-      esc(p.label || 'slot ' + p.slot) + '</td><td class="fill" title="' + esc(p.name || '') + '">' + esc(p.name || p.player_id) + ' <span class="muted small">' + esc(p.position || '') +
-      (p.team ? ' ' + esc(p.team) : '') + '</span></td></tr>';
-  }
-  if (!rec.length) h = '<tr><td colspan="3" class="muted">no picks yet</td></tr>';
-  setHTML($('recent-tbl').querySelector('tbody'), h);
-}
-function renderOpponents(st) {
-  const opps = Array.isArray(st.opponents) ? st.opponents : [];
-  let h = '';
-  for (const o of opps) {
-    const needs = Array.isArray(o.needs) ? o.needs : [];
-    const players = Array.isArray(o.players) ? o.players.map((p) => (p.name || '') + ' (' + (p.position || '') + ')').join(', ') : '';
-    h += '<tr title="' + esc(players) + '"><td class="name" style="max-width:96px">' + esc(o.label || 'slot ' + o.slot) + '</td><td class="fill">' +
-      (needs.length ? esc(needs.join(' ')) : '<span class="muted">full</span>') + '</td><td class="n">' + (o.next_pick ? '#' + esc(o.next_pick) : '–') + '</td></tr>';
-  }
-  if (!opps.length) h = '<tr><td colspan="3" class="muted">computing…</td></tr>';
-  setHTML($('opp-tbl').querySelector('tbody'), h);
-}
-
-// ---- Draft: footer --------------------------------------------------------
-function renderFooter(st) {
-  const cl = st.claude || {};
-  const box = $('claude-box');
-  const status = cl.status || 'off';
-  if (status === 'off') { setText(box, 'Claude: off — set ANTHROPIC_API_KEY before starting to get on-the-clock advice.'); setClass(box, 'claude-box off'); }
-  else if (cl.advice) { setText(box, cl.advice); setClass(box, 'claude-box'); }
-  else { setText(box, status === 'thinking' ? 'Claude is thinking…' : status === 'error' ? 'Claude: error (see log)' : 'Claude: ' + status + ' — advice appears here when you are on the clock.'); setClass(box, 'claude-box off'); }
-  const notes = Array.isArray(st.notes) ? st.notes : [];
-  setHTML($('notes'), notes.length ? notes.map((n) => '<li>' + esc(n) + '</li>').join('') : '<li class="muted">no notes</li>');
-  setText($('last-error'), get(st, 'status.last_error', '') ? 'last error: ' + get(st, 'status.last_error', '') : '');
-}
-
-// ---- Draft: available players --------------------------------------------
 function filteredAvailable(st) {
   const all = Array.isArray(st.available) ? st.available : [];
   const q = S.ui.availQ.trim().toLowerCase(), pos = S.ui.availPos, key = S.ui.availSort;
@@ -961,43 +1301,89 @@ function renderAvailable(st) {
   show($('avail-more'), rows.length > shown.length);
 }
 
-// ---- Board ----------------------------------------------------------------
+// ---- Draft: right column --------------------------------------------------
+/** Recent picks; picks that arrived in the last mock `last_picks` slide in (staggered). */
+function renderRecent(st) {
+  const rec = Array.isArray(st.recent) ? st.recent : [];
+  let h = '';
+  let k = 0;
+  for (const p of rec) {
+    const fresh = S.ui.fresh[String(p.pick_no)] ? ' fresh' : '';
+    const delay = fresh ? ' style="animation-delay:' + (k++ * 90) + 'ms"' : '';
+    h += '<tr class="' + (p.is_me ? 'mine' : '') + fresh + '"' + (p.player_id ? ' data-pid="' + esc(p.player_id) + '"' : '') + '><td class="n muted"' + delay + '>' + esc(p.pick_no) +
+      (p.round ? ' <span class="small">(' + esc(p.round) + '.' + esc(p.slot) + ')</span>' : '') + '</td><td class="name" style="max-width:82px" title="' + esc(p.label || '') + '">' +
+      esc(p.label || 'slot ' + p.slot) + '</td><td class="fill" title="' + esc(p.name || '') + '">' + esc(p.name || p.player_id) + ' <span class="muted small">' + esc(p.position || '') +
+      (p.team ? ' ' + esc(p.team) : '') + '</span></td></tr>';
+  }
+  if (!rec.length) h = '<tr><td colspan="3" class="muted">no picks yet</td></tr>';
+  setHTML($('recent-tbl').querySelector('tbody'), h);
+}
+function renderOpponents(st) {
+  const opps = Array.isArray(st.opponents) ? st.opponents : [];
+  let h = '';
+  for (const o of opps) {
+    const needs = Array.isArray(o.needs) ? o.needs : [];
+    const players = Array.isArray(o.players) ? o.players.map((p) => (p.name || '') + ' (' + (p.position || '') + ')').join(', ') : '';
+    h += '<tr title="' + esc(players) + '"><td class="name" style="max-width:96px">' + esc(o.label || 'slot ' + o.slot) + '</td><td class="fill">' +
+      (needs.length ? esc(needs.join(' ')) : '<span class="muted">full</span>') + '</td><td class="n">' + (o.next_pick ? '#' + esc(o.next_pick) : '–') + '</td></tr>';
+  }
+  if (!opps.length) h = '<tr><td colspan="3" class="muted">computing…</td></tr>';
+  setHTML($('opp-tbl').querySelector('tbody'), h);
+}
+
+// ---- Draft: footer (advice from GET /api/advice + engine notes) -----------
+function renderFooter(st) {
+  const box = $('claude-box');
+  const on = claudeAvailable() && !!get(S.session, 'use_claude', false);
+  const a = S.advice;
+  if (!on) {
+    setText(box, !claudeAvailable() ? 'Claude: off — add an Anthropic API key in Settings (⚙) to get on-the-clock advice, chat and research.' : 'Claude: off for this session ("use Claude" was unchecked).');
+    setClass(box, 'claude-box off');
+  } else if (a.text && a.version === get(st, 'version', a.version)) { setHTML(box, mdHTML(a.text) + (a.model ? '<div class="muted small">' + esc(a.model) + ' • state v' + esc(a.version) + '</div>' : '')); setClass(box, 'claude-box'); }
+  else if (a.inflight) { setText(box, 'Claude is thinking…'); setClass(box, 'claude-box off'); }
+  else if (a.text) { setHTML(box, mdHTML(a.text) + '<div class="muted small">from state v' + esc(a.version) + ' — will refresh when you are on the clock</div>'); setClass(box, 'claude-box'); }
+  else { setText(box, a.status === 'error' ? 'Claude: error — ' + (a.error || 'see toasts') : a.status === 'no answer' ? 'Claude gave no answer.' : 'Advice appears here when you are on the clock (or one pick away).'); setClass(box, 'claude-box off'); }
+  const notes = Array.isArray(st.notes) ? st.notes : [];
+  setHTML($('notes'), notes.length ? notes.map((n) => '<li>' + esc(n) + '</li>').join('') : '<li class="muted">no notes</li>');
+  setText($('last-error'), get(st, 'status.last_error', '') ? 'last error: ' + get(st, 'status.last_error', '') : '');
+}
+
+// ---- Board (GET /api/projections?league_id=…) ----------------------------
 async function loadBoard() {
   const b = S.board;
   if (b.loading) return;
   b.loading = true; b.error = null; renderBoard();
   const qs = new URLSearchParams();
+  const lid = get(S.session, 'league_id', null);
+  if (lid) qs.set('league_id', String(lid));
   if (b.position) qs.set('position', b.position);
   qs.set('top', String(b.top));
   if (b.q) qs.set('q', b.q);
   try {
-    const rows = await api('/api/projections?' + qs.toString(), { timeout: 20000 });
-    b.rows = Array.isArray(rows) ? rows : [];
-    b.loaded = true;
+    const rows = await api('/api/projections?' + qs.toString(), { timeout: 30000 });
+    b.rows = Array.isArray(rows) ? rows : Array.isArray(rows && rows.players) ? rows.players : [];
+    b.loaded = true; b.leagueId = lid;
   } catch (e) { b.error = e.message; b.rows = b.rows || []; }
   b.loading = false;
   renderBoard();
 }
 function renderBoard() {
   const b = S.board;
-  const noSession = !get(S.status, 'session', null) && !isLive();
-  show($('board-load'), noSession);
-  $('board-load').disabled = isBusy();
   $('board-reload').disabled = b.loading;
   $$('#board-pos button').forEach((x) => x.classList.toggle('active', x.dataset.pos === b.position));
-  setText($('board-info'), b.loading ? 'loading…' : b.error ? 'error: ' + b.error : b.rows ? b.rows.length + ' players' : '');
+  const lid = get(S.session, 'league_id', null);
+  setText($('board-info'), b.loading ? 'loading…' : b.error ? 'error: ' + b.error : b.rows ? b.rows.length + ' players' + (lid ? ' • league scoring' : ' • half-PPR (no league)') : '');
   const rows = Array.isArray(b.rows) ? b.rows : [];
   let h = '';
   rows.forEach((c, i) => {
-    const flags = [].concat(Array.isArray(c.flags) ? c.flags : [], c.injury_status ? ['inj:' + c.injury_status] : [], Array.isArray(c.warnings) ? c.warnings : []);
-    h += '<tr data-pid="' + esc(c.player_id) + '"><td class="n muted">' + (i + 1) + '</td><td class="name">' + esc(c.name) + '</td><td>' + esc(c.position) +
+    const flags = [].concat(Array.isArray(c.flags) ? c.flags : [], c.injury_status ? ['inj:' + c.injury_status] : [], Array.isArray(c.warnings) ? c.warnings : [], redFlags(noteFor(c)));
+    h += '<tr data-pid="' + esc(c.player_id) + '"><td class="n muted">' + (i + 1) + '</td><td class="name">' + esc(c.name) + warnHTML(c) + '</td><td>' + esc(c.position) +
       '</td><td>' + esc(c.team || 'FA') + '</td><td class="n">' + esc(c.bye != null ? c.bye : '–') + '</td><td class="n"><b>' + fmt(c.points) + '</b></td>' +
       '<td class="n">' + fmt(c.floor) + '</td><td class="n">' + fmt(c.ceiling) + '</td><td class="n">' + fmt(c.std) + '</td><td class="n">' + fmt(c.ppg, 1) + '</td>' +
       '<td class="n">' + fmt(c.games, 1) + '</td><td class="n">' + fmt(c.adp, 1) + '</td><td class="n">' + fmt(c.ecr, 1) + '</td>' +
       '<td class="why fill" title="' + esc(flags.join('\n')) + '">' + esc(flags.join(', ')) + '</td></tr>';
   });
-  if (!rows.length) h = '<tr><td colspan="14" class="muted">' + (b.loading ? 'loading…' : b.error ? 'could not load projections — ' + esc(b.error) +
-    (noSession ? ' (click "Load board" to build the default projections)' : '') : noSession ? 'No projections loaded yet — click "Load board".' : 'no players') + '</td></tr>';
+  if (!rows.length) h = '<tr><td colspan="14" class="muted">' + (b.loading ? 'loading…' : b.error ? 'could not load projections — ' + esc(b.error) : 'no players') + '</td></tr>';
   setHTML($('board-tbl').querySelector('tbody'), h);
 }
 
@@ -1009,30 +1395,30 @@ function deltaKind(d) {
   return 'changed';
 }
 function renderLeague() {
-  const snap = get(S.state, 'snapshot', null);
-  const sess = get(S.status, 'session', null);
+  const snap = get(S.state, 'snapshot', null) || S.snapshot;
+  const sess = S.session;
   const has = !!(snap || sess);
   show($('league-empty'), !has);
   show($('league-body'), has);
   if (!has) return;
-  const lg = (snap && snap.league) || {};
+  const lg = (snap && snap.league) || S.leagueInfo || {};
   const dr = (snap && snap.draft) || {};
   const stLeague = get(S.state, 'league', {});
   const stDraft = get(S.state, 'draft', {});
   const facts = [
-    ['League', lg.name || stLeague.name || (sess && sess.league_name) || '–'],
-    ['Season', lg.season || stLeague.season || get(S.status, 'season', '–')],
-    ['Teams', lg.total_rosters || lg.teams || stLeague.teams || dr.teams || '–'],
-    ['Scoring', stLeague.scoring_description || get(snap, 'diff.scoring_type', lg.scoring_type || '–')],
+    ['League', lg.name || stLeague.name || get(S.leagueInfo, 'name', null) || (isMock() ? 'Mock draft' : '–')],
+    ['Season', lg.season || stLeague.season || '–'],
+    ['Teams', lg.total_rosters || lg.teams || stLeague.teams || dr.teams || get(sess, 'mock.teams', '–')],
+    ['Scoring', stLeague.scoring_description || get(snap, 'diff.scoring_type', lg.scoring_type || get(sess, 'mock.scoring', '–'))],
     ['Roster', Array.isArray(lg.roster_positions) ? lg.roster_positions.join(' ') : Array.isArray(stLeague.roster_positions) ? stLeague.roster_positions.join(' ') : '–'],
     ['Draft', (dr.type || stDraft.type || '–') + (dr.reversal_round ? ' (round-' + dr.reversal_round + ' reversal)' : '') + (dr.draft_id || (sess && sess.draft_id) ? ' — id ' + (dr.draft_id || sess.draft_id) : '')],
-    ['Rounds', dr.rounds || stDraft.rounds || '–'],
-    ['Clock', (num(dr.pick_timer) != null ? dr.pick_timer : num(stDraft.pick_timer) != null ? stDraft.pick_timer : null)],
+    ['Rounds', dr.rounds || stDraft.rounds || get(sess, 'mock.rounds', '–')],
+    ['Clock', (num(stDraft.pick_timer) != null ? stDraft.pick_timer : num(dr.pick_timer) != null ? dr.pick_timer : null)],
     ['Start', dr.start_time ? fmtTime(dr.start_time) : '–'],
-    ['Status', dr.status || stDraft.status || '–'],
+    ['Status', stDraft.status || dr.status || '–'],
     ['Captured', snap && snap.captured_at ? fmtTime(snap.captured_at) : '–'],
   ];
-  if (facts[7][1] != null) facts[7][1] = facts[7][1] > 0 ? facts[7][1] + ' s per pick' : 'no timer'; else facts[7][1] = '–';
+  if (facts[7][1] != null) facts[7][1] = facts[7][1] > 0 ? facts[7][1] + ' s per pick (as reported by Sleeper now)' : 'no timer'; else facts[7][1] = '–';
   setHTML($('lg-facts'), facts.map(([k, v]) => '<div class="kv"><span>' + esc(k) + '</span><span>' + esc(v) + '</span></div>').join(''));
 
   const flags = snap && Array.isArray(snap.flags) ? snap.flags : [];
@@ -1053,23 +1439,86 @@ function renderLeague() {
   setHTML($('lg-order').querySelector('tbody'), order.length ? order.map((o) =>
     '<tr class="' + (o.is_me ? 'me' : '') + '"><td class="n">' + esc(o.slot) + '</td><td>' + esc(o.display_name || '–') + '</td><td>' + esc(o.team_name || '–') +
     '</td><td class="n">' + esc(o.roster_id != null ? o.roster_id : '–') + '</td><td class="muted">' + esc((Array.isArray(o.picks) ? o.picks.slice(0, 4) : []).join(', ')) + '</td></tr>').join('') :
-    '<tr><td colspan="5" class="muted">draft order not available' + (sess && sess.my_slot ? ' — your slot is ' + esc(sess.my_slot) : '') + '</td></tr>');
+    '<tr><td colspan="5" class="muted">draft order not available' + (sess && sess.slot ? ' — your slot is ' + esc(sess.slot) : '') + '</td></tr>');
   const mp = snap && Array.isArray(snap.my_picks) ? snap.my_picks : [];
   setText($('lg-mypicks'), mp.length ? 'Your picks: ' + mp.join(', ') + (snap.my_slot ? ' (slot ' + snap.my_slot + ')' : '') : '');
 }
 
-// ---- Ask ------------------------------------------------------------------
-function renderAsk() {
-  const ok = !!get(S.status, 'ready.claude', false);
-  $('ask-btn').disabled = !ok || S.ui.asking;
-  $('ask-q').disabled = !ok;
-  setText($('ask-hint'), !ok ? 'Claude is off — set ANTHROPIC_API_KEY in the environment and restart the server.' : S.ui.asking ? 'asking…' :
-    'Claude answers with the current draft context (roster, board, needs).');
+// ---- Chat drawer (one transcript per draft; the drawer is available from every tab) ----
+function chatShell(root, full) {
+  if (root.dataset.built) return;
+  root.dataset.built = '1';
+  root.innerHTML = '<div class="log"></div><div class="qchips">' + QUICK_PROMPTS.map((p) => '<button type="button" data-q="' + esc(p) + '">' + esc(p) + '</button>').join('') + '</div>' +
+    '<textarea placeholder="' + (full ? 'Ask anything about the draft — Claude sees your roster, needs, the board and the current recommendation. Ctrl/Cmd+Enter sends.' : 'Ask Claude… (Ctrl/Cmd+Enter)') + '"></textarea>' +
+    '<div class="row2"><button type="button" class="primary send">Send</button><button type="button" class="small stop" hidden>Stop</button><button type="button" class="small clear">Clear</button><span class="muted small hint-line"></span></div>';
+  const ta = root.querySelector('textarea');
+  ta.addEventListener('input', () => { S.chat.draft = ta.value; });
+  ta.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); sendChat(ta.value); } });
+  root.querySelector('.send').addEventListener('click', () => sendChat(ta.value));
+  root.querySelector('.stop').addEventListener('click', stopChat);
+  root.querySelector('.clear').addEventListener('click', clearChat);
+  root.querySelector('.qchips').addEventListener('click', (ev) => { const b = ev.target.closest('button[data-q]'); if (b) sendChat(b.dataset.q); });
+}
+function renderChat() {
+  const on = claudeAvailable();
+  if (!S.ui.chatOpen) return;                     // nothing to paint while the drawer is closed
+  for (const [id, full] of [['chat-main', true]]) {
+    const root = $(id); if (!root) continue;
+    chatShell(root, full);
+    const log = root.querySelector('.log');
+    const msgs = S.chat.messages;
+    let h = '';
+    msgs.forEach((m, i) => {
+      const last = i === msgs.length - 1;
+      const streaming = last && S.chat.streaming && m.role === 'assistant';
+      h += '<div class="bubble ' + esc(m.role) + (m.error ? ' error' : '') + (streaming ? ' cursor' : '') + '">' + (m.role === 'assistant' ? mdHTML(m.content || (streaming ? '' : '(empty)')) : '<div class="md"><p>' + esc(m.content).replace(/\n/g, '<br>') + '</p></div>') + '</div>';
+    });
+    if (!msgs.length) h = '<div class="muted small" style="padding:6px">' + (on ? 'No messages yet. Claude answers with the live draft context — the current recommendation, your roster and needs, candidates and research notes.' :
+      'Add an Anthropic API key in Settings (⚙) to chat.') + '</div>';
+    const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
+    const changed = _lastHTML.get(log) !== h;
+    setHTML(log, h);
+    if (changed && (atBottom || S.chat.streaming)) log.scrollTop = log.scrollHeight;
+    const ta = root.querySelector('textarea');
+    if (document.activeElement !== ta && ta.value !== S.chat.draft) ta.value = S.chat.draft;
+    ta.disabled = !on;
+    root.querySelector('.send').disabled = !on || S.chat.streaming;
+    show(root.querySelector('.stop'), S.chat.streaming);
+    root.querySelector('.clear').disabled = S.chat.streaming || !msgs.length;
+    $$('.qchips button', root).forEach((b) => { b.disabled = !on || S.chat.streaming; });
+    setText(root.querySelector('.hint-line'), S.chat.streaming ? 'streaming…' : (S.settings.model + (isLive() ? '' : ' • no draft running: general questions only')));
+  }
 }
 
 // ---- Popover player card ---------------------------------------------------
+function meterHTML(label, v, invert) {
+  const n = num(v); if (n == null) return '';
+  const x = Math.max(0, Math.min(1, n));
+  const risk = invert ? 1 - x : x;        // role_certainty: high is good
+  const cls = risk < 0.34 ? 'good' : risk < 0.67 ? 'mid' : 'bad';
+  return '<div class="meter ' + cls + '"><span>' + esc(label) + '</span><div class="bar"><div style="width:' + Math.round(x * 100) + '%"></div></div><span class="n">' + pct(x) + '</span></div>';
+}
+function noteHTML(n, c, pinned) {
+  let h = '<div class="note">';
+  if (n) {
+    const fl = redFlags(n);
+    if (fl.length) h += '<ul class="redflags">' + fl.map((f) => '<li>⚠ ' + esc(f) + '</li>').join('') + '</ul>';
+    h += '<b>Research:</b> ' + esc(n.summary || '(no summary)');
+    h += meterHTML('injury risk', n.injury_risk) + meterHTML('role certainty', n.role_certainty, true) + meterHTML('off-field risk', n.offfield_risk);
+    if (n.upside) h += '<div><span class="muted">Upside:</span> ' + esc(n.upside) + '</div>';
+    if (n.downside) h += '<div><span class="muted">Downside:</span> ' + esc(n.downside) + '</div>';
+    if (pinned && Array.isArray(n.sources) && n.sources.length) h += '<div class="srcs">' + n.sources.slice(0, 5).map((u, i) => '<a href="' + esc(u) + '" target="_blank" rel="noopener">[' + (i + 1) + ']</a>').join('') + '</div>';
+    if (n.generated_at || n.model) h += '<div class="muted small">' + esc(n.model || '') + (n.generated_at ? ' • ' + fmtTime(n.generated_at) : '') + '</div>';
+  } else h += '<span class="muted">no research note yet</span>';
+  if (pinned) {
+    const busy = S.research.player === String(c.player_id);
+    h += ' <button type="button" class="small" data-research="' + esc(c.player_id) + '"' + (busy || !claudeAvailable() ? ' disabled' : '') + '>' + (busy ? 'researching…' : n ? 'Research again' : 'Research now') + '</button>';
+  }
+  return h + '</div>';
+}
 function cardHTML(c) {
   const g = (label, val) => '<div><span>' + label + '</span>' + val + '</div>';
+  const pinned = S.ui.pinnedId === c.player_id;
   let h = '<div class="pn">' + esc(c.name) + warnHTML(c) + '</div><div class="muted">' + posTeam(c) + (c.bye != null ? ' • bye ' + esc(c.bye) : '') +
     (c.age != null ? ' • age ' + fmt(c.age) : '') + (c.years_exp != null ? ' • ' + esc(c.years_exp) + ' yr' : '') +
     (c.injury_status ? ' • <span class="warn">' + esc(c.injury_status) + '</span>' : '') +
@@ -1083,15 +1532,10 @@ function cardHTML(c) {
   const warns = Array.isArray(c.warnings) ? c.warnings : [];
   if (reasons.length) h += '<ul>' + reasons.map((r) => '<li>' + esc(r) + '</li>').join('') + '</ul>';
   if (warns.length) h += '<ul class="warn">' + warns.map((r) => '<li>' + esc(r) + '</li>').join('') + '</ul>';
-  if (c.note && typeof c.note === 'object') {
-    const n = c.note;
-    h += '<div class="note"><b>Research:</b> ' + esc(n.summary || '') +
-      (num(n.injury_risk) != null || num(n.role_certainty) != null ? '<div class="muted small">injury risk ' + pct(n.injury_risk) + ' • role certainty ' + pct(n.role_certainty) + '</div>' : '') +
-      (n.upside ? '<div><span class="muted">Upside:</span> ' + esc(n.upside) + '</div>' : '') + (n.downside ? '<div><span class="muted">Downside:</span> ' + esc(n.downside) + '</div>' : '') + '</div>';
-  }
+  h += noteHTML(noteFor(c), c, pinned);
   const ex = S.ui.explain[c.player_id];
   if (ex) h += '<div class="explain">' + esc(ex) + '</div>';
-  if (S.ui.pinnedId === c.player_id) {
+  if (pinned) {
     h += '<div class="pinhint">pinned — <kbd>Esc</kbd> closes' + (!ex ? ' • <a href="#" data-explain="' + esc(c.player_id) + '">explain</a>' : '') +
       (isMock() && myTurn() ? ' • <a href="#" data-draft="' + esc(c.player_id) + '">draft him</a>' : '') + '</div>';
   }
@@ -1123,10 +1567,11 @@ function placePop(pop) {
   const a = popAnchor();
   if (!a) return;
   const r = a.getBoundingClientRect();
-  const w = pop.offsetWidth || 360, hgt = pop.offsetHeight || 200;
+  const w = pop.offsetWidth || 380, hgt = pop.offsetHeight || 200;
+  const maxRight = (S.ui.chatOpen && window.innerWidth >= 1200) ? window.innerWidth - 420 : window.innerWidth;   // keep clear of the chat sidebar
   let left = r.right + 8;
-  if (left + w > window.innerWidth - 8) left = r.left - w - 8;
-  if (left < 8) left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+  if (left + w > maxRight - 8) left = r.left - w - 8;
+  if (left < 8) left = Math.max(8, Math.min(r.left, maxRight - w - 8));
   let top = r.top;
   if (top + hgt > window.innerHeight - 8) top = Math.max(8, window.innerHeight - hgt - 8);
   pop.style.left = left + 'px'; pop.style.top = top + 'px';
@@ -1148,7 +1593,84 @@ function pinCard(pid, anchor, root) {
 }
 function unpinCard() { clearTimeout(_hideTimer); S.ui.pinnedId = null; S.ui.hoverId = null; _popAnchor = null; renderPop(); }
 
-// ---------------------------------------------------------------- 5. polling loop
+// ---- Settings modal ---------------------------------------------------------
+function openSettings(msg) {
+  S.ui.settingsOpen = true;
+  $('set-key').value = S.settings.apiKey;
+  $('set-access').value = S.settings.accessCode;
+  $('set-model').value = S.settings.model;
+  $('set-theme').value = S.settings.theme;
+  setText($('key-server'), get(S.status, 'claude.server_key', false) ? '— the server has a key; yours overrides it' : S.status ? '— the server has no key' : '');
+  setText($('access-hint'), get(S.status, 'access_code_required', false) || S.ui.needAccess ? '— required by this server' : S.status ? '— not required by this server' : '');
+  setText($('settings-msg'), msg || '');
+  show($('settings-msg'), !!msg);
+  show($('settings-modal'), true);
+  (msg && /access/i.test(msg) ? $('set-access') : $('set-key')).focus();
+}
+function closeSettings() { S.ui.settingsOpen = false; show($('settings-modal'), false); }
+
+// ---------------------------------------------------------------- 5. session lifecycle
+/** Apply a render payload (from GET /api/state or POST /api/mock/state). */
+function applyState(st, lastPicks) {
+  S.state = st || {}; S.stateAt = Date.now();
+  if (num(st.ts) != null) S.clockSkew = Date.now() / 1000 - st.ts;
+  if (st.snapshot) S.snapshot = st.snapshot;
+  S.ui.fresh = {};
+  if (Array.isArray(lastPicks)) for (const p of lastPicks) { const no = p && typeof p === 'object' ? p.pick_no : null; if (no != null) S.ui.fresh[String(no)] = true; }
+  // fold notes that arrived inside cards into the note cache
+  const lists = [st.best, st.available];
+  for (const l of lists) if (Array.isArray(l)) for (const c of l) if (c && c.note && typeof c.note === 'object') S.notes[String(c.player_id)] = c.note;
+  onOk();
+  renderAll();
+  maybeFetchAdvice();
+}
+async function startSession(session) {
+  if (S.ui.starting) return false;
+  S.ui.starting = true; renderTop(); renderSetup();
+  const r = await post('/api/session/start', { session: session }, 'start session', 120000);
+  S.ui.starting = false;
+  if (!r) { renderAll(); return false; }
+  const resolved = r.session && typeof r.session === 'object' ? r.session : {};
+  S.session = Object.assign({}, session, resolved, { mode: resolved.mode || session.mode, started_at: Date.now() });
+  if (S.session.mode === 'mock') {
+    S.session.mock = Object.assign({}, session.mock || {}, resolved.mock || {});
+    S.session.picks = Array.isArray(resolved.picks) ? resolved.picks : (Array.isArray(session.picks) ? session.picks : []);
+  } else delete S.session.picks;
+  if (typeof S.session.use_claude !== 'boolean') S.session.use_claude = !!session.use_claude;
+  S.snapshot = r.snapshot || null; S.leagueInfo = r.league || null;
+  S.state = null; S.advice = { version: null, status: 'idle', text: null, model: null, inflight: null, cache: {} };
+  S.board.loaded = false; S.board.rows = null;
+  saveSession(); loadChat();
+  toast((S.session.mode === 'mock' ? 'Mock' : 'Live') + ' session started', 'info', 2500);
+  showTab('draft');
+  if (S.session.mode === 'mock') { await mockAction('advance'); runAutopilot(); }
+  else schedule(10);
+  return true;
+}
+/** Resume from localStorage on page load. */
+async function resumeSession() {
+  const s = lsGet('da.session', null);
+  if (!s || typeof s !== 'object' || (s.mode !== 'live' && s.mode !== 'mock')) return;
+  S.session = s;
+  const meta = lsGet('da.snapshot', null) || {};
+  S.snapshot = meta.snapshot || null; S.leagueInfo = meta.league || null;
+  S.ui.autopilot = !!get(lsGet('da.ui', null), 'autopilot', false);
+  loadChat();
+  if (s.mode === 'mock') { await mockAction('sync'); if (S.state && !myTurn() && !get(S.state, 'draft.is_complete')) await mockAction('advance'); runAutopilot(); }
+}
+function stopSession() {
+  if (S.chat.abort) S.chat.abort.abort();
+  S.research.stop = true;
+  const key = S.chat.key;
+  S.session = null; S.snapshot = null; S.leagueInfo = null; S.state = null; S.ui.autopilot = false; S.ui.fresh = {};
+  S.advice = { version: null, status: 'idle', text: null, model: null, inflight: null, cache: {} };
+  lsSet('da.session', null); lsSet('da.snapshot', null); lsSet('da.ui', null); if (key !== 'none') lsSet(key, null);
+  S.chat.key = 'none'; S.chat.messages = [];
+  unpinCard(); renderAll(); schedule(10);
+  toast('Session cleared', 'info', 2500);
+}
+
+// ---- live polling -----------------------------------------------------------
 let _pollTimer = null;
 function onOk() { if (S.failures) { S.failures = 0; renderTop(); } }
 function onFail(e) {
@@ -1159,98 +1681,274 @@ function onFail(e) {
 async function loadStatus() {
   try {
     const st = await api('/api/status', { timeout: 8000 });
-    S.status = st || {}; S.statusAt = Date.now(); S.mode = S.status.mode || 'idle';
-    if (!isLive() && S.state) S.state = null;           // session ended: drop the stale draft view
+    S.status = st || {}; S.statusAt = Date.now();
+    if (S.ui.needAccess && S.settings.accessCode) S.ui.needAccess = false;   // a 2xx with the code means it is accepted
+    if (st && st.access_code_required && !S.settings.accessCode && !S.ui.settingsOpen && !S.ui.accessAsked) { S.ui.accessAsked = true; openSettings('This server requires an access code.'); }
     onOk(); renderAll();
   } catch (e) { onFail(e); }
 }
-async function loadState() {
+async function loadLiveState() {
   try {
-    const st = await api('/api/state', { timeout: 8000 });
-    S.state = st || {}; S.stateAt = Date.now();
-    if (num(st.ts) != null) S.clockSkew = Date.now() / 1000 - st.ts;
-    if (st.mode) S.mode = st.mode;
-    onOk(); renderAll();
-  } catch (e) {
-    if (e.status === 404 || e.status === 409) { await loadStatus(); return; }   // session went away
-    onFail(e);
-  }
+    const st = await api('/api/state?' + sessionQuery(), { timeout: 12000 });
+    applyState(st, null);
+  } catch (e) { onFail(e); }
+}
+async function loadNotes() {
+  try {
+    const n = await api('/api/notes', { timeout: 15000 });
+    if (n && typeof n === 'object' && !Array.isArray(n)) { for (const [k, v] of Object.entries(n)) if (v && typeof v === 'object') S.notes[String(k)] = v; }
+    if (S.state) renderAll();
+  } catch (e) { /* notes are optional */ }
 }
 async function tick() {
-  if (isLive()) {
-    await loadState();
-    if (Date.now() - S.statusAt > 5000) await loadStatus();   // keep the log / readiness fresh, cheaply
+  if (mode() === 'live') {
+    await loadLiveState();
+    if (Date.now() - S.statusAt > 15000) await loadStatus();
   } else {
-    await loadStatus();
-    if (isLive() && !S.state) await loadState();   // session just started: show the draft without waiting a poll
+    if (Date.now() - S.statusAt > (isMock() ? 15000 : 2000)) await loadStatus();
   }
   schedule();
 }
 function schedule(ms) {
   clearTimeout(_pollTimer);
-  if (ms == null) ms = isLive() ? (myTurn() ? 1000 : 2000) : 2000;
+  if (ms == null) ms = mode() === 'live' ? (myTurn() ? 1000 : 2000) : isMock() ? 5000 : 2000;
   _pollTimer = setTimeout(tick, ms);
 }
-/** Re-poll right now (after a POST that changes the mode). */
-function pokeNow() { schedule(50); }
 setInterval(() => { if (S.ui.tab === 'draft') renderCountdown(); }, 1000);
 
-// ---------------------------------------------------------------- 6. event wiring
+// ---- mock actions -------------------------------------------------------------
+/** POST /api/mock/state {session, action, player_id?}; keeps `picks` from the response in the session + localStorage. */
+async function mockAction(action, playerId) {
+  if (!isMock() || S.ui.mockBusy) return null;
+  S.ui.mockBusy = true; renderTop(); if (S.ui.tab === 'draft' && S.state) renderDraft();
+  const body = { session: sessionPayload(), action: action };
+  if (playerId != null) body.player_id = String(playerId);
+  const r = await post('/api/mock/state', body, 'mock ' + action, 60000);
+  S.ui.mockBusy = false;
+  if (!r) { renderAll(); return null; }
+  if (!S.session) return null;                     // stopped while the request was in flight
+  if (Array.isArray(r.picks)) S.session.picks = r.picks.map(String);
+  saveSession();
+  applyState(r, r.last_picks);
+  if (Array.isArray(r.last_picks) && r.last_picks.length && action !== 'sync') {
+    const bots = r.last_picks.filter((p) => p && !p.is_me);
+    if (bots.length) toast(bots.length + ' bot pick' + (bots.length > 1 ? 's' : '') + ' — ' + bots.slice(-3).map((p) => p.name || p.player_id).join(', '), 'info', 2500);
+  }
+  return r;
+}
+async function takeRecommended() {
+  if (!isMock() || !myTurn() || S.ui.picking || S.ui.mockBusy) return;
+  S.ui.picking = true; $('take-btn').disabled = true;
+  const r = await mockAction('auto');
+  S.ui.picking = false;
+  if (r) { unpinCard(); await afterMyPick(); }
+}
+async function draftPlayer(pid) {
+  if (!isMock() || !myTurn() || S.ui.picking || S.ui.mockBusy) return;
+  const c = findCard(pid) || { name: pid };
+  if (!window.confirm('Draft ' + c.name + (c.position ? ' (' + c.position + (c.team ? ', ' + c.team : '') + ')' : '') + '?')) return;
+  S.ui.picking = true;
+  const r = await mockAction('pick', pid);
+  S.ui.picking = false;
+  if (r) { unpinCard(); await afterMyPick(); }
+}
+/** After each of my picks an "advance" is sent so the bots pick up to my next turn (a no-op if the server already did). */
+async function afterMyPick() {
+  if (isMock() && S.state && !myTurn() && !get(S.state, 'draft.is_complete')) await mockAction('advance');
+  runAutopilot();
+}
+let _autopilotRunning = false;
+async function runAutopilot() {
+  if (_autopilotRunning || !S.ui.autopilot || !isMock()) return;
+  _autopilotRunning = true;
+  try {
+    while (S.ui.autopilot && isMock() && S.state && !get(S.state, 'draft.is_complete')) {
+      if (S.ui.mockBusy) { await sleep(200); continue; }
+      const r = await mockAction(myTurn() ? 'auto' : 'advance');
+      if (!r) break;
+      await sleep(400);                  // let the feed animate
+    }
+  } finally { _autopilotRunning = false; renderAll(); }
+}
+
+// ---- advice (GET /api/advice; long request; never blocks the poll) ------------
+function maybeFetchAdvice() {
+  const st = S.state; if (!st || !S.session || !S.session.use_claude || !claudeAvailable()) return;
+  const d = st.draft || {};
+  const want = d.is_my_turn || (num(d.picks_until_my_turn) != null && d.picks_until_my_turn <= 1);
+  if (!want || d.is_complete) return;
+  const v = st.version != null ? String(st.version) : 'v' + (S.session.picks || []).length;
+  if (S.advice.cache[v]) { const c = S.advice.cache[v]; if (S.advice.version !== v) { S.advice.version = v; S.advice.text = c.advice; S.advice.status = c.status; S.advice.model = c.model; renderFooter(st); renderClaudePill(); } return; }
+  if (S.advice.inflight) return;
+  S.advice.inflight = v; renderClaudePill(); renderFooter(st); renderTop();
+  api('/api/advice?' + sessionQuery(), { timeout: 45000 }).then((r) => {
+    const rec = { advice: r && r.advice ? String(r.advice) : null, status: (r && r.status) || (r && r.advice ? 'ready' : 'no answer'), model: r && r.model };
+    if (rec.status === 'thinking' && !rec.advice) { S.advice.inflight = null; setTimeout(() => { if (S.state && String(S.state.version) === v) maybeFetchAdvice(); }, 2500); renderClaudePill(); renderTop(); return; }
+    S.advice.cache[v] = rec;
+    S.advice.inflight = null; S.advice.version = v; S.advice.text = rec.advice; S.advice.status = rec.status; S.advice.model = rec.model;
+  }).catch((e) => {
+    S.advice.inflight = null; S.advice.status = 'error'; S.advice.error = e.message;
+    if (e.status !== 401) toast('advice: ' + e.message);
+  }).finally(() => { renderTop(); if (S.state) { renderFooter(S.state); renderClaudePill(); } });
+}
+
+// ---------------------------------------------------------------- 6. chat + research
+async function sendChat(text) {
+  text = String(text || '').trim();
+  if (!text || S.chat.streaming) return;
+  if (!claudeAvailable()) { openSettings('Chat needs an Anthropic API key.'); return; }
+  loadChat();
+  S.chat.draft = '';
+  const history = S.chat.messages.filter((m) => !m.error).map((m) => ({ role: m.role, content: m.content }));
+  S.chat.messages.push({ role: 'user', content: text });
+  const reply = { role: 'assistant', content: '' };
+  S.chat.messages.push(reply);
+  S.chat.streaming = true; S.chat.abort = new AbortController();
+  saveChat(); renderChat(); renderTop();
+  let lastRender = 0;
+  const render = () => { const now = Date.now(); if (now - lastRender > 60) { lastRender = now; renderChat(); } };
+  try {
+    await sse('/api/chat', { session: sessionPayload(), messages: history.concat([{ role: 'user', content: text }]), model: S.settings.model }, (ev) => {
+      if (!ev || typeof ev !== 'object') return;
+      if (typeof ev.delta === 'string') reply.content += ev.delta;
+      else if (typeof ev.text === 'string') reply.content += ev.text;
+      if (ev.error) { reply.error = true; reply.content += (reply.content ? '\n\n' : '') + 'Error: ' + (typeof ev.error === 'string' ? ev.error : JSON.stringify(ev.error)); }
+      if (ev.done && ev.usage && typeof ev.usage === 'object') reply.usage = ev.usage;
+      render();
+    }, S.chat.abort.signal);
+    if (!reply.content) { reply.content = '(no answer)'; reply.error = true; }
+  } catch (e) {
+    if (e.name === 'AbortError') reply.content += (reply.content ? '\n\n' : '') + '(stopped)';
+    else { reply.error = true; reply.content += (reply.content ? '\n\n' : '') + 'Error: ' + e.message; if (e.status !== 401) toast('chat: ' + e.message); }
+  }
+  S.chat.streaming = false; S.chat.abort = null;
+  saveChat(); renderChat(); renderTop();
+}
+function stopChat() { if (S.chat.abort) S.chat.abort.abort(); }
+function clearChat() { if (S.chat.streaming) return; S.chat.messages = []; saveChat(); renderChat(); }
+/** Open / close the chat drawer. Remembered across reloads only where it is a sidebar (≥ 1200 px); phones always start closed. */
+function setChatOpen(on) {
+  S.ui.chatOpen = !!on;
+  lsSet('da.chatOpen', S.ui.chatOpen);
+  loadChat();
+  show($('chat-drawer'), S.ui.chatOpen);
+  show($('chat-backdrop'), S.ui.chatOpen);
+  document.body.classList.toggle('chat-open', S.ui.chatOpen);
+  renderTop(); renderChat();
+  if (S.ui.chatOpen && window.innerWidth > 640) { const ta = $('chat-main').querySelector('textarea'); if (ta && !ta.disabled) ta.focus(); }
+  if (!$('card-pop').hidden) placePop($('card-pop'));
+}
+
+/** Loop POST /api/research/next {session, top} until remaining == 0 (or Stop). Resumable: the server skips fresh notes. */
+async function researchLoop(top) {
+  const r = S.research;
+  if (r.running) return;
+  if (!claudeAvailable()) { openSettings('Research needs an Anthropic API key.'); return; }
+  top = Math.max(10, Math.min(400, parseInt(top, 10) || 150));
+  r.running = true; r.stop = false; r.error = null; r.current = ''; r.remaining = null; r.done = 0; r.total = top;
+  renderResearch(); renderTop();
+  let count = 0;
+  try {
+    while (!r.stop) {
+      let res;
+      try { res = await api('/api/research/next', { method: 'POST', body: { session: sessionPayload(), top: top }, timeout: 90000 }); }
+      catch (e) { r.error = e.message; if (e.status !== 401) toast('research: ' + e.message); break; }
+      if (!res || typeof res !== 'object') { r.error = 'empty response'; break; }
+      r.done = num(res.done) != null ? res.done : r.done + 1;
+      r.total = num(res.total) != null ? res.total : r.total;
+      r.remaining = num(res.remaining) != null ? res.remaining : null;
+      const n = res.note && typeof res.note === 'object' ? res.note : null;
+      if (n) {
+        const pid = n.player_id != null ? String(n.player_id) : (res.player_id != null ? String(res.player_id) : null);
+        if (pid) S.notes[pid] = n;
+        const card = pid ? findCard(pid) : null;
+        r.current = n.name || n.player_name || (card && card.name) || pid || '';
+      }
+      count += 1;
+      renderResearch(); renderTop(); if (S.state && S.ui.tab === 'draft') renderDraft();
+      if (r.remaining === 0 || r.remaining == null && !n) break;
+      if (count % 8 === 0) loadNotes();
+    }
+  } finally {
+    r.running = false; renderResearch(); renderTop();
+    await loadNotes();
+    if (isMock() && S.state) await mockAction('sync'); else if (mode() === 'live') schedule(10);
+    if (!r.error) toast(r.remaining === 0 ? 'Research complete: ' + r.done + '/' + r.total : 'Research stopped at ' + r.done + '/' + r.total, 'ok', 3500);
+  }
+}
+function stopResearch() { S.research.stop = true; renderResearch(); }
+async function researchPlayer(pid) {
+  if (!claudeAvailable()) { openSettings('Research needs an Anthropic API key.'); return; }
+  S.research.player = String(pid); renderPop();
+  try {
+    const r = await api('/api/research/player', { method: 'POST', body: { session: sessionPayload(), player_id: String(pid), force: true }, timeout: 90000 });
+    if (r && r.note && typeof r.note === 'object') { S.notes[String(pid)] = r.note; const c = findCard(pid); if (c) c.note = r.note; toast('Note ready', 'ok', 2000); }
+    else toast('research: no note returned');
+  } catch (e) { if (e.status !== 401) toast('research: ' + e.message); }
+  S.research.player = null; renderAll();
+}
+
+// ---------------------------------------------------------------- 7. event wiring
 function showTab(name) {
   if (S.ui.tab !== name) unpinCard();          // a card anchored in another tab must not linger
   S.ui.tab = name;
   $$('.tab').forEach((s) => s.classList.toggle('active', s.id === 'tab-' + name));
-  try { localStorage.setItem('da.tab', name); } catch (e) { /* private mode */ }
-  if (name === 'board' && !S.board.loaded && !S.board.loading) loadBoard();
+  lsSet('da.tab', name);
+  if (name === 'board' && (!S.board.loaded || S.board.leagueId !== get(S.session, 'league_id', null)) && !S.board.loading) loadBoard();
   renderAll();
 }
 $$('#tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+$('theme-btn').addEventListener('click', () => { S.settings.theme = S.settings.theme === 'light' ? 'dark' : 'light'; saveSettings(); });
 
-// theme
-$('theme-btn').addEventListener('click', () => {
-  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
-  document.documentElement.dataset.theme = next;
-  try { localStorage.setItem('da.theme', next); } catch (e) { /* ignore */ }
+// ---- chat drawer
+for (const id of ['chat-btn', 'chat-btn2', 'chat-fab']) $(id).addEventListener('click', () => setChatOpen(!S.ui.chatOpen));
+$('chat-close').addEventListener('click', () => setChatOpen(false));
+$('chat-backdrop').addEventListener('click', () => setChatOpen(false));
+window.addEventListener('resize', () => { if (S.ui.chatOpen) document.body.classList.add('chat-open'); });
+
+// ---- settings
+$('settings-btn').addEventListener('click', () => openSettings());
+$('settings-btn2').addEventListener('click', () => openSettings());
+$('settings-close').addEventListener('click', closeSettings);
+$('settings-modal').addEventListener('click', (ev) => { if (ev.target === $('settings-modal')) closeSettings(); });
+$('key-eye').addEventListener('click', () => { const i = $('set-key'); i.type = i.type === 'password' ? 'text' : 'password'; });
+$('settings-save').addEventListener('click', () => {
+  S.settings.apiKey = $('set-key').value.trim();
+  S.settings.accessCode = $('set-access').value.trim();
+  S.settings.model = MODELS.includes($('set-model').value) ? $('set-model').value : 'claude-opus-5';
+  S.settings.theme = $('set-theme').value === 'light' ? 'light' : 'dark';
+  saveSettings(); closeSettings();
+  S.ui.needAccess = false; S.failures = 0;
+  toast('Settings saved', 'ok', 2000);
+  renderAll(); schedule(10);
+  if (isMock() && S.state) mockAction('sync');
 });
 
 // ---- Setup actions
-async function stopSession() {
-  const r = await post('/api/stop', {}, 'stop');
-  if (r) { toast('Session stopped', 'info'); S.mode = 'idle'; S.state = null; S.ui.autopilot = false; unpinCard(); renderAll(); pokeNow(); }
-}
-$('stop-btn').addEventListener('click', stopSession);
-$('stop-btn2').addEventListener('click', stopSession);
-$('prep-btn').addEventListener('click', async () => {
-  $('prep-btn').disabled = true;
-  const r = await post('/api/prep', { refresh: $('prep-refresh').checked, research: $('prep-research').checked, top: 150 }, 'prep');
-  if (r) toast('Preparing… watch the log', 'info');
-  pokeNow();
-});
+$('stop-btn').addEventListener('click', () => { if (!isLive() || window.confirm('Forget this session (and its mock picks / chat)?')) stopSession(); });
+$('stop-btn2').addEventListener('click', () => { if (window.confirm('Stop following this draft and forget the session?')) stopSession(); });
 $('lookup-btn').addEventListener('click', async () => {
   const username = $('live-username').value.trim();
   if (!username) { toast('enter your Sleeper username first'); return; }
   $('lookup-btn').disabled = true;
   setText($('lookup-info'), 'looking up ' + username + '…');
-  const r = await post('/api/lookup', { username: username }, 'lookup');
+  const r = await post('/api/lookup', { username: username }, 'lookup', 30000);
   $('lookup-btn').disabled = false;
   if (r) { S.ui.lookup = r; renderLookup(); } else setText($('lookup-info'), 'look-up failed.');
 });
 $('live-league').addEventListener('change', syncDraftToLeague);
 $('live-form').addEventListener('submit', async (ev) => {
   ev.preventDefault();
-  const body = { use_claude: $('live-claude').checked };
+  const session = { mode: 'live', use_claude: $('live-claude').checked };
   const league_id = $('live-league').value, draft_id = $('live-draft').value, username = $('live-username').value.trim();
   const slot = parseInt($('live-slot').value, 10);
-  if (league_id) body.league_id = league_id;
-  if (draft_id) body.draft_id = draft_id;
-  if (username) body.username = username;
-  if (get(S.ui.lookup, 'user.user_id', null)) body.user_id = S.ui.lookup.user.user_id;
-  if (slot > 0) body.slot = slot;
+  if (league_id) session.league_id = league_id;
+  if (draft_id) session.draft_id = draft_id;
+  if (username) session.username = username;
+  if (get(S.ui.lookup, 'user.user_id', null)) session.user_id = String(S.ui.lookup.user.user_id);
+  if (slot > 0) session.slot = slot;
   if (!league_id && !draft_id) { toast('pick a league or a draft first (use Look up)'); return; }
-  $('live-start').disabled = true;
-  const r = await post('/api/live/start', body, 'start live draft');
-  if (r) { toast('Starting live draft…', 'info'); showTab('draft'); }
-  pokeNow();
+  await startSession(session);
 });
 $('mock-form').addEventListener('submit', async (ev) => {
   ev.preventDefault();
@@ -1258,41 +1956,28 @@ $('mock-form').addEventListener('submit', async (ev) => {
   const rounds = Math.min(20, Math.max(10, parseInt($('mock-rounds').value, 10) || 15));
   const slot = Math.min(teams, Math.max(1, parseInt($('mock-slot').value, 10) || 1));
   const seedRaw = $('mock-seed').value.trim();
-  const body = {
-    teams: teams, rounds: rounds, slot: slot, scoring: $('mock-scoring').value, superflex: $('mock-superflex').checked,
-    seed: seedRaw === '' ? null : parseInt(seedRaw, 10), bot_delay: Math.max(0, parseFloat($('mock-delay').value) || 0),
-    autopilot: $('mock-autopilot').checked,
+  const session = {
+    mode: 'mock', slot: slot, use_claude: $('mock-claude').checked,
+    mock: { teams: teams, rounds: rounds, slot: slot, scoring: $('mock-scoring').value, superflex: $('mock-superflex').checked, seed: seedRaw === '' ? null : parseInt(seedRaw, 10) },
+    picks: [],
   };
-  $('mock-start').disabled = true;
-  const r = await post('/api/mock/start', body, 'start mock draft');
-  if (r) { S.ui.autopilot = body.autopilot; toast('Mock draft starting…', 'info'); showTab('draft'); }
-  pokeNow();
+  S.ui.autopilot = $('mock-autopilot').checked;
+  await startSession(session);
 });
+for (const sfx of ['', '2']) {
+  $('research-btn' + sfx).addEventListener('click', () => researchLoop($('research-top' + sfx).value));
+  $('research-stop' + sfx).addEventListener('click', stopResearch);
+}
+$('research-top').addEventListener('change', (ev) => { $('research-top2').value = ev.target.value; });
+$('research-top2').addEventListener('change', (ev) => { $('research-top').value = ev.target.value; });
+$$('.panel.collapsible > h2').forEach((h) => h.addEventListener('click', () => {
+  const p = h.parentElement; p.classList.toggle('closed');
+  lsSet('da.panel.' + p.id, p.classList.contains('closed'));
+}));
 
 // ---- Draft actions
-async function takeRecommended() {
-  if (!isMock() || !myTurn() || S.ui.picking) return;
-  S.ui.picking = true; $('take-btn').disabled = true;
-  const r = await post('/api/mock/auto', {}, 'take recommended');
-  S.ui.picking = false;
-  if (r) { unpinCard(); pokeNow(); }
-}
-async function draftPlayer(pid) {
-  if (!isMock() || !myTurn() || S.ui.picking) return;
-  const c = findCard(pid) || { name: pid };
-  if (!window.confirm('Draft ' + c.name + (c.position ? ' (' + c.position + (c.team ? ', ' + c.team : '') + ')' : '') + '?')) return;
-  S.ui.picking = true;
-  const r = await post('/api/mock/pick', { player_id: String(pid) }, 'pick');
-  S.ui.picking = false;
-  if (r) { unpinCard(); pokeNow(); }
-}
 $('take-btn').addEventListener('click', takeRecommended);
-$('autopilot').addEventListener('change', async (ev) => {
-  const enabled = ev.target.checked;
-  const r = await post('/api/mock/autopilot', { enabled: enabled }, 'autopilot');
-  if (r) { S.ui.autopilot = enabled; toast('Autopilot ' + (enabled ? 'on' : 'off'), 'info', 2000); pokeNow(); }
-  else ev.target.checked = S.ui.autopilot;
-});
+$('autopilot').addEventListener('change', (ev) => { S.ui.autopilot = ev.target.checked; saveSession(); toast('Autopilot ' + (S.ui.autopilot ? 'on' : 'off'), 'info', 2000); runAutopilot(); });
 $('avail-q').addEventListener('input', (ev) => { S.ui.availQ = ev.target.value; S.ui.availLimit = 40; if (S.state) renderAvailable(S.state); });
 $('avail-pos').addEventListener('change', (ev) => { S.ui.availPos = ev.target.value; S.ui.availLimit = 40; if (S.state) renderAvailable(S.state); });
 $('avail-sort').addEventListener('change', (ev) => { S.ui.availSort = ev.target.value; if (S.state) renderAvailable(S.state); });
@@ -1318,32 +2003,34 @@ for (const id of ['best-tbl', 'avail-tbl', 'pos-grid', 'roster-tbl', 'recent-tbl
 $('card-pop').addEventListener('mouseenter', () => clearTimeout(_hideTimer));
 $('card-pop').addEventListener('mouseleave', unhoverCard);
 $('card-pop').addEventListener('click', async (ev) => {
+  const b = ev.target.closest('button[data-research]');
+  if (b) { ev.preventDefault(); researchPlayer(b.dataset.research); return; }
   const a = ev.target.closest('a[data-explain], a[data-draft]');
   if (!a) return;
   ev.preventDefault();
   if (a.dataset.draft) { draftPlayer(a.dataset.draft); return; }
   const pid = a.dataset.explain;
   try {
-    const r = await api('/api/player/' + encodeURIComponent(pid), { timeout: 10000 });
+    const r = await api('/api/player/' + encodeURIComponent(pid) + '?' + sessionQuery(), { timeout: 20000 });
     S.ui.explain[pid] = (r && r.explain) || 'no explanation available';
+    if (r && r.note && typeof r.note === 'object') S.notes[pid] = r.note;
   } catch (e) { S.ui.explain[pid] = 'explain failed: ' + e.message; }
   renderPop();
 });
 document.addEventListener('click', (ev) => {
-  // click outside the popover / tables unpins
   if (S.ui.pinnedId && !ev.target.closest('#card-pop') && !ev.target.closest('[data-pid]')) unpinCard();
 });
 window.addEventListener('resize', () => { if (!$('card-pop').hidden) placePop($('card-pop')); });
 
-// keyboard: Enter = take recommended (mock, my turn), Esc = close card, 1-5 = tabs
+// keyboard: Enter = take recommended (mock, my turn), Esc = close settings / card / chat, c = chat, 1-4 = tabs
 document.addEventListener('keydown', (ev) => {
   const tag = (ev.target && ev.target.tagName || '').toLowerCase();
-  const typing = tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button';
-  if (ev.key === 'Escape') { unpinCard(); return; }
-  if (typing) return;
-  if (ev.key === 'Enter' && S.ui.tab === 'draft') { ev.preventDefault(); takeRecommended(); return; }
-  const tabs = ['setup', 'draft', 'board', 'league', 'ask'];
-  if (/^[1-5]$/.test(ev.key)) showTab(tabs[parseInt(ev.key, 10) - 1]);
+  const typing = tag === 'input' || tag === 'textarea' || tag === 'select';
+  if (ev.key === 'Escape') { if (S.ui.settingsOpen) closeSettings(); else if (S.ui.pinnedId) unpinCard(); else if (S.ui.chatOpen) setChatOpen(false); return; }
+  if (typing || S.ui.settingsOpen) return;
+  if (ev.key === 'Enter') { if (tag !== 'button' && S.ui.tab === 'draft') { ev.preventDefault(); takeRecommended(); } return; }   // Enter on a focused button keeps its default
+  if (ev.key === 'c' || ev.key === 'C') { setChatOpen(!S.ui.chatOpen); return; }
+  if (/^[1-4]$/.test(ev.key)) showTab(TABS[parseInt(ev.key, 10) - 1]);
 });
 
 // ---- Board actions
@@ -1352,34 +2039,18 @@ let _qTimer = null;
 $('board-q').addEventListener('input', (ev) => { S.board.q = ev.target.value.trim(); clearTimeout(_qTimer); _qTimer = setTimeout(loadBoard, 300); });
 $('board-top').addEventListener('change', (ev) => { S.board.top = parseInt(ev.target.value, 10) || 100; loadBoard(); });
 $('board-reload').addEventListener('click', loadBoard);
-$('board-load').addEventListener('click', async () => {
-  $('board-load').disabled = true;
-  const r = await post('/api/board/load', {}, 'load board');
-  if (r) { toast('Building projections… reload the board in a moment', 'info'); await loadStatus(); loadBoard(); }
-  else $('board-load').disabled = false;
-});
-
-// ---- Ask actions
-$('ask-btn').addEventListener('click', async () => {
-  const q = $('ask-q').value.trim();
-  if (!q) { toast('type a question first'); return; }
-  S.ui.asking = true; renderAsk();
-  show($('ask-answer'), true); setText($('ask-answer'), 'thinking…');
-  try {
-    const r = await api('/api/ask', { method: 'POST', body: { question: q }, timeout: 90000 });
-    setText($('ask-answer'), (r && r.answer) || '(no answer)');
-  } catch (e) { setText($('ask-answer'), 'error: ' + e.message); toast('ask: ' + e.message); }
-  S.ui.asking = false; renderAsk();
-});
-$('ask-q').addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) $('ask-btn').click(); });
 
 // ---- boot
-(function boot() {
-  let theme = 'dark', tab = 'setup';
-  try { theme = localStorage.getItem('da.theme') || theme; tab = localStorage.getItem('da.tab') || tab; } catch (e) { /* ignore */ }
-  document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
-  showTab(['setup', 'draft', 'board', 'league', 'ask'].includes(tab) ? tab : 'setup');
-  tick();
+(async function boot() {
+  loadSettings(); applyTheme();
+  for (const p of $$('.panel.collapsible')) { const closed = lsGet('da.panel.' + p.id, null); if (typeof closed === 'boolean') p.classList.toggle('closed', closed); }
+  const tab = lsGet('da.tab', 'setup');
+  showTab(TABS.includes(tab) ? tab : 'setup');
+  if (lsGet('da.chatOpen', false) === true && window.innerWidth >= 1200) setChatOpen(true);
+  await loadStatus();
+  await resumeSession();
+  renderAll();
+  schedule(10);
 })();
 </script>
 </body>
