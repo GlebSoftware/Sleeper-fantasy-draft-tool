@@ -18,7 +18,13 @@ GitHub (nflverse data) and — only if you set a key — the Anthropic API.
 
 ### Hosted on Vercel (no install)
 
-The app is deployed from this branch to Vercel (project `sleeper-draft-advisor`). Open the deployment URL,
+The app is deployed from this branch to Vercel (project `sleeper-draft-advisor`):
+
+**https://sleeper-draft-advisor.vercel.app**
+
+Every push to the branch redeploys. The production URL is public (Vercel Authentication is kept on for preview
+deployments only) so it opens on any device without a Vercel login; protect it with the access code below or
+re-enable Vercel Authentication for production in Project → Settings → Deployment Protection. Open the URL,
 go to **Settings** on the page and paste your Anthropic API key (it is stored only in your browser and sent
 as a request header) — or set `ANTHROPIC_API_KEY` as a Vercel environment variable so nobody has to.
 Recommended Vercel environment variables (Project → Settings → Environment Variables, then redeploy):
