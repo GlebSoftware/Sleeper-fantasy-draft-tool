@@ -1,0 +1,170 @@
+[
+ {
+  "roster_id": 4,
+  "owner_id": "111111111111111111",
+  "league_id": "1180000000000000001",
+  "players": [],
+  "starters": [],
+  "reserve": [],
+  "settings": {
+   "wins": 0,
+   "losses": 0,
+   "ties": 0,
+   "fpts": 0
+  }
+ },
+ {
+  "roster_id": 5,
+  "owner_id": "222222222222222222",
+  "league_id": "1180000000000000001",
+  "players": [],
+  "starters": [],
+  "reserve": [],
+  "settings": {
+   "wins": 0,
+   "losses": 0,
+   "ties": 0,
+   "fpts": 0
+  }
+ },
+ {
+  "roster_id": 6,
+  "owner_id": "333333333333333333",
+  "league_id": "1180000000000000001",
+  "players": [],
+  "starters": [],
+  "reserve": [],
+  "settings": {
+   "wins": 0,
+   "losses": 0,
+   "ties": 0,
+   "fpts": 0
+  }
+ },
+ {
+  "roster_id": 7,
+  "owner_id": "444444444444444444",
+  "league_id": "1180000000000000001",
+  "players": [],
+  "starters": [],
+  "reserve": [],
+  "settings": {
+   "wins": 0,
+   "losses": 0,
+   "ties": 0,
+   "fpts": 0
+  }
+ },
+ {
+  "roster_id": 8,
+  "owner_id": "555555555555555555",
+  "league_id": "1180000000000000001",
+  "players": [],
+  "starters": [],
+  "reserve": [],
+  "settings": {
+   "wins": 0,
+   "losses": 0,
+   "ties": 0,
+   "fpts": 0
+  }
+ },
+ {
+  "roster_id": 9,
+  "owner_id": "666666666666666666",
+  "league_id": "1180000000000000001",
+  "players": [],
+  "starters": [],
+  "reserve": [],
+  "settings": {
+   "wins": 0,
+   "losses": 0,
+   "ties": 0,
+   "fpts": 0
+  }
+ },
+ {
+  "roster_id": 10,
+  "owner_id": "777777777777777777",
+  "league_id": "1180000000000000001",
+  "players": [],
+  "starters": [],
+  "reserve": [],
+  "settings": {
+   "wins": 0,
+   "losses": 0,
+   "ties": 0,
+   "fpts": 0
+  }
+ },
+ {
+  "roster_id": 11,
+  "owner_id": "888888888888888888",
+  "league_id": "1180000000000000001",
+  "players": [],
+  "starters": [],
+  "reserve": [],
+  "settings": {
+   "wins": 0,
+   "losses": 0,
+   "ties": 0,
+   "fpts": 0
+  }
+ },
+ {
+  "roster_id": 12,
+  "owner_id": "999999999999999999",
+  "league_id": "1180000000000000001",
+  "players": [],
+  "starters": [],
+  "reserve": [],
+  "settings": {
+   "wins": 0,
+   "losses": 0,
+   "ties": 0,
+   "fpts": 0
+  }
+ },
+ {
+  "roster_id": 1,
+  "owner_id": "101010101010101010",
+  "league_id": "1180000000000000001",
+  "players": [],
+  "starters": [],
+  "reserve": [],
+  "settings": {
+   "wins": 0,
+   "losses": 0,
+   "ties": 0,
+   "fpts": 0
+  }
+ },
+ {
+  "roster_id": 2,
+  "owner_id": "121212121212121212",
+  "league_id": "1180000000000000001",
+  "players": [],
+  "starters": [],
+  "reserve": [],
+  "settings": {
+   "wins": 0,
+   "losses": 0,
+   "ties": 0,
+   "fpts": 0
+  }
+ },
+ {
+  "roster_id": 3,
+  "owner_id": "131313131313131313",
+  "league_id": "1180000000000000001",
+  "players": [],
+  "starters": [],
+  "reserve": [],
+  "settings": {
+   "wins": 0,
+   "losses": 0,
+   "ties": 0,
+   "fpts": 0
+  }
+ }
+]

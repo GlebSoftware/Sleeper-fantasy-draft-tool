@@ -1,0 +1,126 @@
+[
+ {
+  "user_id": "111111111111111111",
+  "username": "gleb",
+  "display_name": "Gleb",
+  "avatar": null,
+  "is_owner": true,
+  "league_id": "1180000000000000001",
+  "metadata": {
+   "team_name": "Team Gleb"
+  }
+ },
+ {
+  "user_id": "222222222222222222",
+  "username": "mike_h",
+  "display_name": "MikeH",
+  "avatar": null,
+  "is_owner": false,
+  "league_id": "1180000000000000001",
+  "metadata": {
+   "team_name": "Hurts So Good"
+  }
+ },
+ {
+  "user_id": "333333333333333333",
+  "username": "sara",
+  "display_name": "Sara",
+  "avatar": null,
+  "is_owner": false,
+  "league_id": "1180000000000000001",
+  "metadata": {}
+ },
+ {
+  "user_id": "444444444444444444",
+  "username": "tj",
+  "display_name": "TJ",
+  "avatar": null,
+  "is_owner": false,
+  "league_id": "1180000000000000001",
+  "metadata": {
+   "team_name": "Bijan Mustard"
+  }
+ },
+ {
+  "user_id": "555555555555555555",
+  "username": "dan",
+  "display_name": "Dan",
+  "avatar": null,
+  "is_owner": false,
+  "league_id": "1180000000000000001",
+  "metadata": {
+   "team_name": "Chase Bank"
+  }
+ },
+ {
+  "user_id": "666666666666666666",
+  "username": "raj",
+  "display_name": "Raj",
+  "avatar": null,
+  "is_owner": false,
+  "league_id": "1180000000000000001",
+  "metadata": {}
+ },
+ {
+  "user_id": "777777777777777777",
+  "username": "lee",
+  "display_name": "Lee",
+  "avatar": null,
+  "is_owner": false,
+  "league_id": "1180000000000000001",
+  "metadata": {
+   "team_name": "Puka Shells"
+  }
+ },
+ {
+  "user_id": "888888888888888888",
+  "username": "ana",
+  "display_name": "Ana",
+  "avatar": null,
+  "is_owner": false,
+  "league_id": "1180000000000000001",
+  "metadata": {}
+ },
+ {
+  "user_id": "999999999999999999",
+  "username": "omar",
+  "display_name": "Omar",
+  "avatar": null,
+  "is_owner": false,
+  "league_id": "1180000000000000001",
+  "metadata": {
+   "team_name": "Gibbs Me More"
+  }
+ },
+ {
+  "user_id": "101010101010101010",
+  "username": "chris",
+  "display_name": "Chris",
+  "avatar": null,
+  "is_owner": false,
+  "league_id": "1180000000000000001",
+  "metadata": {}
+ },
+ {
+  "user_id": "121212121212121212",
+  "username": "pat",
+  "display_name": "Pat",
+  "avatar": null,
+  "is_owner": false,
+  "league_id": "1180000000000000001",
+  "metadata": {
+   "team_name": "Lamar Odom"
+  }
+ },
+ {
+  "user_id": "131313131313131313",
+  "username": "sam",
+  "display_name": "Sam",
+  "avatar": null,
+  "is_owner": false,
+  "league_id": "1180000000000000001",
+  "metadata": {
+   "team_name": "Nacua Matata"
+  }
+ }
+]
