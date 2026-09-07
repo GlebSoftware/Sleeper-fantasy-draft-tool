@@ -1,11 +1,12 @@
-data/
-tests/
-scripts/
-.venv/
-venv/
+# root-level data / dev files only (anchored: the package's own draftadvisor/data/ must ship)
+/data/
+/tests/
+/scripts/
+/.venv/
+/venv/
 *.pkl
 *.csv
 *.csv.gz
 __pycache__/
 .pytest_cache/
-DESIGN.md
+/DESIGN.md

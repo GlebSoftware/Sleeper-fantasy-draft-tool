@@ -10,19 +10,18 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = [
-    "httpx>=0.27",
-    "numpy>=1.26",
-    "pandas>=2.1",
-    "scikit-learn>=1.4",
-    "rich>=13.7",
-    "anthropic>=1.0",
-    "sleeper-api-wrapper>=1.1",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
+    "httpx>=0.27",
+    "numpy>=1.26",
+    "anthropic>=1.0",
+    "rich>=13.7",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.23", "respx>=0.21"]
+# everything beyond the lean web runtime: data download, model training, CLI dashboard
+full = ["pandas>=2.1", "scikit-learn>=1.4"]
+dev = ["pandas>=2.1", "scikit-learn>=1.4", "rich>=13.7", "pytest>=8", "pytest-asyncio>=0.23", "respx>=0.21", "playwright>=1.40"]
 
 [project.scripts]
 draftadvisor = "draftadvisor.cli:main"

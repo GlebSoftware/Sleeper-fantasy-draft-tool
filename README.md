@@ -14,34 +14,56 @@ couple of seconds, recomputes value in milliseconds, and shows:
 Everything runs locally (Python 3.10+, no GPU). The only network calls are to the public Sleeper API,
 GitHub (nflverse data) and — only if you set a key — the Anthropic API.
 
-## Quick start (web app)
+## Quick start
+
+### Hosted on Vercel (no install)
+
+The app is deployed from this branch to Vercel (project `sleeper-draft-advisor`). Open the deployment URL,
+go to **Settings** on the page and paste your Anthropic API key (it is stored only in your browser and sent
+as a request header) — or set `ANTHROPIC_API_KEY` as a Vercel environment variable so nobody has to.
+Recommended Vercel environment variables (Project → Settings → Environment Variables, then redeploy):
+
+| variable | purpose |
+|---|---|
+| `DRAFTADVISOR_ACCESS_CODE` | a shared secret the page asks for once; without it anyone with the URL can use your Claude key |
+| `ANTHROPIC_API_KEY` | server-side Claude key (optional if you paste one in the page) |
+| `BLOB_READ_WRITE_TOKEN` | attach a Vercel Blob store (Storage tab) so research notes persist across serverless instances; otherwise notes live only for the life of one instance |
+| `DRAFTADVISOR_CHAT_MODEL` | chat model, default `claude-opus-5` (research always uses `claude-sonnet-5`) |
+
+The server is stateless (the browser keeps the session), so the hosted app polls Sleeper directly on every
+refresh; there is nothing to "prepare" — model outputs ship in `web_bundle/` (rebuild with
+`python scripts/build_bundle.py` after retraining and push).
+
+### Run it locally
 
 ```bash
 git clone <this repo> && cd Sleeper-fantasy-draft-tool
 python -m venv .venv && source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -e .
-export ANTHROPIC_API_KEY=sk-ant-...                      # optional: enables Claude research + advice
-python run.py                                            # opens http://127.0.0.1:8787 in your browser
+pip install -e ".[full]"                             # web app + data + model + CLI
+export ANTHROPIC_API_KEY=sk-ant-...                      # optional
+python run.py                                            # opens http://127.0.0.1:8787
 ```
 
-Everything happens in the browser tab:
+### Using the app
 
-1. **Setup tab** → *Prepare data & train model* (once, ~2 minutes: downloads ~70 MB of NFL history, trains
-   the projection model, caches projections). The log streams on the page.
-2. **Live draft**: type your Sleeper username → pick your league/draft from the list → *Start*. The app captures
+1. **Setup tab** → type your Sleeper username → pick your league/draft → *Start live draft*. The app captures
    the league (scoring diff vs Sleeper base, draft order, your pick numbers → **League tab**), then the
-   **Draft tab** updates every 2 seconds: best picks with reasons, TAKE NOW / SOON / WAIT / SKIP per position,
-   your roster and needs, opponents' needs, recent picks, a searchable list of everyone still available, and
-   Claude's take when you are on the clock.
-3. **Mock draft**: choose teams / rounds / your slot / scoring → *Start mock*. Bots draft by ADP; when it is
-   your turn click a player (or *Take recommended*, or press Enter). Autopilot lets the advisor draft for you.
-4. **Board tab**: the full projection table (points, floor/ceiling, ADP, consensus rank) with search and filters.
-5. **Ask tab**: free-form questions to Claude with the live draft as context (needs the API key).
+   **Draft tab** refreshes every 2 seconds: best picks with reasons, TAKE NOW / SOON / WAIT / SKIP per position,
+   your roster and needs, opponents' needs, recent picks, a searchable list of everyone still available,
+   Claude's take when you are on the clock, and a **chat** panel to argue with the recommendation
+   ("why not the WR?", "compare #1 and #2", "any red flags on my top 3?").
+2. **Research**: *Research top N* runs Claude (Sonnet) with live web search per player — injuries, off-field
+   issues (arrests, lawsuits, suspensions), holdouts, depth-chart changes, bust/breakout commentary — and
+   stores `red_flags`, `injury_risk`, `role_certainty`, `offfield_risk` on each note. Flags show as a red ⚠ on
+   every card and feed the projections (expected games and uncertainty). Any player card has *Research now*.
+3. **Mock draft**: choose teams / rounds / slot / scoring → bots draft by ADP; on your turn click a player,
+   *Take recommended*, or press Enter; autopilot lets the advisor draft for you. The pick list lives in your
+   browser, so a reload resumes the draft.
+4. **Board tab**: the projection table (points, floor/ceiling, ADP, consensus rank) with search and filters.
 
-Everything runs locally; the only network calls are to the public Sleeper API, GitHub (nflverse data) and,
-only if you set a key, the Anthropic API. The page is one file — `draftadvisor/web/static/index.html`
-(vanilla HTML/CSS/JS, no build step) — and the server is `draftadvisor/web/server.py` (FastAPI), so both are
-easy to modify. `python run.py --port 9000` changes the port; `--no-browser` skips opening a tab.
+The pick clock shown is whatever Sleeper reports at that moment (`pick_timer` and the time of the last pick,
+re-read on every refresh). Nothing in the advice depends on it, so a commissioner changing the clock mid-draft
+changes only the display.
 
 ## Command line (optional)
 
