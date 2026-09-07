@@ -63,6 +63,9 @@ _POS_INDEX = {p: i for i, p in enumerate(SKILL_POSITIONS)}
 _TOP_BY_POINTS = 350
 _ADP_CUTOFF = 250.0
 _LIKELY_THERE = 0.85
+_TIER_TOP_FRAC = 0.05
+_TIER_STD_FRAC = 0.35
+_LOOKAHEAD_TOP = 60
 _KDEF_EARLY_PENALTY = 0.25
 _RUN_MIN = 4
 _MAX_BYE = 24
@@ -297,7 +300,7 @@ class Advisor:
             k = int(round(self._demand_arr[pi]))
             rep_arr[pi] = ppts[min(max(k, 0), sel.size - 1)]
             best_now[pname] = float(ppts[0])
-            thr = max(0.06 * ppts[0], 0.5 * float(std[sel].mean()))
+            thr = max(_TIER_TOP_FRAC * ppts[0], _TIER_STD_FRAC * float(std[sel].mean()))
             breaks = (ppts[:-1] - ppts[1:]) > thr
             t = 1 + np.concatenate(([0], np.cumsum(breaks)))
             tier[sel] = t
@@ -352,9 +355,51 @@ class Advisor:
                 e_next_arr[pi] = expected_best_available_array(pts[sel], p_next[sel])
         e_next = {p: float(e_next_arr[_POS_INDEX[p]]) for p in SKILL_POSITIONS}
         vona = pts - e_next_arr[pos]
-        vona_pos = np.maximum(0.0, vona)
 
-        score = marginal + 0.5 * vona_pos - float(s.risk_aversion) * std
+        # ---- two-pick lookahead ---------------------------------------------------
+        # plan(X) = marginal(X) now + the best expected marginal value my NEXT pick can
+        # still get once X is gone.  Taking X now only beats taking Y now when
+        # marginal(X) + next(X) > marginal(Y) + next(Y); a player who will almost surely
+        # be there next time contributes nearly his full value to next(Y), which is what
+        # makes "you can get him later" a quantitative statement instead of a heuristic.
+        npos = len(SKILL_POSITIONS)
+        e_next_marg = np.zeros(npos)
+        pos_sorted: dict[int, np.ndarray] = {}
+        for pi in range(npos):
+            sel = np.flatnonzero(pos == pi)
+            if sel.size:
+                sel = sel[np.argsort(-marginal[sel], kind="stable")]
+                pos_sorted[pi] = sel
+                e_next_marg[pi] = expected_best_available_array(marginal[sel], p_next[sel])
+        best_other = np.array([max([e_next_marg[q] for q in range(npos) if q != pi] or [0.0]) for pi in range(npos)])
+        # the same-position option after X: expectation over the rest of the position;
+        # when X fills the position's last open starter slot the rest are bench value only
+        open_count = {p: 0 for p in SKILL_POSITIONS}
+        for sl in lineup_info["open_slots"]:
+            for p in SLOT_ELIGIBILITY.get(sl, frozenset()):
+                if p in open_count:
+                    open_count[p] += 1
+        open_arr = np.array([open_count[p] for p in SKILL_POSITIONS])
+        same_after = e_next_marg[pos].copy()
+        prelim = marginal + np.maximum(best_other[pos], same_after)
+        top = np.argsort(-prelim, kind="stable")[:_LOOKAHEAD_TOP]
+        for j in top:
+            pi = int(pos[j])
+            sel = pos_sorted.get(pi)
+            if sel is None or sel.size <= 1:
+                same_after[j] = 0.0
+                continue
+            rest = sel[sel != j]
+            if open_arr[pi] >= 2 or not np.isfinite(t_pos[j]):
+                same_after[j] = expected_best_available_array(marginal[rest], p_next[rest])
+            else:
+                bench_rest = s.bench_discount * bench_w[pi] * np.maximum(0.0, pts[rest] - rep_arr[pi])
+                same_after[j] = expected_best_available_array(bench_rest, p_next[rest])
+        next_after = np.maximum(best_other[pos], same_after)
+        if not fut:
+            # this is my last pick: there is no next pick to plan for
+            next_after = np.zeros_like(next_after)
+        score = marginal + next_after - float(s.risk_aversion) * std
         teams = self._team[avail]
         stack_qb: dict[str, str] = lineup_info["stack_qb"]
         stack_pc: dict[str, str] = lineup_info["stack_pc"]
@@ -370,9 +415,6 @@ class Advisor:
         if kdef_early:
             is_kdef = (pos == _POS_INDEX["K"]) | (pos == _POS_INDEX["DEF"])
             score = score - np.where(is_kdef, _KDEF_EARLY_PENALTY * pts, 0.0)
-        score = score - np.where(p_next >= _LIKELY_THERE, 0.3 * vona_pos, 0.0)
-        need_arr = np.array([lineup_info["need_open"][p] for p in SKILL_POSITIONS])
-        score = score + np.where(need_arr[pos] & (p_next < 0.5), 0.25 * vona_pos, 0.0)
 
         order = np.argsort(-score, kind="stable")
         overall_rank = np.empty(m, dtype=np.int64)
@@ -418,8 +460,11 @@ class Advisor:
                       if i not in a_real and SLOT_ELIGIBILITY.get(slots[i], frozenset()) & set(SKILL_POSITIONS)]
         picks_spare = int(remaining_picks) - len(open_slots)
         bench_scale = 1.0 if picks_spare >= 2 else (0.5 if picks_spare == 1 else 0.0)
+        # Replacement-level stand-ins for open starter slots exist only while there are at
+        # least two spare picks: with one spare pick the downside of missing the last player
+        # at a position is an empty slot, so the slot is valued at the full player.
         phantoms = [ph for ph in phantom_starters(self.league, rep)
-                    if int(ph[0].player_id.rsplit("__", 1)[-1]) not in a_real] if picks_spare >= 1 else []
+                    if int(ph[0].player_id.rsplit("__", 1)[-1]) not in a_real] if picks_spare >= 2 else []
         a_full, _, _ = optimal_lineup(roster + phantoms, slots)
         pos_all = dict(pos_of, **{ph.player_id: ph.position for ph, _ in phantoms})
         pts_all = dict(pts_of, **{ph.player_id: p for ph, p in phantoms})
@@ -446,7 +491,7 @@ class Advisor:
         for pid in bench_real:
             if pos_of[pid] in bench_counts:
                 bench_counts[pos_of[pid]] += 1
-        bench_weight = {p: bench_scale * bench_usefulness(p, self.league) * bench_depth_factor(bench_counts[p])
+        bench_weight = {p: bench_scale * bench_usefulness(p, self.league) * bench_depth_factor(bench_counts[p], p)
                         for p in SKILL_POSITIONS}
 
         bye_starters: dict[int, list[str]] = {}

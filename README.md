@@ -34,6 +34,21 @@ draftadvisor prep --league <LEAGUE_ID> --research    # downloads data, trains th
 `prep` downloads ~70 MB of historical stats the first time, trains the projection model (< 3 min), pulls
 your league's scoring/roster settings and Sleeper's ADP, and prints a backtest report plus the top-30 board.
 
+## Pre-draft info capture
+
+The first time you point the tool at a league it captures everything that shapes strategy and saves it under
+`data/leagues/<league_id>.json` (`prep` and `draft` do this automatically; `draftadvisor capture --league ID`
+does it on its own):
+
+* teams, managers, draft order, your slot and **every one of your pick numbers** (traded picks included),
+* roster slots (starters / bench / IR / taxi) and league settings (keepers, playoffs, waivers, best ball),
+* the full scoring rules and a **diff against Sleeper's base scoring** ("TE reception bonus: base — → 0.5",
+  "Interception thrown: -1 → -2"), plus plain-English strategy flags derived from them
+  (superflex, TE premium, 6-pt pass TD, no kicker slot, deep bench, ...),
+* draft type, rounds, pick clock, start time, keepers already on the board.
+
+The report prints once; the snapshot lets trade/analyze commands work offline afterwards.
+
 ## Draft day
 
 ```bash

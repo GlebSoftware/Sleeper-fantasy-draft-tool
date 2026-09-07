@@ -335,9 +335,9 @@ def test_blend_weight_renormalisation():
     ml_pts = 15 * 16.0
     sl_a = 90 + 120 + 48
     # a: both sources -> weights 0.45/0.35 renormalised
-    assert out["a"].weights == pytest.approx({"sleeper": 0.45 / 0.8, "ml": 0.35 / 0.8})
-    assert out["a"].points == pytest.approx((0.45 * sl_a + 0.35 * ml_pts) / 0.8)
-    assert out["a"].games == pytest.approx((0.45 * 17 + 0.35 * 16) / 0.8)
+    assert out["a"].weights == pytest.approx({"sleeper": 0.40 / 0.65, "ml": 0.25 / 0.65})
+    assert out["a"].points == pytest.approx((0.40 * sl_a + 0.25 * ml_pts) / 0.65)
+    assert out["a"].games == pytest.approx((0.40 * 17 + 0.25 * 16) / 0.65)
     # b: ml only
     assert out["b"].weights == pytest.approx({"ml": 1.0}) and out["b"].points == pytest.approx(ml_pts)
     assert out["b"].components == pytest.approx({"ml": ml_pts})
@@ -356,7 +356,7 @@ def test_projector_ecr_source_and_ecr_only_players():
     ml = _ml_pred({str(i): {**WR_RATES, "rec_yd": 110.0 - 4 * i, "rec": 7.0 - 0.2 * i} for i in range(15)}, "WR")
     players["rk"] = Player("rk", "Rookie", "WR", team="KC", ecr=3.0, ecr_sd=3.0, years_exp=0)
     out = pr.project(players, ml_pred=ml)
-    assert "ecr" in out["0"].components and out["0"].weights == pytest.approx({"ml": 0.35 / 0.55, "ecr": 0.2 / 0.55})
+    assert "ecr" in out["0"].components and out["0"].weights == pytest.approx({"ml": 0.25 / 0.60, "ecr": 0.35 / 0.60})
     # ECR-only rookie gets points from the curve, default games, rookie flag and bigger std
     rk = out["rk"]
     assert rk.weights == pytest.approx({"ecr": 1.0}) and rk.points > 0 and "ecr_only" in rk.flags and "rookie" in rk.flags

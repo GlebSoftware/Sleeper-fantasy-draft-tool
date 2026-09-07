@@ -18,7 +18,13 @@ import pandas as pd
 from ..scoring.engine import ScoringEngine
 
 #: nflverse team abbreviations -> Sleeper abbreviations.
-TEAM_TO_SLEEPER = {"LA": "LAR", "OAK": "LV", "SD": "LAC", "STL": "LAR", "JAC": "JAX", "WSH": "WAS", "FA": None}
+TEAM_TO_SLEEPER = {
+    # nflverse / historical
+    "LA": "LAR", "OAK": "LV", "SD": "LAC", "STL": "LAR", "SL": "LAR", "JAC": "JAX", "WSH": "WAS", "FA": None,
+    # MFL-style codes used by dynastyprocess
+    "KCC": "KC", "LVR": "LV", "GBP": "GB", "NEP": "NE", "NOS": "NO", "SFO": "SF", "TBB": "TB", "ARZ": "ARI",
+    "BLT": "BAL", "CLV": "CLE", "HST": "HOU", "RAM": "LAR",
+}
 SLEEPER_TO_NFLVERSE = {"LAR": "LA"}
 
 FANTASY_POSITIONS = {"QB", "RB", "WR", "TE", "K"}

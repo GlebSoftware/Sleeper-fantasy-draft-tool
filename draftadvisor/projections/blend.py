@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 from sklearn.isotonic import IsotonicRegression
 
-from ..config import FANTASY_WEEKS, GAMES_PER_TEAM, SKILL_POSITIONS, Settings
+from ..config import SLOT_ELIGIBILITY, FANTASY_WEEKS, GAMES_PER_TEAM, SKILL_POSITIONS, Settings
 from ..data.crosswalk import Crosswalk
 from ..models import LeagueSettings, Player, Projection, ResearchNote
 from ..scoring.engine import ScoringEngine
@@ -29,7 +29,14 @@ from .features import ALL_TARGET_KEYS, PPR_SCORING, TARGETS, season_aggregates
 
 log = logging.getLogger(__name__)
 
-DEFAULT_WEIGHTS: dict[str, float] = {"sleeper": 0.45, "ml": 0.35, "ecr": 0.20}
+DEFAULT_WEIGHTS: dict[str, float] = {"sleeper": 0.40, "ml": 0.25, "ecr": 0.35}
+#: ML games are shrunk this far toward a healthy-starter season (see Projector).
+GAMES_SHRINK = 0.6
+GAMES_SHRINK_TARGET = 16.0
+#: Cap on the ML season std as a fraction of projected points.
+MAX_ML_CV = 0.25
+#: Preseason expectation = replacement + MARKET_SHRINK * (realized rank curve - replacement).
+MARKET_SHRINK = 0.75
 
 #: Minimum players with an ECR at a position before the isotonic mapping is used.
 MIN_ECR_POINTS = 8
@@ -253,6 +260,158 @@ def ecr_implied_points(players: Mapping[str, Player], provisional: Mapping[str, 
 
 
 # ---------------------------------------------------------------------------
+# Market curves: consensus positional rank -> expected season points
+# ---------------------------------------------------------------------------
+
+#: Realized season points by positional rank (half-PPR, 4-pt pass TD), mean of 2019-2025.
+#: Used only when no canonical data is available to fit league-specific curves.
+DEFAULT_RANK_TABLE: dict[str, list[tuple[int, float]]] = {
+    "QB": [(1, 413), (2, 380), (3, 369), (5, 341), (8, 314), (10, 303), (12, 282), (14, 262), (16, 251), (20, 223),
+           (24, 187), (30, 134), (36, 89), (48, 30), (60, 11)],
+    "RB": [(1, 355), (2, 310), (3, 297), (5, 259), (8, 230), (10, 218), (12, 208), (14, 203), (16, 191), (20, 178),
+           (24, 164), (30, 142), (36, 122), (48, 89), (60, 64)],
+    "WR": [(1, 323), (2, 284), (3, 265), (5, 241), (8, 214), (10, 207), (12, 202), (14, 197), (16, 188), (20, 179),
+           (24, 172), (30, 157), (36, 144), (48, 118), (60, 97)],
+    "TE": [(1, 233), (2, 191), (3, 170), (5, 154), (8, 135), (10, 128), (12, 118), (14, 112), (16, 105), (20, 95),
+           (24, 83), (30, 68), (36, 58), (48, 40), (60, 27)],
+    "K": [(1, 173), (2, 167), (3, 160), (5, 150), (8, 142), (10, 136), (12, 132), (14, 128), (16, 123), (20, 115),
+          (24, 104), (30, 72), (36, 31)],
+    "DEF": [(1, 185), (2, 170), (3, 162), (5, 151), (8, 140), (10, 133), (12, 129), (14, 122), (16, 117), (20, 108),
+            (24, 99), (30, 72)],
+}
+
+
+class RankCurve:
+    """Expected season points as a function of *preseason* positional rank.
+
+    ``realized`` is the average season total of the r-th best finisher in past
+    seasons (league scoring). Preseason rankings are noisier than finishes, so the
+    expectation for a consensus rank ``r`` above replacement rank ``r0`` is shrunk:
+    ``realized(r0) + MARKET_SHRINK * (realized(r) - realized(r0))``.
+    """
+
+    def __init__(self, anchors: list[tuple[float, float]], replacement_rank: float, shrink: float = MARKET_SHRINK):
+        pts = sorted((float(r), float(p)) for r, p in anchors if _finite(p))
+        if len(pts) < 2:
+            raise ValueError("need at least two anchors")
+        self.ranks = np.array([r for r, _ in pts])
+        self.points = np.array([p for _, p in pts])
+        self.r0 = max(1.0, float(replacement_rank))
+        self.shrink = float(shrink)
+
+    def realized(self, rank: float) -> float:
+        r = max(1.0, float(rank))
+        if r <= self.ranks[-1]:
+            return float(np.interp(r, self.ranks, self.points))
+        # exponential tail from the last two anchors, floored at zero
+        r1, r2 = self.ranks[-2], self.ranks[-1]
+        p1, p2 = max(self.points[-2], 1e-6), max(self.points[-1], 1e-6)
+        decay = np.log(p1 / p2) / max(r2 - r1, 1.0)
+        return float(p2 * np.exp(-decay * (r - r2)))
+
+    def expected(self, rank: float) -> float:
+        base = self.realized(self.r0)
+        val = self.realized(rank)
+        if rank < self.r0:
+            return base + self.shrink * (val - base)
+        return val
+
+    def sd_points(self, rank: float, rank_sd: float) -> float:
+        h = max(float(rank_sd), 0.75)
+        return abs(self.expected(max(1.0, rank - h)) - self.expected(rank + h)) / 2.0
+
+
+def market_replacement_rank(league: LeagueSettings | None, position: str) -> float:
+    """Positional rank of the replacement-level player implied by the roster shape."""
+    teams = league.total_rosters if league else 12
+    if league is None:
+        dedicated = {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "K": 1, "DEF": 1}[position]
+        flex = {"RB": 0.45, "WR": 0.45, "TE": 0.10}.get(position, 0.0)
+        superflex = False
+    else:
+        dedicated = league.dedicated_starters(position)
+        flex = 0.0
+        for slot in league.starting_slots:
+            elig = SLOT_ELIGIBILITY.get(slot, frozenset())
+            if len(elig) <= 1 or position not in elig:
+                continue
+            if slot == "SUPER_FLEX":
+                flex += {"QB": 0.85, "RB": 0.05, "WR": 0.05, "TE": 0.05}.get(position, 0.0)
+            elif slot == "REC_FLEX":
+                flex += {"WR": 0.75, "TE": 0.25}.get(position, 0.0)
+            elif slot == "WRRB_FLEX":
+                flex += 0.5
+            else:
+                flex += {"RB": 0.45, "WR": 0.45, "TE": 0.10}.get(position, 0.0)
+        superflex = league.is_superflex
+    bench = {"RB": 0.5, "WR": 0.5, "TE": 0.15, "QB": 0.75 if superflex else 0.15}.get(position, 0.0)
+    return max(1.0, teams * (dedicated + flex + bench))
+
+
+def fit_rank_curves(canonical: pd.DataFrame, engine: ScoringEngine, league: LeagueSettings | None = None,
+                    max_rank: int = 90, min_seasons: int = 2) -> dict[str, RankCurve]:
+    """League-scored realized points-by-rank curves per position from canonical per-game rows."""
+    from ..scoring.engine import aggregate_season
+
+    df = canonical[canonical["position"].isin(SKILL_POSITIONS)]
+    if df.empty:
+        return {}
+    agg = aggregate_season(df, engine)
+    out: dict[str, RankCurve] = {}
+    for pos in SKILL_POSITIONS:
+        rows = []
+        for _, g in agg[agg["position"] == pos].groupby("season"):
+            pts = np.sort(g["points"].to_numpy(dtype=float))[::-1][:max_rank]
+            rows.append(pts)
+        if len(rows) < min_seasons:
+            continue
+        n = min(len(r) for r in rows)
+        if n < 5:
+            continue
+        mean = np.mean([r[:n] for r in rows], axis=0)
+        anchors = [(i + 1, float(mean[i])) for i in range(n)]
+        out[pos] = RankCurve(anchors, market_replacement_rank(league, pos))
+    return out
+
+
+def default_rank_curves(league: LeagueSettings | None = None) -> dict[str, RankCurve]:
+    return {pos: RankCurve(tab, market_replacement_rank(league, pos)) for pos, tab in DEFAULT_RANK_TABLE.items()}
+
+
+class MarketCurve:
+    """ECR overall rank -> expected points for one position, via positional rank on a RankCurve.
+
+    Same interface as :class:`EcrCurve` (``predict``/``sd_points``) so the Projector can use either.
+    """
+
+    def __init__(self, curve: RankCurve, ecrs: np.ndarray):
+        self.curve = curve
+        self.ecrs = np.sort(np.asarray(ecrs, dtype=float))
+
+    @classmethod
+    def from_universe(cls, players: Mapping[str, Player], position: str, curve: RankCurve) -> "MarketCurve | None":
+        ecrs = [float(pl.ecr) for pl in players.values()
+                if pl.position == position and pl.ecr is not None and _finite(pl.ecr)]
+        if len(ecrs) < 3:
+            return None
+        return cls(curve, np.asarray(ecrs))
+
+    def rank(self, ecr: float) -> float:
+        return float(np.searchsorted(self.ecrs, float(ecr), side="left")) + 1.0
+
+    def predict(self, ecr: float) -> float:
+        return max(0.0, self.curve.expected(self.rank(ecr)))
+
+    def sd_points(self, ecr: float, sd: float | None) -> float | None:
+        if sd is None or not _finite(sd) or sd <= 0:
+            return None
+        lo = self.rank(max(1.0, float(ecr) - float(sd)))
+        hi = self.rank(float(ecr) + float(sd))
+        rank_sd = max(0.75, (hi - lo) / 2.0)
+        return self.curve.sd_points(self.rank(ecr), rank_sd)
+
+
+# ---------------------------------------------------------------------------
 # Projector
 # ---------------------------------------------------------------------------
 
@@ -276,13 +435,28 @@ class Projector:
     """Turns ML predictions, Sleeper projections and ECR into :class:`Projection` objects."""
 
     def __init__(self, engine: ScoringEngine, league: LeagueSettings | None = None,
-                 settings: Settings | None = None, weights: Mapping[str, float] | None = None):
+                 settings: Settings | None = None, weights: Mapping[str, float] | None = None,
+                 rank_curves: Mapping[str, "RankCurve"] | None = None):
         self.engine = engine
         self.league = league
         self.settings = settings
         self.weights: dict[str, float] = dict(DEFAULT_WEIGHTS)
         if weights:
             self.weights.update({k: float(v) for k, v in weights.items()})
+        self.rank_curves: dict[str, RankCurve] = dict(rank_curves) if rank_curves else {}
+
+    def fit_market(self, canonical: pd.DataFrame | None) -> "Projector":
+        """Fit league-scored points-by-rank curves (falls back to the built-in table)."""
+        curves: dict[str, RankCurve] = {}
+        if canonical is not None and len(canonical):
+            try:
+                curves = fit_rank_curves(canonical, self.engine, self.league)
+            except Exception as e:  # noqa: BLE001
+                log.warning("rank curve fit failed (%s); using default table", e)
+        if not curves:
+            curves = default_rank_curves(self.league)
+        self.rank_curves = curves
+        return self
 
     # -- per-source ------------------------------------------------------------
     def _ml_source(self, pl: Player, row: pd.Series) -> dict | None:
@@ -340,9 +514,10 @@ class Projector:
             if pid in sl:
                 vals["sleeper"] = sl[pid]["points"]
             provisional[pid], _ = _blend(vals, self.weights)
-        curves: dict[str, EcrCurve | None] = {}
+        curves: dict[str, EcrCurve | MarketCurve | None] = {}
         for pos in SKILL_POSITIONS:
-            curves[pos] = fit_ecr_curve(players, provisional, pos)
+            mc = MarketCurve.from_universe(players, pos, self.rank_curves[pos]) if pos in self.rank_curves else None
+            curves[pos] = mc if mc is not None else fit_ecr_curve(players, provisional, pos)
             if curves[pos] is None:
                 log.debug("ECR curve for %s skipped (too few points)", pos)
 
@@ -356,7 +531,7 @@ class Projector:
                  sum(1 for c in curves.values() if c is not None))
         return out
 
-    def _project_one(self, pl: Player, m: dict | None, s: dict | None, curve: EcrCurve | None,
+    def _project_one(self, pl: Player, m: dict | None, s: dict | None, curve: "EcrCurve | MarketCurve | None",
                      note: ResearchNote | None, byes: Mapping[str, int] | None, season_weeks: int) -> Projection:
         pos = pl.position
         flags: list[str] = []
@@ -379,7 +554,12 @@ class Projector:
         # games: ML and Sleeper only
         gvals = {}
         if m is not None:
-            gvals["ml"] = m["games"]
+            g_ml = float(m["games"])
+            if pos in ("QB", "RB", "WR", "TE", "K") and g_ml < GAMES_SHRINK_TARGET:
+                # the games model is trained on realized seasons (injuries, benchings); for a draft
+                # we want the expectation for a healthy starter, so shrink toward a full season
+                g_ml = g_ml + GAMES_SHRINK * (GAMES_SHRINK_TARGET - g_ml)
+            gvals["ml"] = g_ml
         if s is not None:
             gvals["sleeper"] = s["games"]
         if gvals:
@@ -395,7 +575,8 @@ class Projector:
         # scales with games (not sqrt(games), which would only cover game-to-game noise).
         svals: dict[str, float] = {}
         if m is not None and m.get("std_ppg") is not None:
-            svals["ml"] = m["std_ppg"] * max(games, 1.0) * (ppg / m["ppg"] if m["ppg"] > 0 and ppg > 0 else 1.0)
+            ml_std = m["std_ppg"] * max(games, 1.0) * (ppg / m["ppg"] if m["ppg"] > 0 and ppg > 0 else 1.0)
+            svals["ml"] = min(ml_std, MAX_ML_CV * max(points, 1.0))
         if ecr_sd_pts is not None and ecr_sd_pts > 0:
             svals["ecr"] = ecr_sd_pts
         std = _blend(svals, self.weights)[0] if svals else DEFAULT_CV * points

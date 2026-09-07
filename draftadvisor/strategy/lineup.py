@@ -184,19 +184,29 @@ def starter_thresholds(
 
 
 def bench_usefulness(position: str, league: LeagueSettings) -> float:
-    """How useful a benched player at ``position`` is (RB/WR 1, TE/QB 0.5, K/DEF 0)."""
+    """How useful a benched player at ``position`` is.
+
+    RB/WR depth starts most weeks (byes, injuries, flex): 1.0. A backup QB or TE only
+    plays when the starter is out: 0.35 (QB 1.0 in superflex leagues). K/DEF: 0.
+    """
     if position in ("RB", "WR"):
         return 1.0
     if position == "QB":
-        return 1.0 if league.is_superflex else 0.5
+        # a QB2 in a 1-QB league only starts during the QB1's bye / injury (~2 games)
+        return 1.0 if league.is_superflex else 0.12
     if position == "TE":
-        return 0.5
+        return 0.15
     return 0.0
 
 
-def bench_depth_factor(n_same_position_on_bench: int) -> float:
-    """Each extra bench player at the same position is worth 30% less."""
-    return 0.7 ** max(0, int(n_same_position_on_bench))
+def bench_depth_factor(n_same_position_on_bench: int, position: str = "RB") -> float:
+    """Each extra bench player at the same position is worth less.
+
+    RB/WR depth keeps real value (injury/bye starts, breakout upside): 0.6 per extra
+    body. A third QB or TE almost never plays: 0.25 per extra.
+    """
+    n = max(0, int(n_same_position_on_bench))
+    return (0.25 if position in ("QB", "TE") else 0.6) ** n
 
 
 def phantom_starters(league: LeagueSettings, replacement: Mapping[str, float]) -> list[tuple[Player, float]]:
@@ -260,7 +270,7 @@ def marginal_lineup_value(
         pos = pos_of[pid]
         n_same = sum(1 for b in bench_ids0 if pos_of.get(b) == pos and b != pid)
         over = max(0.0, pts_of[pid] - rep.get(pos, 0.0))
-        return bench_discount * bench_usefulness(pos, league) * bench_depth_factor(n_same) * over
+        return bench_discount * bench_usefulness(pos, league) * bench_depth_factor(n_same, pos) * over
 
     if candidate.player_id not in a1.values():
         return gain + bench_value(candidate.player_id)

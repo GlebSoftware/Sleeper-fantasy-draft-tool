@@ -75,7 +75,7 @@ def test_build_context_offline_ecr_only(patched_loaders, players_json, league_js
     assert ctx.sources["adp"] == "ecr" and ctx.sources["ecr"] is True
     assert patched_loaders["calls"]["model"] == 0            # use_model=False never touches the model
     assert patched_loaders["calls"]["offline"] == 1
-    assert ctx.sources["projections"] == "ecr_only"
+    assert ctx.sources["projections"] in ("ecr", "ecr_only")   # market rank curves make ECR-only universes real projections
     assert all(p.points > 0 for p in ctx.projections.values())
     # enrichment happened
     josh = ctx.players["4984"]
@@ -115,7 +115,7 @@ def test_build_context_model_failure_falls_back(patched_loaders, players_json, l
     league = parse_league(league_json)
     ctx = build_context(Settings(), league, None, sleeper_players=players_json, use_model=True)
     assert patched_loaders["calls"]["model"] == 1 and patched_loaders["calls"]["offline"] == 1
-    assert ctx.projections and ctx.sources["projections"] == "ecr_only"
+    assert ctx.projections and ctx.sources["projections"] in ("ecr", "ecr_only")
 
 
 def test_build_context_default_league_and_offline_universe(patched_loaders, fixture_players, monkeypatch):

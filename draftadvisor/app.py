@@ -343,7 +343,29 @@ def _blend(players: Mapping[str, Player], engine: ScoringEngine, league: LeagueS
     from .projections.blend import Projector
 
     projector = Projector(engine, league, settings)
+    season = league.season if league else settings.season
+    projector.fit_market(_market_canonical(season))
     return projector.project(players, ml_pred=ml_pred, sleeper_proj=sleeper_proj, notes=notes or None, byes=byes)
+
+
+def _market_canonical(season: int):
+    """Locally available canonical seasons (never downloads) for the market rank curves."""
+    from .config import cache_dir
+    from .data.cache import raw_path
+    from .data.nflverse import load_canonical_season
+
+    frames = []
+    for y in range(max(2019, season - 7), season):
+        if (cache_dir() / f"canonical_{y}.csv.gz").exists() or raw_path(f"stats_player_week_{y}.csv").exists():
+            try:
+                frames.append(load_canonical_season(y))
+            except Exception as e:  # noqa: BLE001
+                log.info("canonical %s unavailable for market curves: %s", y, e)
+    if not frames:
+        return None
+    import pandas as pd
+
+    return pd.concat(frames, ignore_index=True, sort=False)
 
 
 def build_projections(players: Mapping[str, Player], engine: ScoringEngine, league: LeagueSettings | None,
