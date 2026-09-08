@@ -27,7 +27,7 @@
     taken: [],            // [{espn_id, name, src, ts}] most recent first
     mine: [],             // [{espn_id, name}]
     settings: {
-      api: API_BASE_DEFAULT, scoring: "ppr", teams: 10, rounds: 15,
+      api: API_BASE_DEFAULT, scoring: "ppr", teams: 12, rounds: 16,
       superflex: false, myTeamId: "", accessCode: "", domScan: true, domDisappear: false
     },
     ui: { top: 80, left: null, right: 24, w: 380, h: 620, collapsed: false, posOpen: { QB: 1, RB: 1, WR: 1, TE: 1, K: 0, DEF: 0 } }
@@ -252,6 +252,110 @@
   });
   window.__draftadvisorHandleFrame = handleFrame; // used by selftest.html
 
+  // ------------------------------------------------- layer 2a: ESPN draft-room detector
+  // Built from a live inspection of https://fantasy.espn.com/football/draft (2026 season).
+  // The pick train is <ul class="picklist"> with <li class="picklist--pick"> children; each holds
+  // .pick-number ("PICK 12") and, once the pick is made, the player's headshot image whose URL
+  // carries ESPN's numeric player id: .../i/headshots/nfl/players/full/{playerId}.png
+  // That id is exact, so it beats name matching (suffixes, defenses, duplicates).
+  var HEADSHOT_ID = /\/full\/(\d+)\.png/;
+  var espnCfg = { slot: null, teams: null, read: false };
+
+  function espnUrlParams() {
+    try {
+      var q = new URLSearchParams(location.search);
+      return { leagueId: q.get("leagueId"), seasonId: q.get("seasonId"),
+               teamId: q.get("teamId"), memberId: q.get("memberId") };
+    } catch (e) { return {}; }
+  }
+  /** My slot from the pre-draft banner ("Your first pick: Round 1, Pick 4"), and the league size
+   *  from the pick train (round 1 runs up to the .picklist--divider). Both are best effort. */
+  function espnAutoConfig() {
+    try {
+      if (espnCfg.teams == null) {
+        var items = document.querySelectorAll("ul.picklist > li");
+        var n = 0;
+        for (var i = 0; i < items.length; i++) {
+          if (items[i].className.indexOf("picklist--divider") >= 0) break;
+          if (items[i].className.indexOf("picklist--pick") >= 0) n++;
+        }
+        if (n >= 4 && n <= 20) {
+          espnCfg.teams = n;
+          if (S.settings.teams !== n) { S.settings.teams = n; saveState(); log("espn", "league size from the pick train: " + n + " teams"); }
+        }
+      }
+      if (espnCfg.slot == null) {
+        var m = (document.body.innerText || "").match(/your first pick[^0-9]{0,40}?pick\s*(\d{1,2})/i);
+        if (m) {
+          espnCfg.slot = parseInt(m[1], 10);
+          log("espn", "your slot from the draft banner: " + espnCfg.slot);
+        }
+      }
+    } catch (e) { /* never let auto-config break the scan */ }
+  }
+  /** Snake order: is overall pick `no` mine, given my slot and the league size? */
+  function isMyPickNumber(no) {
+    var t = espnCfg.teams || S.settings.teams, slot = espnCfg.slot;
+    if (!t || !slot || !no) return false;
+    var rnd = Math.floor((no - 1) / t) + 1, idx = (no - 1) % t + 1;
+    return (rnd % 2 === 1) ? idx === slot : idx === (t - slot + 1);
+  }
+  /** Player id + name out of one pick-train item / activity row, or null when it holds no player. */
+  function espnPlayerIn(el) {
+    var id = null, name = null;
+    var imgs = el.querySelectorAll("img[src]");
+    for (var i = 0; i < imgs.length; i++) {
+      var m = HEADSHOT_ID.exec(imgs[i].getAttribute("src") || "");
+      if (m) { id = m[1]; break; }
+    }
+    // the pick item's own title is the OWNER's real name, so never read it as the player;
+    // a player name comes from a nested [title] / .player-column / a known name in the text
+    var t = el.querySelector(".player-column, .player-name, a[title]");
+    if (t) name = (t.getAttribute && t.getAttribute("title")) || (t.textContent || "").trim() || null;
+    if (!name) {
+      var txt = (el.textContent || "").split("\n");
+      for (var j = 0; j < txt.length; j++) {
+        var cand = txt[j].trim();
+        if (cand.length > 4 && cand.length < 40 && byName.has(normName(cand))) { name = cand; break; }
+      }
+    }
+    if (!id && !name) return null;
+    if (id && !byEspn.has(String(id)) && !name) return null;      // unknown id, nothing to show
+    return { espn_id: id, name: name };
+  }
+  function espnScan() {
+    if (!document.body) return 0;
+    espnAutoConfig();
+    var hits = 0;
+    try {
+      var picks = document.querySelectorAll("ul.picklist li.picklist--pick");
+      for (var i = 0; i < picks.length; i++) {
+        var li = picks[i];
+        var p = espnPlayerIn(li);
+        if (!p) continue;                                        // placeholder: team name only
+        var numTxt = (li.querySelector(".pick-number") || {}).textContent || "";
+        var nm = numTxt.match(/(\d+)/);
+        var no = nm ? parseInt(nm[1], 10) : null;
+        var mine = isMyPickNumber(no);
+        if (addTaken({ espn_id: p.espn_id, name: p.name }, "espn", mine)) {
+          hits++; layer = "espn"; renderHeader();
+          log("espn", "pick " + (no || "?") + ": " + (p.name || ("id " + p.espn_id)) + (mine ? " (yours)" : ""));
+        }
+      }
+      // the activity feed also carries picks (its own filter calls them "Picks")
+      var msgs = document.querySelectorAll("li.message, .message");
+      for (var k = 0; k < msgs.length && k < 80; k++) {
+        var mp = espnPlayerIn(msgs[k]);
+        if (mp && addTaken({ espn_id: mp.espn_id, name: mp.name }, "espn", false)) {
+          hits++; layer = "espn"; renderHeader();
+          log("espn", "activity feed: " + (mp.name || ("id " + mp.espn_id)));
+        }
+      }
+    } catch (e) { log("espn", "scan error: " + e); }
+    return hits;
+  }
+  window.__draftadvisorEspnScan = espnScan;                       // used by selftest.html
+
   // ---------------------------------------------------------------- layer 2: DOM scan
   var domSeen = new Map(), domTimer = null, sweepScheduled = false;
   function pickContext(node) {
@@ -265,7 +369,9 @@
   }
   function domSweep() {
     sweepScheduled = false;
-    if (!S.settings.domScan || !byName.size || !document.body) return;
+    if (!document.body) return;
+    espnScan();                                   // precise ESPN selectors first (ids, pick numbers)
+    if (!S.settings.domScan || !byName.size) return;
     var found = new Set(), budget = 25000;
     try {
       var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
