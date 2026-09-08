@@ -334,11 +334,23 @@ class Advisor:
                 pname = self._position_of(pk)
                 if pname in drafted_counts:
                     drafted_counts[pname] += 1
-        # dynasty / keeper leagues: players already on a league roster cannot be drafted
+        # dynasty / keeper leagues - and an ESPN draft whose board is empty while its rosters fill:
+        # a player on a league roster cannot be drafted, and one who is not on the board is still gone
+        # from his position's pool, so positional scarcity must count him like a pick
+        board_ids = state.drafted_ids
+        roster_only = {pid for pid in (getattr(state, "roster_only_ids", None) or ()) if pid not in board_ids}
         for pid in getattr(state, "rostered_ids", None) or ():
             i = self._index.get(pid)
             if i is not None:
                 mask[i] = False
+        for pid in roster_only:
+            i = self._index.get(pid)
+            pname = SKILL_POSITIONS[int(self._pos[i])] if i is not None else None
+            if pname is None:
+                pl = self.players.get(pid)
+                pname = pl.position if pl is not None else None
+            if pname in drafted_counts:
+                drafted_counts[pname] += 1
         # rookie-only (1) / veterans-only (2) drafts (Sleeper draft.settings.player_type)
         ptype = int(getattr(state.draft, "player_type", 0) or 0)
         if ptype in (1, 2):
@@ -384,14 +396,23 @@ class Advisor:
 
         # 3. rosters, my lineup structure, pressure, availability
         by_slot = state.picks_by_slot()
+        # players a team holds without a pick on the board (ESPN rosters); slot 0 = team unknown, never used
+        spots_by_slot = state.roster_spots_by_slot() if hasattr(state, "roster_spots_by_slot") else {}
         summaries: dict[int, RosterSummary] = {}
         for slot in range(1, state.teams + 1):
+            extra = [s.player_id for s in spots_by_slot.get(slot, ()) if s.player_id not in board_ids]
             summaries[slot] = summarize_roster(slot, state.slot_label(slot), by_slot.get(slot, []),
-                                               self.players, self.projections, self.league)
+                                               self.players, self.projections, self.league, extra_ids=extra)
         my_summary = summaries.get(my_slot) if my_slot is not None else None
         opp_summaries = [sm for slot, sm in summaries.items() if slot != my_slot]
         my_roster = self._roster_tuples(by_slot.get(my_slot, []) if my_slot is not None else [])
         my_ids = {pl.player_id for pl, _ in my_roster}
+        for spot in (spots_by_slot.get(my_slot, ()) if my_slot is not None else ()):
+            pl = self.players.get(spot.player_id)
+            if pl is not None and pl.player_id not in my_ids and pl.player_id not in board_ids:
+                my_ids.add(pl.player_id)
+                pr = self.projections.get(pl.player_id)
+                my_roster.append((pl, float(pr.points) if pr else 0.0))
         lineup_info = self._my_lineup(my_roster, rep, remaining)
 
         avail_players = [self.players[self.ids[i]] for i in avail]

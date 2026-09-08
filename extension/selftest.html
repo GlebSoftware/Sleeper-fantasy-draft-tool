@@ -1,0 +1,133 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>draftadvisor selftest</title>
+<style>
+  body { background:#0d1117; color:#c9d1d9; font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; padding:24px; }
+  button { padding:6px 10px; margin-right:6px; }
+  #fakepage { margin-top:16px; padding:10px; border:1px dashed #30363d; }
+  code { color:#7ee787; }
+</style>
+<h1>draftadvisor selftest</h1>
+<p>No network, no extension APIs: <code>fetch</code> is stubbed and <code>WebSocket</code> is faked, so the
+overlay, the websocket hook, the pick pipeline and the rendering can all be exercised in a plain browser.</p>
+<p>
+  <button id="btn-open">1. open fake socket</button>
+  <button id="btn-pick">2. emit SELECTED frame</button>
+  <button id="btn-odd">3. emit unknown-verb frame</button>
+</p>
+<div id="fakepage">
+  <div>Round 1, Pick 3 &mdash; selected by Team Ravens</div>
+  <div id="pickname">Bijan Robinson</div>
+</div>
+
+<script>
+// ---- stub the player index + advice API -------------------------------------------------------
+window.__PLAYERS = [
+  { player_id: "s1",  espn_id: 4362628, name: "Ja'Marr Chase",     position: "WR", team: "CIN", points: 320.4, adp: 1.2, vorp: 92.1 },
+  { player_id: "s2",  espn_id: 4430807, name: "Bijan Robinson",    position: "RB", team: "ATL", points: 300.1, adp: 2.1, vorp: 88.0 },
+  { player_id: "s3",  espn_id: 4426515, name: "Justin Jefferson",  position: "WR", team: "MIN", points: 295.7, adp: 3.4, vorp: 80.2 },
+  { player_id: "s4",  espn_id: 3117251, name: "Saquon Barkley",    position: "RB", team: "PHI", points: 288.0, adp: 4.0, vorp: 78.5 },
+  { player_id: "s5",  espn_id: 4360438, name: "CeeDee Lamb",       position: "WR", team: "DAL", points: 280.9, adp: 5.5, vorp: 70.1 },
+  { player_id: "s6",  espn_id: 4241457, name: "Jahmyr Gibbs",      position: "RB", team: "DET", points: 275.3, adp: 6.1, vorp: 68.9 },
+  { player_id: "s7",  espn_id: 3918298, name: "Josh Allen",        position: "QB", team: "BUF", points: 390.2, adp: 20.0, vorp: 60.0 },
+  { player_id: "s8",  espn_id: 4038941, name: "Lamar Jackson",     position: "QB", team: "BAL", points: 380.5, adp: 22.4, vorp: 55.5 },
+  { player_id: "s9",  espn_id: 3116365, name: "Travis Kelce",      position: "TE", team: "KC",  points: 210.0, adp: 30.2, vorp: 44.0 },
+  { player_id: "s10", espn_id: 4361050, name: "Brock Bowers",      position: "TE", team: "LV",  points: 205.5, adp: 25.0, vorp: 41.0 },
+  { player_id: "s11", espn_id: 3055899, name: "Harrison Butker",   position: "K",  team: "KC",  points: 145.0, adp: 140.0, vorp: 8.0 },
+  { player_id: "s12", espn_id: -16033,  name: "Ravens D/ST",       position: "DEF", team: "BAL", points: 130.0, adp: 130.0, vorp: 10.0 },
+  { player_id: "s13", espn_id: 4569618, name: "Puka Nacua",        position: "WR", team: "LAR", points: 260.0, adp: 8.0, vorp: 62.0 },
+  { player_id: "s14", espn_id: 4429795, name: "Breece Hall",       position: "RB", team: "NYJ", points: 250.0, adp: 9.0, vorp: 58.0 },
+  { player_id: "s15", espn_id: 4239993, name: "Jalen Hurts",       position: "QB", team: "PHI", points: 360.0, adp: 28.0, vorp: 40.0 },
+  { player_id: "s16", espn_id: 4047365, name: "Trey McBride",      position: "TE", team: "ARI", points: 190.0, adp: 35.0, vorp: 30.0 },
+  { player_id: "s17", espn_id: 4360797, name: "Chris Olave",       position: "WR", team: "NO",  points: 230.0, adp: 40.0, vorp: 35.0 },
+  { player_id: "s18", espn_id: 3068267, name: "Jake Elliott",      position: "K",  team: "PHI", points: 140.0, adp: 150.0, vorp: 5.0 },
+  { player_id: "s19", espn_id: -16021,  name: "Eagles D/ST",       position: "DEF", team: "PHI", points: 125.0, adp: 135.0, vorp: 7.0 },
+  { player_id: "s20", espn_id: 4258173, name: "Kyren Williams",    position: "RB", team: "LAR", points: 240.0, adp: 12.0, vorp: 52.0 }
+];
+window.__apiCalls = [];
+var norm = function (s) { return String(s || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim(); };
+window.fetch = function (url, opts) {
+  url = String(url);
+  window.__apiCalls.push(url);
+  if (url.indexOf("/api/projections") >= 0) {
+    return Promise.resolve({ ok: true, status: 200, json: function () { return Promise.resolve(window.__PLAYERS); } });
+  }
+  if (url.indexOf("/api/extension/advice") >= 0) {
+    var body = JSON.parse((opts && opts.body) || "{}");
+    var takenIds = {}, takenNames = {};
+    (body.taken || []).forEach(function (t) {
+      if (t.espn_id !== null && t.espn_id !== undefined) takenIds[String(t.espn_id)] = 1;
+      if (t.name) takenNames[norm(t.name)] = 1;
+    });
+    var avail = window.__PLAYERS.filter(function (p) {
+      return !takenIds[String(p.espn_id)] && !takenNames[norm(p.name)];
+    }).sort(function (a, b) { return b.points - a.points; });
+    var by = {};
+    ["QB", "RB", "WR", "TE", "K", "DEF"].forEach(function (pos) {
+      by[pos] = avail.filter(function (p) { return p.position === pos; }).slice(0, 5);
+    });
+    var top = avail.slice(0, 5);
+    var resp = {
+      overall: top, by_position: by,
+      suggestion: top[0] ? {
+        player_id: top[0].player_id, name: top[0].name, position: top[0].position,
+        team: top[0].team, action: "draft", why: "Best value on the board for your roster needs."
+      } : null,
+      needs: ["RB", "WR"], counts: { taken: (body.taken || []).length, resolved: (body.taken || []).length, mine: (body.mine || []).length },
+      unresolved: [], ms: 7
+    };
+    return Promise.resolve({ ok: true, status: 200, text: function () { return Promise.resolve(JSON.stringify(resp)); } });
+  }
+  return Promise.resolve({ ok: false, status: 404, text: function () { return Promise.resolve("no stub"); },
+                           json: function () { return Promise.resolve(null); } });
+};
+
+// ---- fake WebSocket, installed BEFORE hook.js so the real hook wraps it ------------------------
+window.__sockets = [];
+function FakeSocket(url) {
+  var et = new EventTarget();
+  this.url = url; this.readyState = 1;
+  this.addEventListener = et.addEventListener.bind(et);
+  this.removeEventListener = et.removeEventListener.bind(et);
+  this.dispatchEvent = et.dispatchEvent.bind(et);
+  this.send = function () {};
+  this.close = function () { this.readyState = 3; };
+  this.__emit = function (text) { var e = new MessageEvent("message", { data: text }); et.dispatchEvent(e); };
+  window.__sockets.push(this);
+  var self = this;
+  setTimeout(function () { self.dispatchEvent(new Event("open")); }, 0);
+}
+FakeSocket.CONNECTING = 0; FakeSocket.OPEN = 1; FakeSocket.CLOSING = 2; FakeSocket.CLOSED = 3;
+window.WebSocket = FakeSocket;
+// The overlay stores state in localStorage here (no chrome.* in a plain page) - start clean.
+try { localStorage.removeItem("draftadvisor.session.v1"); } catch (e) {}
+</script>
+
+<script src="hook.js"></script>
+<script src="styles.js"></script>
+<script src="overlay.js"></script>
+
+<script>
+document.getElementById("btn-open").onclick = function () { window.__ws = new WebSocket("wss://fantasydraft.espn.com/game-1/league-123/JOIN?x=1"); };
+document.getElementById("btn-pick").onclick = function () {
+  if (!window.__ws) window.__ws = new WebSocket("wss://fantasydraft.espn.com/game-1/league-123/JOIN?x=1");
+  window.__ws.__emit("SELECTED 5 4430807 3 {AB12-CD34}");     // Bijan Robinson, team 5, overall 3
+  window.__ws.__emit("SELECTED 2 4362628 1 {EF56-7890}");     // Ja'Marr Chase
+  window.__ws.__emit("CLOCK 5 30");
+};
+document.getElementById("btn-odd").onclick = function () {
+  if (!window.__ws) window.__ws = new WebSocket("wss://fantasydraft.espn.com/game-1/league-123/JOIN?x=1");
+  window.__ws.__emit("ROSTERUPDATE 7 4426515 22 1");          // unknown verb, known player id -> candidate
+};
+// Helper for the headless run.
+window.__selftest = {
+  emit: function (frame) {
+    if (!window.__ws) window.__ws = new WebSocket("wss://fantasydraft.espn.com/game-1/league-123/JOIN?x=1");
+    window.__ws.__emit(frame);
+  },
+  panel: function () { return document.getElementById("draftadvisor-host").shadowRoot; },
+  text: function () { return this.panel().querySelector(".panel").textContent; },
+  taken: function () { return window.__draftadvisor.state.taken.slice(); },
+  layer: function () { return window.__draftadvisor.layer(); }
+};
+</script>

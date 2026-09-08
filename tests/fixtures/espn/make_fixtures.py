@@ -17,7 +17,15 @@ Outputs (all < 200 KB):
 * ``draft_pre_draft.json``        no picks, pickOrder set
 * ``draft_prepopulated.json``    board ESPN filled with placeholders: 150 entries, every playerId -1
 * ``draft_prepopulated_no_order.json``  the same board with pickOrder withheld (order is in the board)
-* ``draft_prepopulated_live.json``      the same board mid-draft: 17 entries filled in place, rest -1
+* ``draft_prepopulated_live.json``      SYNTHETIC, and not a shape real ESPN serves: 17 entries filled
+  in place while ``inProgress`` is true. Every published measurement of a live ESPN draft says the REST
+  board stays at ``playerId: -1`` for the whole draft and is flushed in one go at the end, so this
+  fixture exercises our in-place-fill parsing only - it is not evidence of live behaviour. The live
+  shape ESPN really serves is an empty board with the picks on team rosters: the stub builds that with
+  ``EspnStub(roster_picks=N)``.
+* ``league_keepers_rosters.json`` rosters with provenance: dynasty holdovers drafted a year before the
+  draft date, ADD / TRADE pickups, fresh DRAFT entries after it, one entry on IR (slot 21) and one
+  undated DRAFT entry
 * ``players_kona.json``           synthetic ``kona_player_info`` shape for ~40 drafted players with
   ownership ADP, draft ranks and the ``10<season>`` projected season stats
 * ``league_modern.json``          newer payload shape: owners as dicts, ``name`` instead of
@@ -43,7 +51,7 @@ TEAM_KEYS = ("abbrev", "id", "location", "nickname", "logo", "logoType", "owners
              "isActive", "playoffSeed", "waiverRank")
 PLAYER_KEYS = ("id", "fullName", "firstName", "lastName", "defaultPositionId", "proTeamId", "eligibleSlots",
                "injuryStatus", "injured", "active", "droppable")
-ENTRY_KEYS = ("playerId", "lineupSlotId", "acquisitionType", "injuryStatus", "status")
+ENTRY_KEYS = ("playerId", "lineupSlotId", "acquisitionType", "acquisitionDate", "injuryStatus", "status")
 KONA_PLAYER_KEYS = PLAYER_KEYS + ("ownership", "draftRanksByRankType")
 
 
@@ -148,6 +156,32 @@ def build(source: Path, dest: Path) -> None:
     prepop_live["settings"]["draftSettings"]["type"] = "SNAKE"
     prepop_live["settings"]["draftSettings"]["date"] = 1535198400000
     _dump(dest / "draft_prepopulated_live.json", prepop_live)
+
+    # -- league_keepers_rosters.json: one league whose rosters carry every acquisition flavour, so the
+    # "which roster entries are picks of the draft I am watching?" rules can be tested offline.
+    keepers = copy.deepcopy(base)
+    draft_date = 1535198400000                                   # the same date the draft fixtures use
+    year = 365 * 24 * 3600 * 1000
+    keepers["settings"]["draftSettings"]["date"] = draft_date
+    keepers["settings"]["draftSettings"]["type"] = "SNAKE"
+    keepers["settings"]["draftSettings"]["keeperCount"] = 2
+    flavours = [
+        {"acquisitionType": "DRAFT", "acquisitionDate": draft_date - year, "lineupSlotId": 20},   # last year's draft
+        {"acquisitionType": "ADD", "acquisitionDate": draft_date + 5_000, "lineupSlotId": 20},    # waiver add
+        {"acquisitionType": "TRADE", "acquisitionDate": draft_date + 6_000, "lineupSlotId": 20},  # trade
+        {"acquisitionType": "DRAFT", "acquisitionDate": draft_date + 7_000, "lineupSlotId": 20},  # this draft
+        {"acquisitionType": "DRAFT", "acquisitionDate": draft_date + 8_000, "lineupSlotId": 21},  # this draft, IR
+        {"acquisitionType": "DRAFT", "acquisitionDate": None, "lineupSlotId": 20},                # no date at all
+    ]
+    for t in keepers["teams"]:
+        entries = t["roster"]["entries"][: len(flavours)]
+        for e, flavour in zip(entries, flavours):
+            e.update({k: v for k, v in flavour.items() if v is not None})
+            if flavour["acquisitionDate"] is None:
+                e.pop("acquisitionDate", None)
+        t["roster"]["entries"] = entries
+    keepers["draftDetail"] = {"completeDate": 0, "drafted": False, "inProgress": True, "picks": []}
+    _dump(dest / "league_keepers_rosters.json", keepers)
 
     # -- players_kona.json: drafted players that still have full info on a roster
     rostered: dict[int, tuple[dict, int]] = {}

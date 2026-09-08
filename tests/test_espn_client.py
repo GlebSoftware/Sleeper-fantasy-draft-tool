@@ -344,3 +344,85 @@ def test_stub_can_run_as_a_script_help():
     out = subprocess.run([sys.executable, str(Path(__file__).parent / "espn_stub.py"), "--help"], capture_output=True,
                          text=True, timeout=30, env=dict(os.environ))
     assert out.returncode == 0 and "--draft" in out.stdout
+
+
+# ---------------------------------------------------------------------------
+# The per-poll live GET: board + settings + rosters in one request, and what it reports back
+# ---------------------------------------------------------------------------
+
+
+async def test_get_draft_live_asks_for_the_rosters_in_the_same_request():
+    """ESPN's board publishes nothing while a draft runs; the team rosters ride along in the same GET
+    (four views, one request) so a drafted player is seen at all."""
+    r = Router()
+    r.add(LEAGUE_PATH, ok({"id": 368876, "seasonId": SEASON, "draftDetail": {"picks": []}, "teams": []}))
+    c = make_client(r)
+    info: dict = {}
+    await c.get_draft_live(LEAGUE_ID, SEASON, info=info)
+    url = str(r.requests[0].url)
+    assert url.count("view=") == 4 and "view=mTeam" in url and "view=mRoster" in url and "scoringPeriodId=0" in url
+    assert r.requests[0].headers.get("Cache-Control") is None            # an ordinary poll uses the CDN
+    assert info["views"] == ["mDraftDetail", "mSettings", "mTeam", "mRoster"]
+    assert info["http_status"] == 200 and info["bytes"] > 0 and info["read_at"] > 0 and info["used_history"] is False
+    assert info["season_returned"] == SEASON and info["latency_ms"] >= 0
+    assert c.last_request_info()["views"] == ["mDraftDetail", "mSettings", "mTeam", "mRoster"]
+    # rosters off (DRAFTADVISOR_ESPN_POLL_ROSTERS=0): the old two-view request, no scoringPeriodId
+    await c.get_draft_live(LEAGUE_ID, SEASON, rosters=False)
+    assert str(r.requests[1].url).endswith("?view=mDraftDetail&view=mSettings")
+    # a user-triggered refresh asks intermediaries not to answer from their cache
+    await c.get_draft_live(LEAGUE_ID, SEASON, no_cache=True)
+    assert r.requests[2].headers["Cache-Control"] == "no-cache" and r.requests[2].headers["Pragma"] == "no-cache"
+
+
+async def test_last_request_info_reports_the_response_cache_headers():
+    """A poll answered by a CDN (Age / X-Cache) looks exactly like a working poll of a frozen board:
+    the numbers have to be visible, or it can only be diagnosed by guessing."""
+    r = Router()
+    r.add(LEAGUE_PATH, httpx.Response(200, json={"id": 1, "seasonId": SEASON},
+                                      headers={"Age": "4", "X-Cache": "Hit from cloudfront",
+                                               "Cache-Control": "max-age=5"}))
+    c = make_client(r)
+    info: dict = {}
+    await c.get_draft_live(LEAGUE_ID, SEASON, info=info)
+    assert info["cache_headers"] == {"age": "4", "x-cache": "Hit from cloudfront", "cache-control": "max-age=5"}
+    assert c.last_request_info()["cache_headers"]["age"] == "4"
+
+
+async def test_league_history_fallback_picks_the_requested_season():
+    """The history endpoint answers with one object per season and does not always honour seasonId.
+    Serving data[0] blindly renders another year's league as a plausible, frozen board."""
+    r = Router()
+    other = {"id": 368876, "seasonId": SEASON - 1, "draftDetail": {"drafted": True, "picks": [{"playerId": 1}]}}
+    want = {"id": 368876, "seasonId": SEASON, "draftDetail": {"drafted": False, "picks": []}}
+    r.add("leagueHistory", ok([other, want]))
+    r.add(LEAGUE_PATH, httpx.Response(401))
+    info: dict = {}
+    data = await make_client(r).get_draft_live(LEAGUE_ID, SEASON, info=info)
+    assert data["seasonId"] == SEASON and data["draftDetail"]["picks"] == []
+    assert info["used_history"] is True and info["season_returned"] == SEASON
+    # a body that carries seasons but not the one asked for is an error, never a silent substitution
+    r2 = Router()
+    r2.add("leagueHistory", ok([other]))
+    r2.add(LEAGUE_PATH, httpx.Response(401))
+    with pytest.raises(EspnNotFound) as ei:
+        await make_client(r2).get_draft_detail(LEAGUE_ID, SEASON)
+    assert str(SEASON) in str(ei.value)
+    # ... but a body with no seasonId at all is used as before
+    r3 = Router()
+    r3.add("leagueHistory", ok([{"id": 368876, "draftDetail": {"picks": []}}]))
+    r3.add(LEAGUE_PATH, httpx.Response(401))
+    assert (await make_client(r3).get_draft_detail(LEAGUE_ID, SEASON))["id"] == 368876
+
+
+async def test_stub_serves_every_view_of_one_request():
+    """ESPN composes one payload out of every view asked for; so must the stub, or the roster views
+    would be silently dropped and every test of them would pass for the wrong reason."""
+    with EspnStub(draft="in_progress", roster_picks=5) as s:
+        async with EspnClient(base_url=s.base_url, retries=0) as c:
+            payload = await c.get_draft_live(LEAGUE_ID, SEASON)
+            assert payload["draftDetail"]["picks"] and payload["settings"]["draftSettings"]["pickOrder"]
+            entries = [e for t in payload["teams"] for e in t["roster"]["entries"]]
+            assert len(entries) == 5 and all(e["acquisitionType"] == "DRAFT" and e["acquisitionDate"] for e in entries)
+            assert payload["members"]
+            board_only = await c.get_draft_live(LEAGUE_ID, SEASON, rosters=False)
+            assert "teams" not in board_only

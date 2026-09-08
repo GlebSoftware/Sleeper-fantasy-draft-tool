@@ -20,11 +20,14 @@ from __future__ import annotations
 
 from urllib.parse import unquote
 
+import dataclasses
 import logging
-from typing import Any, Iterable, Mapping
+from collections import Counter
+from datetime import datetime, timezone
+from typing import Any, Iterable, Mapping, Sequence
 
 from ..config import DEFAULT_SEASON
-from ..models import DraftSettings, DraftState, LeagueSettings, Manager, Pick
+from ..models import DraftSettings, DraftState, LeagueSettings, Manager, Pick, RosterSpot
 from .constants import IR_SLOT_ID, ROSTER_SLOT_ORDER, slot_label
 from .ids import EspnIdMap, espn_player_fields, is_real_player_id
 from .scoring import espn_scoring_to_sleeper
@@ -42,11 +45,18 @@ __all__ = [
     "parse_espn_draft",
     "parse_espn_managers",
     "parse_espn_picks",
+    "board_pick_number",
     "pick_order_from_board",
     "traded_picks_from_detail",
     "rostered_espn_ids",
     "rostered_ids",
     "roster_names",
+    "roster_spots",
+    "draft_epoch_ms",
+    "fresh_draft_spots",
+    "reconstruct_roster_picks",
+    "merge_league_payload",
+    "DRAFT_ACQUISITIONS",
     "normalize_swid",
     "team_owner_ids",
     "resolve_my_team",
@@ -467,6 +477,16 @@ def _pick_metadata(info: Mapping[str, Any] | None, espn_id: Any) -> dict:
     return meta
 
 
+def board_pick_number(raw: Mapping[str, Any] | None, teams: int) -> int | None:
+    """Overall pick number of a board entry that has no (or a zero) ``overallPickNumber``, derived from
+    ``roundId`` + ``roundPickNumber``; ``None`` when neither is usable."""
+    rnd = _int(_mapping(raw).get("roundId"), 0) or 0
+    in_round = _int(_mapping(raw).get("roundPickNumber"), 0) or 0
+    if teams <= 0 or rnd <= 0 or in_round <= 0:
+        return None
+    return (rnd - 1) * teams + in_round
+
+
 def parse_espn_picks(draft_detail_json: Mapping[str, Any] | None, id_map: EspnIdMap, draft: DraftSettings,
                      names: Mapping[str, Mapping[str, Any]] | None = None) -> list[Pick]:
     """``draftDetail.picks[]`` -> sorted, de-duplicated :class:`Pick` list.
@@ -476,6 +496,11 @@ def parse_espn_picks(draft_detail_json: Mapping[str, Any] | None, id_map: EspnId
     ``roster_id`` = ``picked_by`` = ``teamId``, ``is_keeper`` = ``keeper`` or ``reservedForKeeper``,
     ``player_id`` via ``id_map`` (``names`` = ``{espn id: {name, position, team, ...}}`` feeds the name
     fallback and the pick metadata). Entries without a player (empty keeper slots) are skipped.
+
+    An entry whose ``overallPickNumber`` is missing or 0 keeps its pick number from ``roundId`` +
+    ``roundPickNumber`` (:func:`board_pick_number`), and an entry that carries its player nested under
+    ``playerPoolEntry`` instead of ``playerId`` is read through :func:`espn_player_fields`, so neither
+    shape silently empties the board.
     """
     detail = draft_detail_of(draft_detail_json)
     slot_of_team = {tid: slot for slot, tid in draft.slot_to_roster_id.items()}
@@ -484,8 +509,10 @@ def parse_espn_picks(draft_detail_json: Mapping[str, Any] | None, id_map: EspnId
     for raw in detail.get("picks") or []:
         if not isinstance(raw, Mapping):
             continue
-        pick_no = _int(raw.get("overallPickNumber"))
+        pick_no = _int(raw.get("overallPickNumber")) or board_pick_number(raw, draft.teams)
         espn_id = raw.get("playerId")
+        if espn_id is None:
+            espn_id = espn_player_fields(raw)["espn_id"]
         if pick_no is None or pick_no <= 0 or not is_real_player_id(espn_id):
             continue                                    # placeholder entry (playerId -1 / 0): not a pick
         tid = _int(raw.get("teamId"))
@@ -547,6 +574,160 @@ def rostered_ids(league_json: Mapping[str, Any] | None, id_map: EspnIdMap) -> se
             continue
         out.add(id_map.resolve(f["espn_id"], name=f["name"], position=f["position"], pro_team_id=f["pro_team_id"]))
     return out
+
+
+#: ``acquisitionType`` values that mean "came out of a draft" (ESPN has used both spellings).
+DRAFT_ACQUISITIONS = frozenset({"DRAFT", "DRAFTED"})
+#: Nothing older than 1 May of the league's season can be a pick of this season's draft.
+_SEASON_FLOOR_MONTH = 5
+#: A commissioner can start a draft early; accept picks stamped up to this long before the scheduled time.
+_DRAFT_GRACE_MS = 6 * 3600 * 1000
+
+
+def roster_spots(league_json: Mapping[str, Any] | None, id_map: EspnIdMap) -> list[RosterSpot]:
+    """Every ``teams[].roster.entries[]`` entry as a :class:`RosterSpot` (team + acquisition provenance).
+
+    The player half goes through :func:`espn_player_fields` / ``id_map`` exactly like a pick, so a player
+    known only from a roster gets the same canonical id the board would give him.
+    """
+    out: list[RosterSpot] = []
+    for tid, e in _roster_entries(league_json):
+        f = espn_player_fields(e)
+        if f["espn_id"] is None or not is_real_player_id(f["espn_id"]):
+            continue
+        lineup = _int(e.get("lineupSlotId"))
+        position = f["position"] or (slot_label(lineup) if lineup is not None else None)
+        out.append(RosterSpot(
+            player_id=id_map.resolve(f["espn_id"], name=f["name"], position=f["position"],
+                                     pro_team_id=f["pro_team_id"]),
+            espn_id=f["espn_id"], roster_id=tid,
+            acquisition_type=_str(e.get("acquisitionType")),
+            acquired_at=_int(e.get("acquisitionDate")),
+            lineup_slot_id=lineup, name=f["name"],
+            position=position if position not in ("BN", "IR") else f["position"],
+        ))
+    return out
+
+
+def draft_epoch_ms(league_json: Mapping[str, Any] | None, draft_detail_json: Mapping[str, Any] | None,
+                   season: int) -> int:
+    """Lower bound, in ESPN epoch ms, for "acquired in *this* season's draft".
+
+    ``draftSettings.date`` minus six hours of grace when ESPN publishes one, else 1 May of the league's
+    season (no earlier season's draft can be after that). Compared only against ESPN's own
+    ``acquisitionDate`` - never against our wall clock.
+    """
+    date = _int(draft_settings_of(draft_detail_json, league_json).get("date"), 0) or 0
+    if date > 0:
+        return date - _DRAFT_GRACE_MS
+    yr = _int(season) or _int(_mapping(league_json).get("seasonId")) or DEFAULT_SEASON
+    return int(datetime(int(yr), _SEASON_FLOOR_MONTH, 1, tzinfo=timezone.utc).timestamp() * 1000)
+
+
+def fresh_draft_spots(spots: Iterable[RosterSpot], threshold_ms: int, *, keeper_ids: Iterable[str] = (),
+                      keeper_count: int = 0, draft_started: bool = True) -> tuple[list[RosterSpot], list[RosterSpot]]:
+    """Split roster spots into ``(fresh, undated)``: the ones that look like picks of the draft being
+    watched, and the ones that might be but carry no date to prove it.
+
+    In order: an IR entry is never fresh (nobody drafts onto IR); a player the board already flags as a
+    keeper is never fresh; an acquisition that is not a draft (ADD / TRADE / WAIVER) is never fresh; an
+    entry stamped before ``threshold_ms`` is a previous season's draft (dynasty / keeper holdover).
+
+    ``acquisitionDate`` is not always populated (it is view- and season-dependent), so an entry without
+    one is fresh only when nothing contradicts it: the league can have no keepers (``keeper_count`` 0)
+    *and* ESPN itself says the draft has started (``draft_started``, i.e. ``drafted`` / ``inProgress``).
+    Otherwise it is returned as ``undated`` - counted in the diagnostics, but no pick is claimed for it.
+    """
+    keepers = {str(k) for k in keeper_ids}
+    fresh: list[RosterSpot] = []
+    undated: list[RosterSpot] = []
+    for s in spots:
+        if s.lineup_slot_id == IR_SLOT_ID or s.player_id in keepers:
+            continue
+        if (s.acquisition_type or "").upper() not in DRAFT_ACQUISITIONS:
+            continue
+        if s.acquired_at is None:
+            (fresh if (keeper_count <= 0 and draft_started) else undated).append(s)
+            continue
+        if s.acquired_at >= threshold_ms:
+            fresh.append(s)
+    return fresh, undated
+
+
+def reconstruct_roster_picks(spots: Sequence[RosterSpot], draft: DraftSettings) -> tuple[list[tuple[int, RosterSpot]], str]:
+    """Try to attach pick numbers to fresh roster spots: ``(pairs, confidence)`` with confidence
+    ``"exact"`` / ``"team"`` / ``"none"``.
+
+    The count check is what proves anything: in the first ``k`` picks of a snake every team's number of
+    picks is forced, so when the spots' per-team counts match that prefix exactly, pick numbers 1..k are
+    accounted for. Only then is an order attempted, from ``acquisitionDate`` - and ties carry no
+    ordering information, so equal timestamps are permuted within their group before giving up.
+    ESPN stamps a whole team's picks with the same millisecond in an OFFLINE (commissioner-entered)
+    draft, which lands in ``"team"`` or ``"none"``: exactly right, those timestamps do not order a draft.
+    """
+    k = len(spots)
+    if k == 0 or draft.type == "auction" or draft.teams <= 0 or not draft.slot_to_roster_id:
+        return [], "none"
+    if draft.total_picks and k > draft.total_picks:      # more rostered players than the draft has picks
+        return [], "none"
+    expected = [draft.owner_roster_for_pick(n) for n in range(1, k + 1)]
+    if any(o is None for o in expected):
+        return [], "none"
+    if Counter(expected) != Counter(s.roster_id for s in spots):
+        return [], "none"
+    ordered = sorted(spots, key=lambda s: (s.acquired_at if s.acquired_at is not None else 0, str(s.espn_id)))
+    # walk the expected owner sequence, taking the first still-unused spot of that team inside the
+    # current group of equal timestamps (ties are unordered, so any member of the group may be next)
+    remaining = list(ordered)
+    picks: list[tuple[int, RosterSpot]] = []
+    exact = True
+    for n, owner in enumerate(expected, start=1):
+        if not remaining:
+            exact = False
+            break
+        head = remaining[0].acquired_at
+        group_end = 0
+        while group_end < len(remaining) and remaining[group_end].acquired_at == head:
+            group_end += 1
+        hit = next((i for i in range(group_end) if remaining[i].roster_id == owner), None)
+        if hit is None:
+            exact = False
+            break
+        picks.append((n, remaining.pop(hit)))
+    if exact and len(picks) == k:
+        return picks, "exact"
+    by_team: dict[int | None, list[RosterSpot]] = {}
+    for s in ordered:
+        by_team.setdefault(s.roster_id, []).append(s)
+    numbers: dict[int | None, list[int]] = {}
+    for n, owner in enumerate(expected, start=1):
+        numbers.setdefault(owner, []).append(n)
+    out: list[tuple[int, RosterSpot]] = []
+    for owner, team_spots in by_team.items():
+        for n, s in zip(numbers.get(owner, []), team_spots):
+            out.append((n, s))
+    return sorted(out, key=lambda pair: pair[0]), "team"
+
+
+def merge_league_payload(capture_json: Mapping[str, Any] | None,
+                         poll_json: Mapping[str, Any] | None) -> Mapping[str, Any]:
+    """The cached league capture with ``teams[]`` (and ``members[]``) replaced by the poll's when the
+    poll carries them (views mTeam + mRoster); the capture unchanged when it does not.
+
+    Teams are replaced wholesale, never merged per team: a team missing from the poll means ESPN did
+    not send it, and a half-merged roster would resurrect players who are no longer there.
+    """
+    capture = _mapping(capture_json)
+    poll = _mapping(poll_json)
+    teams = poll.get("teams")
+    if not (isinstance(teams, list) and teams):
+        return capture
+    merged = dict(capture)
+    merged["teams"] = teams
+    members = poll.get("members")
+    if isinstance(members, list) and members:
+        merged["members"] = members
+    return merged
 
 
 def roster_names(league_json: Mapping[str, Any] | None) -> dict[str, dict[str, Any]]:
@@ -644,15 +825,42 @@ def state_from_espn(league_json: Mapping[str, Any], draft_detail_json: Mapping[s
                     team_id: int | str | None = None, slot: int | None = None,
                     username: str | None = None) -> DraftState:
     """Assemble a :class:`DraftState` from the league payload (settings / teams / rosters) and the
-    draft payload (``draftDetail`` + fresh ``draftSettings``); rostered players resolve through ``id_map``."""
-    league = parse_espn_league(league_json, draft_detail_json)
-    draft = parse_espn_draft(league_json, draft_detail_json)
-    managers = parse_espn_managers(league_json, draft)
-    all_names: dict[str, Mapping[str, Any]] = dict(roster_names(league_json))
+    draft payload (``draftDetail`` + fresh ``draftSettings``); rostered players resolve through ``id_map``.
+
+    When the draft payload carries teams of its own (the per-poll GET asks for mTeam + mRoster too),
+    those rosters win over the league payload's: they are this second's rosters, the league capture is
+    up to ten minutes old. Players who are on a roster but not on the board become
+    :class:`~draftadvisor.models.RosterSpot` records - they leave the draftable pool and are attributed
+    to their team, but they never become picks and never move the clock. A board that is still empty
+    while fresh draft acquisitions sit on the rosters reports the draft as in progress.
+    """
+    merged = merge_league_payload(league_json, draft_detail_json)
+    league = parse_espn_league(merged, draft_detail_json)
+    draft = parse_espn_draft(merged, draft_detail_json)
+    managers = parse_espn_managers(merged, draft)
+    all_names: dict[str, Mapping[str, Any]] = dict(roster_names(merged))
     all_names.update(names or {})
-    picks = parse_espn_picks(draft_detail_json if draft_detail_json is not None else league_json, id_map, draft, all_names)
-    my_uid, my_slot = resolve_my_team(draft, managers, league_json, swid=swid, team_id=team_id, slot=slot,
+    picks = parse_espn_picks(draft_detail_json if draft_detail_json is not None else merged, id_map, draft, all_names)
+    my_uid, my_slot = resolve_my_team(draft, managers, merged, swid=swid, team_id=team_id, slot=slot,
                                       username=username)
+    detail = draft_detail_of(draft_detail_json, merged)
+    spots = roster_spots(merged, id_map)
+    threshold = draft_epoch_ms(merged, draft_detail_json, league.season)
+    fresh, undated = fresh_draft_spots(spots, threshold, keeper_ids=[p.player_id for p in picks if p.is_keeper],
+                                       keeper_count=_int(league.settings.get("keeper_count"), 0) or 0,
+                                       draft_started=bool(detail.get("drafted") or detail.get("inProgress")))
+    fresh_ids = {s.player_id for s in fresh}
+    spots = [dataclasses.replace(s, is_fresh=s.player_id in fresh_ids) for s in spots]
+    board_ids = {p.player_id for p in picks}
+    roster_only = [s for s in fresh if s.player_id not in board_ids]
+    numbered, confidence = reconstruct_roster_picks(roster_only, draft)
+    if draft.status == "pre_draft" and roster_only:
+        log.info("ESPN board is empty but %d fresh DRAFT roster entries exist; treating the draft as in progress",
+                 len(roster_only))
+        draft = dataclasses.replace(draft, status="drafting")
+    if undated:
+        log.info("%d roster entries have no acquisitionDate in a keeper league; counted, not claimed as picks",
+                 len(undated))
     return DraftState(
         draft=draft,
         picks=picks,
@@ -660,5 +868,8 @@ def state_from_espn(league_json: Mapping[str, Any], draft_detail_json: Mapping[s
         managers=managers,
         my_user_id=my_uid,
         my_slot=my_slot,
-        rostered_ids=rostered_ids(league_json, id_map),
+        rostered_ids=rostered_ids(merged, id_map),
+        roster_spots=spots,
+        roster_confidence=confidence,
+        roster_pick_numbers={s.player_id: n for n, s in numbered},
     )

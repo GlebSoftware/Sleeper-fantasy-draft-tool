@@ -4,7 +4,11 @@
 * retries with exponential backoff on timeouts / connection errors / 5xx / 429, never on 4xx;
 * 401 / 403 on the league endpoint first retries ``/leagueHistory/{id}?seasonId=`` (older seasons and
   some private leagues live there, as ``espn_api`` does), then raises :class:`EspnAccessDenied`;
-* 404 raises :class:`EspnNotFound`; a JSON list body is normalised to its first element;
+* 404 raises :class:`EspnNotFound`; a JSON list body is normalised to its first element (the
+  ``/leagueHistory/`` fallback picks the element whose ``seasonId`` is the season that was asked for,
+  so another year's league is never served silently);
+* every response is recorded (status, redacted URL, size, cache headers, whether the history endpoint
+  answered): :meth:`EspnClient.last_request_info`, or an ``info=`` dict per call under a shared client;
 * requests are logged at DEBUG without cookies; cookie values never appear in logs or errors (the
   Fan API URL carries the SWID in its path, so URLs are logged and reported through :func:`redact_url`).
 
@@ -37,6 +41,7 @@ __all__ = [
     "redact_url",
     "LEAGUE_VIEWS",
     "DRAFT_VIEWS",
+    "POLL_VIEWS",
 ]
 
 _USER_AGENT = "draftadvisor/0.1 (+https://github.com/draftadvisor)"
@@ -54,6 +59,15 @@ def redact_url(url: str) -> str:
 LEAGUE_VIEWS: tuple[str, ...] = ("mSettings", "mTeam", "mRoster")
 #: Views of the per-poll draft fetch (picks + the draft settings the commissioner may change).
 DRAFT_VIEWS: tuple[str, ...] = ("mDraftDetail", "mSettings")
+#: Views of the per-poll *live* fetch: the board, the draft settings and the team rosters. ESPN accepts
+#: any number of ``view`` params in one GET, so the rosters cost no extra request - and a drafted player
+#: shows up under ``teams[].roster.entries`` even when ``draftDetail.picks`` stays empty (which is what
+#: ESPN's REST API does for the whole duration of a live draft).
+POLL_VIEWS: tuple[str, ...] = ("mDraftDetail", "mSettings", "mTeam", "mRoster")
+#: Response headers worth reporting: they say whether a CDN answered instead of ESPN.
+CACHE_HEADERS: tuple[str, ...] = ("age", "x-cache", "cache-control", "date", "server")
+#: Warn once per process when a poll payload is bigger than this (the roster views grow with every pick).
+POLL_BYTES_WARN = 2_000_000
 
 
 class EspnAPIError(Exception):
@@ -142,6 +156,16 @@ class EspnClient:
                 self._http.headers["User-Agent"] = _USER_AGENT
         self.request_count = 0
         self.last_latency_ms = 0.0
+        #: What the last GET did (see :meth:`last_request_info`); the pool shares a client between
+        #: concurrent requests, so a caller that needs its *own* numbers passes ``info=`` instead.
+        self.last_status: int | None = None
+        self.last_url: str | None = None
+        self.last_views: tuple[str, ...] = ()
+        self.last_bytes: int | None = None
+        self.last_read_at: float | None = None
+        self.last_used_history = False
+        self.last_cache_headers: dict[str, str] = {}
+        self._warned_big_payload = False
 
     # -- lifecycle ------------------------------------------------------------
     async def aclose(self) -> None:
@@ -174,8 +198,34 @@ class EspnClient:
                 pass
         return delay
 
+    def _record(self, resp: httpx.Response, info: dict[str, Any] | None) -> None:
+        """Remember what the response was (status, redacted URL, size, cache headers) on the client and,
+        when the caller passed one, in its own ``info`` dict (race-free under a shared pooled client)."""
+        try:
+            size = len(resp.content)
+        except Exception:  # noqa: BLE001 - a streamed/failed body has no length
+            size = None
+        cache = {k: v for k, v in ((h, resp.headers.get(h)) for h in CACHE_HEADERS) if v}
+        self.last_status, self.last_url = resp.status_code, redact_url(str(resp.url))
+        self.last_bytes, self.last_read_at, self.last_cache_headers = size, time.time(), cache
+        if size and size > POLL_BYTES_WARN and not self._warned_big_payload:
+            self._warned_big_payload = True
+            log.warning("ESPN payload is %.1f MB; set DRAFTADVISOR_ESPN_POLL_ROSTERS=0 to drop the roster views",
+                        size / 1e6)
+        if info is not None:
+            info.update({"http_status": resp.status_code, "url": self.last_url, "bytes": size,
+                         "latency_ms": round(self.last_latency_ms, 1), "read_at": self.last_read_at,
+                         "cache_headers": cache})
+
+    def last_request_info(self) -> dict:
+        """What the last GET did: status, redacted URL, views, bytes, latency, wall-clock read time and
+        the response's cache headers (a non-zero ``age`` / an ``x-cache: HIT`` means a CDN answered)."""
+        return {"http_status": self.last_status, "url": self.last_url, "views": list(self.last_views),
+                "bytes": self.last_bytes, "latency_ms": round(self.last_latency_ms, 1), "read_at": self.last_read_at,
+                "used_history": self.last_used_history, "cache_headers": dict(self.last_cache_headers)}
+
     async def _get(self, url: str, params: Sequence[tuple[str, Any]] | dict | None = None,
-                   headers: dict[str, str] | None = None) -> httpx.Response:
+                   headers: dict[str, str] | None = None, info: dict[str, Any] | None = None) -> httpx.Response:
         """GET with retries on transport errors / 429 / 5xx; returns the last response (any status).
         Logs and errors show the redacted URL (see :func:`redact_url`)."""
         last_exc: Exception | None = None
@@ -197,6 +247,7 @@ class EspnClient:
             self.request_count += 1
             self.last_latency_ms = (time.perf_counter() - t0) * 1000.0
             last_resp = resp
+            self._record(resp, info)
             if resp.status_code in _RETRY_STATUSES:
                 log.warning("espn %s -> HTTP %d (attempt %d/%d)", shown, resp.status_code, attempt + 1,
                             self.retries + 1)
@@ -217,7 +268,34 @@ class EspnClient:
         return (f"ESPN league {league_id} cannot be accessed with the supplied espn_s2 / SWID cookies "
                 "(expired cookies, or the account is not a member of this league).")
 
-    def _payload(self, resp: httpx.Response, url: str, league_id: Any = None) -> Any:
+    @staticmethod
+    def _pick_season(data: list, url: str, season: int) -> Any:
+        """The element of a ``/leagueHistory/`` list body that is the requested season.
+
+        ESPN's history endpoint answers with one object per season and does not always honour the
+        ``seasonId`` filter. Taking ``data[0]`` blindly serves *another year's* league and draft, which
+        renders as a plausible but frozen board - so the season is checked, and a body that carries
+        seasons but not this one is an error rather than a silent substitution.
+        """
+        seasons: list[Any] = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            got = item.get("seasonId")
+            if got is None:
+                continue
+            seasons.append(got)
+            try:
+                if int(got) == int(season):
+                    return item
+            except (TypeError, ValueError):
+                continue
+        if seasons:
+            raise EspnNotFound(f"{url} returned season(s) {seasons} but not {season}", status_code=200, url=url)
+        log.info("leagueHistory body for %s carries no seasonId; using its first element", url)
+        return data[0]
+
+    def _payload(self, resp: httpx.Response, url: str, league_id: Any = None, expect_season: int | None = None) -> Any:
         url = redact_url(url)
         status = resp.status_code
         if status == 404:
@@ -234,7 +312,7 @@ class EspnClient:
         if isinstance(data, list):
             if not data:
                 raise EspnNotFound(f"empty response for {url}", status_code=status, url=url)
-            data = data[0]
+            data = self._pick_season(data, url, expect_season) if expect_season is not None else data[0]
         return data
 
     async def get_json(self, url: str, params: Sequence[tuple[str, Any]] | dict | None = None,
@@ -245,22 +323,38 @@ class EspnClient:
 
     # -- league endpoints -----------------------------------------------------
     async def get_league(self, league_id: str | int, season: int, views: Sequence[str],
-                         headers: dict[str, str] | None = None) -> dict:
-        """``/seasons/{season}/segments/0/leagues/{league_id}?view=...`` (falls back to ``/leagueHistory/``)."""
-        params = [("view", v) for v in views]
+                         headers: dict[str, str] | None = None, params: Sequence[tuple[str, Any]] | None = None,
+                         info: dict[str, Any] | None = None) -> dict:
+        """``/seasons/{season}/segments/0/leagues/{league_id}?view=...`` (falls back to ``/leagueHistory/``).
+
+        ``info``, when given, is filled with what the request did (status, redacted URL, views, bytes,
+        latency, cache headers, whether the history endpoint answered and which season came back), so a
+        caller can report it without reaching into the shared pooled client.
+        """
+        query = [("view", v) for v in views] + list(params or ())
         url = self.league_url(league_id, season)
-        resp = await self._get(url, params=params, headers=headers)
+        self.last_views = tuple(views)
+        self.last_used_history = False
+        if info is not None:
+            info.update({"views": list(views), "used_history": False, "season_requested": int(season)})
+        resp = await self._get(url, params=query, headers=headers, info=info)
         if resp.status_code in _DENIED_STATUSES:
             alt = self.history_url(league_id)
             log.info("espn league %s -> HTTP %d; trying %s", league_id, resp.status_code, alt)
-            alt_resp = await self._get(alt, params=params + [("seasonId", int(season))], headers=headers)
+            alt_resp = await self._get(alt, params=query + [("seasonId", int(season))], headers=headers, info=info)
             if alt_resp.status_code < 400:
-                data = self._payload(alt_resp, alt, league_id)
+                data = self._payload(alt_resp, alt, league_id, expect_season=int(season))
+                self.last_used_history = True
+                if info is not None:
+                    info.update({"used_history": True,
+                                 "season_returned": data.get("seasonId") if isinstance(data, dict) else None})
                 return data if isinstance(data, dict) else {}
             raise EspnAccessDenied(self._denied_message(league_id), status_code=resp.status_code, url=url)
         data = self._payload(resp, url, league_id)
         if not isinstance(data, dict):
             raise EspnAPIError(f"unexpected payload for league {league_id}: {type(data).__name__}", url=url)
+        if info is not None:
+            info["season_returned"] = data.get("seasonId")
         return data
 
     async def get_settings_and_teams(self, league_id: str | int, season: int) -> dict:
@@ -268,8 +362,24 @@ class EspnClient:
         return await self.get_league(league_id, season, LEAGUE_VIEWS)
 
     async def get_draft_detail(self, league_id: str | int, season: int) -> dict:
-        """Draft picks + draft settings in one GET (views mDraftDetail, mSettings): the per-poll call."""
+        """Draft picks + draft settings in one GET (views mDraftDetail, mSettings)."""
         return await self.get_league(league_id, season, DRAFT_VIEWS)
+
+    async def get_draft_live(self, league_id: str | int, season: int, *, rosters: bool = True,
+                             no_cache: bool = False, info: dict[str, Any] | None = None) -> dict:
+        """The per-poll GET: the board and the draft settings, plus the teams and their rosters when
+        ``rosters`` (one request either way - ESPN accepts repeated ``view`` params).
+
+        ``scoringPeriodId=0`` is sent with the roster views (the preseason period, as ``espn_api`` does)
+        so the entries come back with one block of stats instead of the whole season. ``no_cache`` adds
+        request headers that ask an intermediary not to answer from its cache; it is *not* used on the
+        ordinary poll (ESPN serves this endpoint with ``Cache-Control: max-age=5`` from its CDN, and a
+        poll every 2 s would gain nothing by bypassing it), only on an explicit user-triggered refresh.
+        """
+        views = POLL_VIEWS if rosters else DRAFT_VIEWS
+        params = [("scoringPeriodId", 0)] if rosters else None
+        headers = {"Cache-Control": "no-cache", "Pragma": "no-cache"} if no_cache else None
+        return await self.get_league(league_id, season, views, headers=headers, params=params, info=info)
 
     async def get_players(self, league_id: str | int, season: int, limit: int = 600,
                           rank_type: str = "PPR") -> list[dict]:

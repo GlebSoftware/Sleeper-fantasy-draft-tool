@@ -37,6 +37,13 @@ class FakeEspnClient:
         self.fail_draft_times = 0
         self.fail_players = False
         self.drafted: bool | None = None            # None = derived from n
+        self.serve_rosters = True                   # the poll asks for mTeam + mRoster in the same GET
+        #: Empty every team roster: what a redraft league looks like before its draft (the 2018 fixture
+        #: carries that season's *finished* rosters, which would read as "this draft has already run").
+        self.empty_rosters = False
+        #: move the first N picks off the board and onto the owning teams' rosters (what ESPN does
+        #: during a live draft: the board stays empty, the rosters fill)
+        self.roster_picks: int | None = None
 
     def _guard(self, name: str) -> None:
         self.calls.append(name)
@@ -47,7 +54,11 @@ class FakeEspnClient:
 
     async def get_settings_and_teams(self, league_id, season):
         self._guard("settings")
-        return copy.deepcopy(self.league)
+        league = copy.deepcopy(self.league)
+        if self.empty_rosters:
+            for t in league["teams"]:
+                t["roster"] = {"entries": []}
+        return league
 
     async def get_draft_detail(self, league_id, season):
         self._guard("draft")
@@ -58,6 +69,34 @@ class FakeEspnClient:
         picks = d["draftDetail"]["picks"][: self.n]
         drafted = (self.n >= 150) if self.drafted is None else self.drafted
         d["draftDetail"].update({"picks": picks, "drafted": drafted, "inProgress": not drafted and self.n > 0})
+        return d
+
+    async def get_draft_live(self, league_id, season, *, rosters=True, no_cache=False, info=None):
+        """The per-poll GET: the board plus, when ``rosters``, the teams and their rosters."""
+        d = await self.get_draft_detail(league_id, season)
+        if not (rosters and self.serve_rosters):
+            return d
+        teams = copy.deepcopy(self.league["teams"])
+        if self.empty_rosters or self.roster_picks is not None:
+            for t in teams:
+                t["roster"] = {"entries": []}
+        if self.roster_picks is not None:
+            date = (self.draft.get("settings") or {}).get("draftSettings", {}).get("date") or 0
+            by_id = {t["id"]: t for t in teams}
+            moved = d["draftDetail"]["picks"][: int(self.roster_picks)]
+            for i, pick in enumerate(moved):
+                team = by_id.get(pick["teamId"])
+                if team is None:
+                    continue
+                team["roster"]["entries"].append({"playerId": pick["playerId"], "lineupSlotId": 20,
+                                                  "acquisitionType": "DRAFT", "acquisitionDate": date + 1000 * i,
+                                                  "playerPoolEntry": {"id": pick["playerId"], "player": {"id": pick["playerId"]}}})
+            d["draftDetail"]["picks"] = [dict(p, playerId=-1) for p in d["draftDetail"]["picks"]]
+            d["draftDetail"].update({"drafted": False, "inProgress": True})
+        d["teams"] = teams
+        if info is not None:
+            info.update({"http_status": 200, "url": "https://stub/leagues/x", "views": ["mDraftDetail", "mSettings",
+                                                                                        "mTeam", "mRoster"]})
         return d
 
     async def get_players(self, league_id, season, limit=600, rank_type="PPR"):
@@ -317,6 +356,7 @@ class PrepopulatedClient(FakeEspnClient):
 async def test_in_place_fills_and_corrections_produce_new_states():
     """A pre-populated board keeps its length and its last entry: every fill / edit must still be seen."""
     fc = PrepopulatedClient(filled=0)
+    fc.empty_rosters = True                     # a redraft league before its draft: nobody is rostered
     p = make_poller(fc, swid=SWID_TEAM_1)
     st = await p.bootstrap()
     assert len(st.picks) == 0 and st.draft.status == "pre_draft" and st.my_slot == 3
@@ -420,6 +460,7 @@ async def test_timer_and_pick_order_changes_are_followed():
 
 async def test_order_appearing_after_pre_draft():
     fc = FakeEspnClient(n=0)
+    fc.empty_rosters = True                     # a redraft league before its draft: nobody is rostered
     fc.draft["settings"]["draftSettings"]["pickOrder"] = []
     p = make_poller(fc, swid=SWID_TEAM_1)
     st0 = await p.bootstrap()
@@ -595,6 +636,7 @@ async def test_a_full_placeholder_board_is_not_a_finished_draft(placeholder):
     """The regression that stopped ESPN drafts dead: 150 entries with playerId -1 were counted as 150
     picks, so the state was "complete", run() returned at once and nothing was ever polled again."""
     fc = PrepopulatedClient(filled=0, placeholder=placeholder)
+    fc.empty_rosters = True                     # a redraft league before its draft: nobody is rostered
     p = make_poller(fc, swid=SWID_TEAM_1)
     st = await p.bootstrap()
     assert len(st.picks) == 0

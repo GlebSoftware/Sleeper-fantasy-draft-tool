@@ -5,6 +5,7 @@ know become placeholder players carrying ESPN's ADP and projected stat lines.
 """
 from __future__ import annotations
 
+import json
 import time
 from typing import Any
 
@@ -17,6 +18,7 @@ from tests.test_web import HAS_BUNDLE, _start, _stop
 MODERN_ID = "368877"      # the same league with a TE premium (rec override for slot 6), an OP slot and keepers
 PRIVATE_ID = "368878"     # 401 without espn_s2 + SWID cookies
 FRESH_ID = "368879"       # the classic league again, captured by nothing but the capture-cache test
+FORCE_ID = "368880"       # ... and again, so the force-refresh test can drop a capture nobody else uses
 COOKIES = {"X-ESPN-S2": "s2-secret", "X-ESPN-SWID": SWID_TEAM_1}
 SESSION_KEYS = ("mode", "platform", "draft_id", "league_id", "season", "username", "user_id", "slot", "team_id")
 
@@ -26,7 +28,7 @@ class WebEspnStub(EspnStub):
     private at ``PRIVATE_ID``."""
 
     def __init__(self, **kw: Any):
-        super().__init__(league_ids=(LEAGUE_ID, MODERN_ID, PRIVATE_ID, FRESH_ID), **kw)
+        super().__init__(league_ids=(LEAGUE_ID, MODERN_ID, PRIVATE_ID, FRESH_ID, FORCE_ID), **kw)
 
     def respond(self, path: str, query: dict, headers: dict, cookies: dict) -> tuple[int, Any]:
         m = _LEAGUE_RE.match(path)
@@ -363,7 +365,9 @@ def test_state_on_a_prepopulated_board_is_not_a_finished_draft():
     the app report "DRAFT COMPLETE" on an un-started draft and stop following it."""
     if not HAS_BUNDLE:
         pytest.skip("needs web_bundle/ (run scripts/build_bundle.py)")
-    with WebEspnStub(draft="prepopulated") as stub:
+    # a redraft league before its draft: an all-placeholder board *and* empty rosters (the fixture's
+    # rosters are that season's finished ones, which would be evidence the draft has already been held)
+    with WebEspnStub(draft="prepopulated", empty_rosters=True) as stub:
         proc, base = _start({"DRAFTADVISOR_ESPN_BASE": stub.base_url})
         try:
             params = {"mode": "live", "platform": "espn", "league_id": LEAGUE_ID, "season": SEASON, "team_id": 1}
@@ -378,3 +382,120 @@ def test_state_on_a_prepopulated_board_is_not_a_finished_draft():
             assert all(b["name"] and not b["name"].startswith("ESPN player") for b in st["best"])
         finally:
             _stop(proc)
+
+
+# ---------------------------------------------------------------------------
+# A live ESPN draft: the board publishes nothing, the rosters fill
+# ---------------------------------------------------------------------------
+
+
+def test_live_draft_visible_only_through_the_rosters():
+    """The reported failure. ESPN's REST board serves one placeholder entry per pick (playerId -1) and
+    never updates it while the draft runs; the players that have gone appear on the team rosters. The
+    board must therefore report where its picks came from, remove those players from the pool, attribute
+    them to their teams - and never invent a pick number ESPN did not publish.
+
+    The league is the reported one: 12 teams, 16 rounds, 192 picks.
+    """
+    if not HAS_BUNDLE:
+        pytest.skip("needs web_bundle/ (run scripts/build_bundle.py)")
+    with WebEspnStub(league="twelve", draft="live", roster_picks=5) as stub:
+        proc, base = _start({"DRAFTADVISOR_ESPN_BASE": stub.base_url})
+        try:
+            params = {"mode": "live", "platform": "espn", "league_id": LEAGUE_ID, "season": SEASON, "slot": 3}
+            r = httpx.get(base + "/api/state", params=params, timeout=120)
+            assert r.status_code == 200, r.text
+            assert r.headers["cache-control"] == "no-store, max-age=0" and "X-ESPN-S2" in r.headers["vary"]
+            st = r.json()
+            d = st["draft"]
+            assert d["teams"] == 12 and d["rounds"] == 16 and d["total_picks"] == 192
+            assert d["status"] == "drafting" and d["is_complete"] is False
+            assert d["board_picks"] == 0 and d["rostered_only"] == 5 and d["picks_source"] == "rosters"
+            assert d["next_pick_no"] == 1 and d["current_round"] == 1        # the clock stays board-derived
+            assert st["recent"] == []                                        # ESPN published no picks
+            rows = st["roster_only"]
+            assert len(rows) == 5 and all(row["name"] and row["label"] and row["source"] == "roster" for row in rows)
+            assert {row["slot"] for row in rows} == {1, 2, 3, 4, 5} and sum(row["is_me"] for row in rows) == 1
+            assert all(row["confidence"] == d["roster_pick_confidence"] for row in rows)
+            # gone from the pool and from every recommendation, and counted on their teams
+            ids = {row["player_id"] for row in rows}
+            assert not (ids & {c["player_id"] for c in st["available"]})
+            assert not (ids & {c["player_id"] for c in st["best"]})
+            assert sum(sum(o["position_counts"].values()) for o in st["opponents"]) == 4
+            assert sum(1 for s_ in st["me"]["slots"] if s_["player"]) == 1    # my own drafted player is mine
+            # ... and the page is told exactly what ESPN returned
+            espn = st["status"]["espn"]
+            assert espn["http_status"] == 200 and espn["board_entries"] == 192 and espn["board_picks"] == 0
+            assert espn["roster_drafted"] == 5 and espn["roster_fresh"] == 5 and espn["rostered_total"] == 5
+            assert espn["source"] == "rosters" and espn["in_progress"] is True and espn["drafted"] is False
+            assert espn["has_draft_detail"] is True and espn["teams_with_rosters"] == 5
+            assert espn["views"] == ["mDraftDetail", "mSettings", "mTeam", "mRoster"] and espn["poll_rosters"] is True
+            assert espn["league_id"] == LEAGUE_ID and espn["season"] == SEASON and espn["capture_age_s"] >= 0
+            assert espn["fetched_at"] > 0 and espn["forced"] is False and espn["bytes"] > 0
+            # ... in numbers only: no payload dump, no cookie anywhere
+            assert "swid" not in json.dumps(espn).lower() and "espn_s2" not in json.dumps(espn)
+        finally:
+            _stop(proc)
+
+
+def test_diagnose_reports_what_espn_returned_and_explains_it():
+    """The Diagnostics panel: the same block as ``status.espn`` plus per-team counts, a board sample and
+    a sentence the owner can read. Costs one ESPN GET (a poll), never a re-capture."""
+    if not HAS_BUNDLE:
+        pytest.skip("needs web_bundle/ (run scripts/build_bundle.py)")
+    with WebEspnStub(league="twelve", draft="prepopulated", empty_rosters=True) as stub:
+        proc, base = _start({"DRAFTADVISOR_ESPN_BASE": stub.base_url})
+        try:
+            params = {"mode": "live", "platform": "espn", "league_id": LEAGUE_ID, "season": SEASON, "slot": 3}
+            httpx.get(base + "/api/state", params=params, timeout=120)      # warm the capture
+            before = len(stub.requests)
+            r = httpx.get(base + "/api/espn/diagnose", params=params, timeout=120)
+            assert r.status_code == 200 and r.headers["cache-control"] == "no-store, max-age=0"
+            body = r.json()
+            assert len(stub.requests) - before == 1                          # one GET, like a poll
+            assert body["platform"] == "espn"
+            espn = body["espn"]
+            assert espn["board_entries"] == 192 and espn["board_picks"] == 0 and espn["roster_drafted"] == 0
+            assert espn["source"] == "none" and espn["league_sub_type"] == "NONE"
+            assert len(body["teams"]) == 12 and all(t["roster_entries"] == 0 for t in body["teams"])
+            assert sorted(t["slot"] for t in body["teams"]) == list(range(1, 13))
+            assert len(body["board_sample"]) == 10 and all(e["playerId"] == -1 for e in body["board_sample"])
+            assert body["identity"]["teams"] == 12 and body["identity"]["rounds"] == 16
+            assert body["identity"]["my_slot"] == 3 and body["identity"]["pick_order_known"] is True
+            assert "0 real picks" in body["explanation"] and "does not update the draft board" in body["explanation"]
+            assert "swid" not in r.text.lower() and "espn_s2" not in r.text
+            # a Sleeper session gets a report saying ESPN diagnostics do not apply
+            sl = httpx.get(base + "/api/espn/diagnose", params={"mode": "live", "platform": "sleeper",
+                                                               "draft_id": "1"}, timeout=60).json()
+            assert sl["espn"] is None and "do not apply" in sl["explanation"]
+        finally:
+            _stop(proc)
+
+
+def test_force_refresh_recaptures_the_league_and_is_rate_limited(espn):
+    """The Refresh button: ``force=1`` re-reads settings / teams / rosters / pick order / clock instead of
+    using the cached capture, and the server refuses to do that more than once every few seconds."""
+    base, stub = espn
+    params = {"mode": "live", "platform": "espn", "league_id": FORCE_ID, "season": SEASON, "team_id": 1}
+    httpx.get(base + "/api/state", params=params, timeout=120)              # capture + poll
+    n0 = len(stub.requests)
+    st = httpx.get(base + "/api/state", params=dict(params, force=1), timeout=120).json()
+    views = [tuple(q["query"].get("view", [])) for q in stub.requests[n0:]]
+    assert ("mSettings", "mTeam", "mRoster") in views and ("kona_player_info",) in views   # the capture again
+    assert views[-1] == ("mDraftDetail", "mSettings", "mTeam", "mRoster")                  # ... and a fresh poll
+    assert st["status"]["forced"] is True and st["status"]["espn"]["forced"] is True
+    assert st["status"]["espn"]["recaptured"] is True and st["status"]["espn"]["capture_age_s"] < 5
+    # holding the button: the next forced call within the window polls without re-capturing
+    n1 = len(stub.requests)
+    st2 = httpx.get(base + "/api/state", params=dict(params, force=1), timeout=120).json()
+    assert len(stub.requests) - n1 == 1
+    assert st2["status"]["espn"]["forced"] is True and st2["status"]["espn"]["recaptured"] is False
+    assert st2["draft"]["next_pick_no"] == st["draft"]["next_pick_no"]
+    # an ordinary poll is unchanged: one GET, no re-capture
+    n2 = len(stub.requests)
+    st3 = httpx.get(base + "/api/state", params=params, timeout=120).json()
+    assert len(stub.requests) - n2 == 1 and st3["status"]["forced"] is False
+    # this fixture league's capture also carries that season's finished rosters, so the board is not the
+    # only source here; what matters is that the 17 board picks are read as board picks
+    assert st3["draft"]["board_picks"] == 17 and st3["draft"]["picks_source"].startswith("board")
+    assert st3["status"]["espn"]["board_picks"] == 17 and st3["status"]["espn"]["source"].startswith("board")

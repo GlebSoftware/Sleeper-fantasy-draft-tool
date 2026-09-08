@@ -763,6 +763,7 @@
    "roster": {
     "entries": [
      {
+      "acquisitionDate": 1535222961688,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 4,
@@ -795,6 +796,7 @@
       "status": "NORMAL"
      },
      {
+      "acquisitionDate": 1535222961688,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 4,
@@ -851,6 +853,7 @@
    "roster": {
     "entries": [
      {
+      "acquisitionDate": 1535222590494,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 4,
@@ -883,6 +886,7 @@
       "status": "NORMAL"
      },
      {
+      "acquisitionDate": 1535222590494,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 2,
@@ -938,6 +942,7 @@
    "roster": {
     "entries": [
      {
+      "acquisitionDate": 1535224020871,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 0,
@@ -967,6 +972,7 @@
       "status": "NORMAL"
      },
      {
+      "acquisitionDate": 1535224020871,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 16,
@@ -1018,6 +1024,7 @@
    "roster": {
     "entries": [
      {
+      "acquisitionDate": 1535223668285,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 2,
@@ -1049,6 +1056,7 @@
       "status": "NORMAL"
      },
      {
+      "acquisitionDate": 1535223668285,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 4,
@@ -1105,6 +1113,7 @@
    "roster": {
     "entries": [
      {
+      "acquisitionDate": 1535224643316,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 2,
@@ -1136,6 +1145,7 @@
       "status": "NORMAL"
      },
      {
+      "acquisitionDate": 1535224643316,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 4,
@@ -1192,6 +1202,7 @@
    "roster": {
     "entries": [
      {
+      "acquisitionDate": 1535224843566,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 4,
@@ -1224,6 +1235,7 @@
       "status": "NORMAL"
      },
      {
+      "acquisitionDate": 1535224843566,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 23,
@@ -1279,6 +1291,7 @@
    "roster": {
     "entries": [
      {
+      "acquisitionDate": 1535222535328,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 20,
@@ -1310,6 +1323,7 @@
       "status": "NORMAL"
      },
      {
+      "acquisitionDate": 1535222535328,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 6,
@@ -1365,6 +1379,7 @@
    "roster": {
     "entries": [
      {
+      "acquisitionDate": 1535223373958,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 2,
@@ -1396,6 +1411,7 @@
       "status": "NORMAL"
      },
      {
+      "acquisitionDate": 1535223373958,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 4,
@@ -1452,6 +1468,7 @@
    "roster": {
     "entries": [
      {
+      "acquisitionDate": 1535224433376,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 2,
@@ -1483,6 +1500,7 @@
       "status": "NORMAL"
      },
      {
+      "acquisitionDate": 1535224433376,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 4,
@@ -1539,6 +1557,7 @@
    "roster": {
     "entries": [
      {
+      "acquisitionDate": 1535224994882,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 2,
@@ -1570,6 +1589,7 @@
       "status": "NORMAL"
      },
      {
+      "acquisitionDate": 1535224994882,
       "acquisitionType": "DRAFT",
       "injuryStatus": "NORMAL",
       "lineupSlotId": 4,

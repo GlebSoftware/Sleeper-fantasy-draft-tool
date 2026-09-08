@@ -349,12 +349,27 @@ def summarize_roster(
     players: Mapping[str, Player],
     projections: Mapping[str, Projection],
     league: LeagueSettings,
+    extra_ids: Sequence[str] = (),
 ) -> RosterSummary:
-    """Build a :class:`RosterSummary` for one team's picks."""
+    """Build a :class:`RosterSummary` for one team's picks.
+
+    ``extra_ids`` names players the team holds without a pick of their own - on ESPN a drafted player
+    shows up on the team's roster long before (and sometimes instead of) appearing on the draft board.
+    A pick always wins over an extra id for the same player.
+    """
     roster: list[tuple[Player, float]] = []
+    seen: set[str] = set()
     for pk in picks:
         pl = player_from_pick(pk, players)
         proj = projections.get(pl.player_id)
+        roster.append((pl, float(proj.points) if proj else 0.0))
+        seen.add(pl.player_id)
+    for pid in extra_ids:
+        pl = players.get(pid)
+        if pl is None or pid in seen:
+            continue
+        seen.add(pid)
+        proj = projections.get(pid)
         roster.append((pl, float(proj.points) if proj else 0.0))
     slots = league.starting_slots
     assignment, lineup_pts, bench = optimal_lineup(roster, slots)

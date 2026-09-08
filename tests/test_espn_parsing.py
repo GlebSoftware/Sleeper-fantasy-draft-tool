@@ -2,29 +2,37 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 from draftadvisor.espn.ids import EspnIdMap, espn_player_fields, espn_position, placeholder_player
 from draftadvisor.espn.parsing import (
+    board_pick_number,
+    draft_epoch_ms,
     draft_status,
+    fresh_draft_spots,
     league_status,
+    merge_league_payload,
     normalize_swid,
     parse_espn_draft,
     parse_espn_league,
     parse_espn_managers,
     parse_espn_picks,
+    reconstruct_roster_picks,
     resolve_my_team,
     roster_names,
+    roster_spots,
     roster_positions_from_counts,
     rostered_espn_ids,
     rostered_ids,
     rounds_from_counts,
     state_from_espn,
 )
-from draftadvisor.models import DraftState, Player
+from draftadvisor.models import DraftState, Player, RosterSpot
 
 FIXTURES = Path(__file__).parent / "fixtures" / "espn"
 SWID_TEAM_1 = "{6863-6934-3455}"        # Goin' HAM Newton, slot 3
@@ -553,7 +561,10 @@ def test_state_complete_and_pre_draft(league, complete, pre_draft):
     st = state_from_espn(league, complete, m, team_id=11)
     assert st.is_complete and st.draft.status == "complete" and len(st.picks) == 150 and st.my_slot == 10
     assert st.on_the_clock_slot is None and len(st.picks_by_slot()[10]) == 15
-    st0 = state_from_espn(league, pre_draft, m, username="LUTZ")
+    # a redraft league before its draft: the board is empty *and* so are the rosters (the fixture's
+    # rosters are that season's finished ones, which are evidence the draft has already been held)
+    empty = dict(league, teams=[dict(t, roster={"entries": []}) for t in league["teams"]])
+    st0 = state_from_espn(empty, pre_draft, m, username="LUTZ")
     assert st0.draft.status == "pre_draft" and st0.picks == [] and st0.my_slot == 2 and st0.next_pick_no == 1
     assert st0.league.status == "pre_draft" and st0.my_future_picks()[:2] == [2, 19]
 
@@ -663,3 +674,162 @@ def test_partial_round_one_never_invents_an_order(league, prepopulated):
         p["teamId"] = 0 if p["overallPickNumber"] > 6 else p["teamId"]
     draft = parse_espn_draft(league, board)
     assert draft.slot_to_roster_id == {}
+
+
+# ---------------------------------------------------------------------------
+# Roster-derived picks: ESPN's REST board stays empty for the whole of a live draft, so a drafted
+# player is visible only as a roster entry (see the module docstring of draftadvisor.espn.parsing).
+# ---------------------------------------------------------------------------
+
+
+DRAFT_DATE_MS = 1535198400000       # draftSettings.date of the draft fixtures / league_keepers_rosters
+
+
+@pytest.fixture
+def keepers():
+    """A league whose rosters carry every acquisition flavour (see make_fixtures.py)."""
+    return load("league_keepers_rosters.json")
+
+
+def test_roster_spots_carry_team_and_provenance(keepers):
+    spots = roster_spots(keepers, EspnIdMap())
+    assert len(spots) == 60 and {s.roster_id for s in spots} == {t["id"] for t in keepers["teams"]}
+    mine = [s for s in spots if s.roster_id == 1]
+    assert [s.acquisition_type for s in mine] == ["DRAFT", "ADD", "TRADE", "DRAFT", "DRAFT", "DRAFT"]
+    assert [s.acquired_at for s in mine][:3] == [DRAFT_DATE_MS - 365 * 24 * 3600 * 1000, DRAFT_DATE_MS + 5_000,
+                                                 DRAFT_DATE_MS + 6_000]
+    assert mine[-1].acquired_at is None and mine[4].lineup_slot_id == 21          # undated, and one on IR
+    assert all(s.player_id and s.espn_id for s in mine) and mine[0].name and mine[0].position
+    dst = next(s for s in mine if s.espn_id == "-16003")                          # a D/ST id is a real player
+    assert dst.position == "DEF" and dst.player_id == "CHI"
+
+
+def test_fresh_draft_spots_keeps_keepers_and_pickups_out(keepers):
+    spots = [s for s in roster_spots(keepers, EspnIdMap()) if s.roster_id == 1]
+    threshold = draft_epoch_ms(keepers, None, 2018)
+    fresh, undated = fresh_draft_spots(spots, threshold, keeper_count=2)
+    # last season's DRAFT (a keeper/dynasty holdover), the ADD, the TRADE and the IR entry are all out;
+    # the undated one is counted but not claimed, because this league can have keepers
+    assert [s.espn_id for s in fresh] == ["-16003"]
+    assert [s.espn_id for s in undated] == [spots[-1].espn_id]
+    # with no keepers possible and ESPN saying the draft is running, the undated entry counts too
+    fresh2, undated2 = fresh_draft_spots(spots, threshold, keeper_count=0, draft_started=True)
+    assert len(fresh2) == 2 and undated2 == []
+    # ... but not while ESPN says the draft has not started: nothing then says it is this season's
+    assert len(fresh_draft_spots(spots, threshold, keeper_count=0, draft_started=False)[0]) == 1
+    # a player the board already flags as a keeper is never a fresh pick
+    assert fresh_draft_spots(spots, threshold, keeper_ids=[fresh[0].player_id], keeper_count=2)[0] == []
+
+
+def test_draft_epoch_ms_falls_back_to_may_of_the_season(keepers):
+    assert draft_epoch_ms(keepers, None, 2018) == DRAFT_DATE_MS - 6 * 3600 * 1000
+    no_date = copy.deepcopy(keepers)
+    no_date["settings"]["draftSettings"]["date"] = 0
+    may = draft_epoch_ms(no_date, None, 2018)
+    assert may == int(datetime(2018, 5, 1, tzinfo=timezone.utc).timestamp() * 1000)
+    assert may < DRAFT_DATE_MS                      # this season's draft is after it ...
+    assert may > DRAFT_DATE_MS - 365 * 24 * 3600 * 1000     # ... and last season's is before it
+
+
+def _spot(pid: str, team: int, at: int | None) -> RosterSpot:
+    return RosterSpot(player_id=pid, espn_id=pid, roster_id=team, acquisition_type="DRAFT", acquired_at=at)
+
+
+def test_reconstruct_roster_picks_confidence_levels(league, pre_draft):
+    draft = parse_espn_draft(league, pre_draft)
+    assert draft.slot_to_roster_id[1] == PICK_ORDER[0]
+    # 'exact': the per-team counts match the first k picks of the snake and the dates order them
+    spots = [_spot(f"p{n}", PICK_ORDER[n - 1], DRAFT_DATE_MS + n * 1000) for n in range(1, 6)]
+    pairs, conf = reconstruct_roster_picks(spots, draft)
+    assert conf == "exact" and [(n, s.player_id) for n, s in pairs] == [(n, f"p{n}") for n in range(1, 6)]
+    # ties carry no order: a whole team's picks stamped with the same millisecond is ESPN's OFFLINE
+    # (commissioner-entered) shape - the counts can still be right, the order is a guess
+    same = [_spot("a", PICK_ORDER[0], DRAFT_DATE_MS), _spot("b", PICK_ORDER[1], DRAFT_DATE_MS),
+            _spot("c", PICK_ORDER[2], DRAFT_DATE_MS)]
+    pairs2, conf2 = reconstruct_roster_picks(same, draft)
+    assert conf2 == "exact" and len(pairs2) == 3          # equal timestamps are permuted to fit the order
+    wrong_order = [_spot("a", PICK_ORDER[2], DRAFT_DATE_MS + 1), _spot("b", PICK_ORDER[1], DRAFT_DATE_MS + 2),
+                   _spot("c", PICK_ORDER[0], DRAFT_DATE_MS + 3)]
+    pairs3, conf3 = reconstruct_roster_picks(wrong_order, draft)
+    assert conf3 == "team" and {n for n, _ in pairs3} == {1, 2, 3}
+    # 'none': the counts do not match a snake prefix at all (two picks for the team that owns pick 1)
+    assert reconstruct_roster_picks([_spot("a", PICK_ORDER[0], 1), _spot("b", PICK_ORDER[0], 2)], draft)[1] == "none"
+    # 'none': no pick order published, and nothing at all to reconstruct
+    no_order = dataclasses.replace(draft, slot_to_roster_id={}, draft_order={})
+    assert reconstruct_roster_picks(spots, no_order) == ([], "none")
+    assert reconstruct_roster_picks([], draft) == ([], "none")
+
+
+def test_roster_spots_never_move_the_clock(league, prepopulated):
+    """The regression guard: a roster-derived player is a player, not a pick number. Whatever the
+    confidence, the clock, the completeness and my future picks stay board-derived."""
+    st = state_from_espn(league, prepopulated, EspnIdMap(), team_id=1)
+    assert st.picks == [] and st.next_pick_no == 1 and st.is_complete is False
+    assert st.on_the_clock_slot == 1 and st.taken_pick_numbers == set()
+    assert len(st.roster_spots) == 150 and len(st.roster_only_ids) == 150      # gone, but not picks
+    assert st.roster_only_ids <= st.unavailable_ids and st.my_future_picks()[:2] == [3, 18]
+    by_slot = st.roster_spots_by_slot()
+    assert sum(len(v) for v in by_slot.values()) == 150 and 0 not in by_slot   # every team is known
+
+
+def test_state_from_espn_uses_the_polls_rosters_over_the_capture(league, prepopulated):
+    """The poll asks for mTeam + mRoster too, and those rosters are this second's: they win over the
+    capture, which can be ten minutes old."""
+    poll = copy.deepcopy(prepopulated)
+    poll["teams"] = [{"id": t["id"], "roster": {"entries": []}} for t in league["teams"]]
+    for e in ({"playerId": 13934, "acquisitionType": "DRAFT", "acquisitionDate": DRAFT_DATE_MS + 1000,
+               "lineupSlotId": 20},):
+        poll["teams"][0]["roster"]["entries"].append(e)
+    st = state_from_espn(league, poll, EspnIdMap(), team_id=1)
+    assert len(st.roster_spots) == 1 and st.roster_spots[0].espn_id == "13934"
+    assert st.draft.status == "drafting" and st.picks == [] and st.next_pick_no == 1   # the board is still empty
+    assert st.roster_only_ids == {"espn:13934"} and st.draft.teams == 10
+    # without teams in the poll the capture's rosters are used unchanged
+    st2 = state_from_espn(league, prepopulated, EspnIdMap(), team_id=1)
+    assert len(st2.roster_spots) == 150
+
+
+def test_merge_league_payload_replaces_teams_wholesale(league, prepopulated):
+    poll = dict(prepopulated, teams=[{"id": 1, "roster": {"entries": []}}], members=[{"id": "{x}"}])
+    merged = merge_league_payload(league, poll)
+    assert [t["id"] for t in merged["teams"]] == [1] and merged["members"] == [{"id": "{x}"}]
+    assert merged["settings"] is league["settings"]                     # everything else is the capture's
+    assert merge_league_payload(league, prepopulated) is league         # no teams in the poll: unchanged
+    assert merge_league_payload(league, {"teams": []}) is league
+
+
+def test_pick_number_is_derived_when_espn_omits_it(league, in_progress):
+    """A board entry with no (or a zero) overallPickNumber still has roundId + roundPickNumber."""
+    draft = parse_espn_draft(league, in_progress)
+    assert board_pick_number({"roundId": 2, "roundPickNumber": 4}, 10) == 14
+    assert board_pick_number({"roundId": 0, "roundPickNumber": 4}, 10) is None
+    assert board_pick_number({"roundId": 2, "roundPickNumber": 4}, 0) is None
+    payload = copy.deepcopy(in_progress)
+    for p in payload["draftDetail"]["picks"]:
+        p["overallPickNumber"] = 0                      # ESPN omitted it
+    picks = parse_espn_picks(payload, EspnIdMap(), draft, {})
+    assert [p.pick_no for p in picks] == list(range(1, 18))
+
+
+def test_pick_player_can_be_nested_under_player_pool_entry(league, in_progress):
+    draft = parse_espn_draft(league, in_progress)
+    payload = copy.deepcopy(in_progress)
+    for p in payload["draftDetail"]["picks"]:
+        p["playerPoolEntry"] = {"player": {"id": p.pop("playerId"), "fullName": "Nested Player",
+                                           "defaultPositionId": 2}}
+    picks = parse_espn_picks(payload, EspnIdMap(), draft, {})
+    assert len(picks) == 17 and picks[0].player_id.startswith("espn:")
+
+
+def test_keepers_and_holdovers_on_rosters_are_never_new_picks(keepers, prepopulated):
+    """A keeper league before its draft: every roster already holds players. They are unavailable (they
+    always were), but only an entry that ESPN says was drafted *for this draft* may be reported as one."""
+    st = state_from_espn(keepers, prepopulated, EspnIdMap(), team_id=1)
+    assert len(st.rostered_ids) == len({s.player_id for s in st.roster_spots})
+    fresh = [s for s in st.roster_spots if s.is_fresh]
+    # exactly one entry per team is dated after this draft's start; everything else is older or undated
+    assert len(fresh) == 10 and {s.acquired_at for s in fresh} == {DRAFT_DATE_MS + 7_000}
+    assert {s.roster_id for s in fresh} == {t["id"] for t in keepers["teams"]} and st.picks == []
+    # the undated entry, the ADD, the TRADE, the IR entry and last season's draft are all left alone
+    assert len(st.roster_spots) == 60 and st.roster_only_ids == set(st.rostered_ids)
+    assert st.next_pick_no == 1 and st.is_complete is False    # and none of them touched the clock

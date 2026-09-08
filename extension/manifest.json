@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "draftadvisor",
+  "version": "0.1.0",
+  "description": "Live ESPN draft overlay: top 5 available overall, top 5 per position, and the next suggested pick.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://sleeper-draft-advisor.vercel.app/*",
+    "https://*.espn.com/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://fantasy.espn.com/*", "https://*.espn.com/*"],
+      "js": ["hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": ["https://fantasy.espn.com/*", "https://*.espn.com/*"],
+      "js": ["styles.js", "overlay.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

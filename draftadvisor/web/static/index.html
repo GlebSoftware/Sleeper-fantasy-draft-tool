@@ -340,6 +340,31 @@ tr.changed td.val { color: var(--amber); }
 .modal .howto { margin: 0 0 8px; }
 .modal .howto ol { margin: 4px 0 0; padding-left: 18px; }
 
+/* ---------- refresh, freshness, ESPN diagnostics ---------- */
+button.icon { padding: 3px 8px; line-height: 1.15; }
+button.icon .gl { display: inline-block; }
+button.icon.busy .gl { animation: spin 0.8s linear infinite; }
+#dh-updated { white-space: nowrap; }
+#dh-updated.stale { color: var(--amber); }
+.dh-espn { font-size: 11px; color: var(--fg3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.notice { border-left: 3px solid var(--amber); }
+.notice > h2 { color: var(--amber); }
+.notice .nbody { display: grid; gap: 4px; font-size: 12px; color: var(--fg2); }
+.notice .nbody b { color: var(--fg); }
+.notice .nbody .said { font-family: var(--mono); font-size: 11.5px; color: var(--fg2); word-break: break-word; }
+.notice .actions { margin: 8px 0 0; }
+.roster-note { font-size: 11.5px; color: var(--fg3); margin-top: 6px; }
+#recent-tbl tr.sep td { background: var(--bg3); color: var(--fg3); font-size: 11px; letter-spacing: 0.03em; }
+.badge.roster { background: var(--grey-bg); color: var(--fg2); font-weight: 700; letter-spacing: 0.02em; }
+#diag-panel > h2 .pill { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.diag .kv { align-items: baseline; }
+.diag .kv > span:first-child { min-width: 150px; }
+.diag .kv > span:last-child { white-space: normal; word-break: break-word; }
+.diag h3 { margin: 10px 0 4px; }
+.diag .expl { border-left: 3px solid var(--accent); background: var(--bg3); border-radius: var(--radius); padding: 6px 10px; margin: 0 0 8px; color: var(--fg); font-size: 12px; }
+.diag table { margin-top: 2px; }
+.diag td, .diag th { font-size: 11.5px; }
+
 /* ---------- toasts ---------- */
 #toasts { position: fixed; right: 74px; bottom: 14px; z-index: 100; display: flex; flex-direction: column; gap: 6px; max-width: 420px; }
 .toast { background: var(--bg3); border: 1px solid var(--red); color: var(--fg); padding: 8px 12px; border-radius: var(--radius); box-shadow: var(--shadow); cursor: pointer; font-size: 12px; }
@@ -380,6 +405,10 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
   .dh-league .muted { display: none; }
   .dh-pick, .dh-next { font-size: 12px; }
   #dh-lat, #chat-btn2 { display: none; }
+  #dh-updated { font-size: 10.5px; }
+  #refresh-btn { padding: 6px 10px; font-size: 14px; }      /* a comfortable tap target on a phone */
+  .diag .kv > span:first-child { min-width: 108px; }
+  .diag .kv { flex-wrap: wrap; }
   .banner { font-size: 16px; padding: 4px 12px; }
   .clock { text-align: center; }
   button.big { font-size: 14px; padding: 8px 10px; flex: 1 1 100%; }
@@ -453,6 +482,7 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
         <div class="kv"><span>Session</span><span id="st-session">none</span></div>
         <div class="actions">
           <button id="settings-btn2">Settings…</button>
+          <button id="refresh-btn2" class="icon" title="Force refresh (r) — re-capture the league and re-read the draft, bypassing every cache"><span class="gl">⟳</span> Force refresh</button>
           <button id="stop-btn" class="danger">New session</button>
         </div>
         <div class="hint">The server is stateless: this browser keeps the session (and every mock pick) in
@@ -547,6 +577,7 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
       <div class="dh-league"><span id="dh-name">No draft</span><span id="dh-platform" class="pill info plat" hidden title="draft platform"></span><span class="muted" id="dh-scoring"></span></div>
       <div class="dh-pick"><b id="dh-round"></b> <span id="dh-otc" class="muted"></span></div>
       <div class="dh-next small" id="dh-next"></div>
+      <div class="dh-espn mono" id="dh-espn" title="what the platform returned on the last read"></div>
     </div>
     <div class="dh-center">
       <div id="turn-banner" class="banner" hidden>YOUR PICK</div>
@@ -559,6 +590,9 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
       </div>
     </div>
     <div class="dh-right">
+      <span id="dh-updated" class="muted small" title="when the last poll answered"></span>
+      <button id="refresh-btn" class="small icon" aria-label="Force refresh"
+        title="Force refresh (r) — re-reads the league (settings, teams, rosters, order, clock) and the draft, bypassing every cache"><span class="gl">⟳</span></button>
       <span id="dh-chat" class="pill" title="chat model — used only when you send a message">chat: off</span>
       <span id="dh-lat" class="muted small mono"></span>
       <button id="chat-btn2" class="small" title="Chat with Claude (c)">💬 Chat</button>
@@ -581,6 +615,14 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
     </aside>
 
     <div class="col-center">
+      <div class="panel notice" id="picks-notice" hidden>
+        <h2><span id="notice-title">No picks yet</span></h2>
+        <div class="nbody" id="notice-body"></div>
+        <div class="actions">
+          <button id="notice-refresh" class="small">Refresh now</button>
+          <button id="notice-diag" class="small">Diagnostics…</button>
+        </div>
+      </div>
       <div class="panel">
         <h2>Best picks now</h2>
         <div class="tscroll" style="max-height:none">
@@ -618,6 +660,7 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
       <div class="panel">
         <h2>Recent picks</h2>
         <table id="recent-tbl"><thead><tr><th>Pick</th><th>Team</th><th>Player</th></tr></thead><tbody></tbody></table>
+        <div class="roster-note" id="recent-note"></div>
       </div>
       <div class="panel collapsible" id="opp-panel">
         <h2><span class="tri">▼</span>Opponents' needs</h2>
@@ -628,6 +671,15 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
 
   <div class="foot" id="draft-foot" hidden>
     <div class="panel"><h2>Notes</h2><ul id="notes"></ul><div id="last-error" class="small" style="color:var(--red)"></div></div>
+    <div class="panel collapsible closed" id="diag-panel">
+      <h2><span class="tri">▼</span>Diagnostics<span id="diag-pill" class="pill" hidden></span></h2>
+      <div class="actions" style="margin-top:0">
+        <button id="diag-run" class="small">Run diagnostics</button>
+        <button id="diag-copy" class="small" title="copy the whole report to the clipboard">Copy</button>
+        <span id="diag-info" class="muted small"></span>
+      </div>
+      <div class="diag" id="diag-body"></div>
+    </div>
   </div>
 </section>
 
@@ -773,6 +825,22 @@ function fmtTime(sec) {
   try { return new Date(ms).toLocaleString(); } catch (e) { return String(sec); }
 }
 function fmtClock(s) { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+/** Wall-clock time of an epoch (seconds or ms) — "14:03:11". */
+function hms(sec) {
+  const v = num(sec); if (v == null) return '–';
+  const ms = v > 1e11 ? v : v * 1000;
+  try { return new Date(ms).toLocaleTimeString(); } catch (e) { return String(sec); }
+}
+/** A duration in ms as "12 s ago" / "3 min ago" (`short`: without the "ago"). */
+function agoText(ms, short) {
+  const s = Math.max(0, Math.round((num(ms) || 0) / 1000));
+  const tail = short ? '' : ' ago';
+  if (s < 60) return s + ' s' + tail;
+  const m = Math.floor(s / 60);
+  return m < 60 ? m + ' min' + tail : Math.floor(m / 60) + ' h' + tail;
+}
+/** A value no cache can answer twice: every forced request carries one. */
+function nonce() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 /* ---- Claude pricing (USD per 1M tokens, [input, output]); /api/status sends the server's table, this is the fallback. */
 const DEFAULT_PRICES = { 'claude-opus-5': [5, 25], 'claude-sonnet-5': [2, 10] };
 /** Assumed size of one chat turn for the "about $x per message" hint: context block + history in, a short answer out. */
@@ -989,7 +1057,10 @@ const S = {
     fresh: {}, starting: false, chatOpen: false,
     platform: 'sleeper', espn: null, espnLoading: false, espnAuthAsked: false, seasonFilled: false,   // Setup: platform switch + the last ESPN league look-up
     espnDenied: null,                   // the ESPN 401 detail while live polls are refused (expired cookies); null once a poll succeeds
+    refreshing: false, forcedAt: 0,     // the Refresh control: a forced re-capture is in flight / when the last one answered
   },
+  diag: { report: null, at: 0, loading: false, error: null },   // GET /api/espn/diagnose — only when you press the button
+  espnSig: { sig: '', since: 0 },       // how long ESPN's answer has been identical (the server is stateless; only the browser can tell)
 };
 const mode = () => (S.session && S.session.mode) || 'idle';
 const isLive = () => mode() === 'live' || mode() === 'mock';
@@ -1147,6 +1218,7 @@ function renderSetup() {
   $('lookup-btn').disabled = S.ui.starting;
   $('espn-load').disabled = S.ui.starting || S.ui.espnLoading;
   $('stop-btn').disabled = !isLive();
+  renderRefresh();
   // ESPN season defaults to the server's season once (typed values are never overwritten)
   const season = num(st.season);
   if (season && !S.ui.seasonFilled) { S.ui.seasonFilled = true; const inp = $('espn-season'); inp.placeholder = String(season); if (!inp.value) inp.value = String(season); }
@@ -1244,6 +1316,10 @@ function renderDraft() {
     show($('turn-banner'), false); show($('mock-controls'), false); show($('clock'), false);
     setText($('dh-lat'), '');
     renderChatPill();
+    renderUpdated();
+    renderEspnStrip(null);
+    renderPicksNotice(null);
+    renderDiag();
     return;
   }
   const d = st.draft || {}, lg = st.league || {};
@@ -1259,14 +1335,25 @@ function renderDraft() {
     setText($('dh-otc'), d.is_my_turn ? '— you are on the clock' : otc && otc.label ? '— on the clock: ' + otc.label + (otc.slot ? ' (slot ' + otc.slot + ')' : '') :
       d.status === 'pre_draft' ? '— waiting for the draft to start' : d.status === 'paused' ? '— paused' : '');
   }
+  // players the platform reports only on a team roster carry no pick number, so the board's counter is behind
+  const rosterOnly = num(d.rostered_only) || 0;
+  const conf = String(d.roster_pick_confidence || 'none');
+  const boardPicks = num(d.board_picks) != null ? num(d.board_picks) : null;
+  const behind = rosterOnly > 0 && conf === 'none';
   const mine = [];
   if (d.is_complete) mine.push('All picks made.');
-  else if (d.is_my_turn) { if (d.my_pick_after_next) mine.push('After this pick your next is #' + d.my_pick_after_next + '.'); }
+  else if (behind) {
+    mine.push('Your next pick cannot be counted while ' + platformLabel(platform()) + "'s draft board is behind" +
+      (boardPicks != null ? ' (' + boardPicks + ' pick' + (boardPicks === 1 ? '' : 's') + ' on the board, ' + rosterOnly +
+        ' more drafted player' + (rosterOnly === 1 ? '' : 's') + ' only on team rosters)' : '') + '.');
+  } else if (d.is_my_turn) { if (d.my_pick_after_next) mine.push('After this pick your next is #' + d.my_pick_after_next + '.'); }
   else if (d.my_next_pick_no) {
     const k = d.picks_until_my_turn;
     mine.push('You pick in ' + (k != null ? k : '?') + ' (#' + d.my_next_pick_no + ')' + (d.my_pick_after_next ? ', then #' + d.my_pick_after_next : '') + '.');
   } else mine.push('You have no picks left.');
   if (d.my_slot) mine.push('Your slot: ' + d.my_slot + '.');
+  if (rosterOnly > 0 && !behind) mine.push(rosterOnly + ' pick' + (rosterOnly === 1 ? '' : 's') + ' had no board entry and ' +
+    (rosterOnly === 1 ? 'was' : 'were') + ' read off the team rosters' + (conf === 'team' ? ' (pick numbers approximate)' : '') + '.');
   setText($('dh-next'), mine.join(' '));
 
   const banner = $('turn-banner');
@@ -1288,6 +1375,10 @@ function renderDraft() {
   setText($('dh-lat'), [s.latency_ms != null ? 'poll ' + fmt(s.latency_ms) + ' ms' : '', s.compute_ms != null ? 'compute ' + fmt(s.compute_ms) + ' ms' : '',
     st.version != null ? 'v' + st.version : ''].filter(Boolean).join(' • '));
   renderChatPill();
+  renderUpdated();
+  renderEspnStrip(st);
+  renderPicksNotice(st);
+  renderDiag();
 
   renderRoster(st);
   renderBest(st);
@@ -1483,15 +1574,42 @@ function renderRecent(st) {
   let h = '';
   let k = 0;
   for (const p of rec) {
-    const fresh = S.ui.fresh[String(p.pick_no)] ? ' fresh' : '';
+    // a player the platform reports only on a team roster has NO pick number: never print one, never animate it in
+    const rosterOnly = p.source === 'roster' || p.pick_no == null;
+    const fresh = !rosterOnly && S.ui.fresh[String(p.pick_no)] ? ' fresh' : '';
     const delay = fresh ? ' style="animation-delay:' + (k++ * 90) + 'ms"' : '';
-    h += '<tr class="' + (p.is_me ? 'mine' : '') + fresh + '"' + (p.player_id ? ' data-pid="' + esc(p.player_id) + '"' : '') + '><td class="n muted"' + delay + '>' + esc(p.pick_no) +
-      (p.round ? ' <span class="small">(' + esc(p.round) + '.' + esc(p.slot) + ')</span>' : '') + '</td><td class="name" style="max-width:82px" title="' + esc(p.label || '') + '">' +
+    const pick = rosterOnly ? '<span title="on a team roster; the draft board has no entry for this pick">—</span>'
+      : esc(p.pick_no) + (p.round ? ' <span class="small">(' + esc(p.round) + '.' + esc(p.slot) + ')</span>' : '');
+    const badge = rosterOnly ? ' <span class="badge roster" title="known from the team roster, not from the draft board — no pick number was published">roster</span>' : '';
+    h += '<tr class="' + (p.is_me ? 'mine' : '') + fresh + '"' + (p.player_id ? ' data-pid="' + esc(p.player_id) + '"' : '') + '><td class="n muted"' + delay + '>' + pick +
+      '</td><td class="name" style="max-width:82px" title="' + esc(p.label || '') + '">' +
       esc(p.label || 'slot ' + p.slot) + '</td><td class="fill" title="' + esc(p.name || '') + '">' + esc(p.name || p.player_id) + ' <span class="muted small">' + esc(p.position || '') +
-      (p.team ? ' ' + esc(p.team) : '') + '</span></td></tr>';
+      (p.team ? ' ' + esc(p.team) : '') + '</span>' + badge + '</td></tr>';
   }
-  if (!rec.length) h = '<tr><td colspan="3" class="muted">no picks yet</td></tr>';
+  // players the platform reports only on a team roster: their own block, and NEVER a pick number that was not published
+  const only = Array.isArray(st.roster_only) ? st.roster_only : [];
+  if (only.length) {
+    h += '<tr class="sep"><td colspan="3" class="muted small">On team rosters, not on ' + esc(platformLabel(platform())) +
+      "'s board (" + only.length + ')</td></tr>';
+    for (const p of only) {
+      const conf = String(p.confidence || get(st, 'draft.roster_pick_confidence', 'none'));
+      const cell = p.pick_no == null ? '<span title="no pick number was published for this player">—</span>'
+        : (conf === 'team' ? '~' : '') + esc(p.pick_no);
+      const tip = p.pick_no == null ? 'on a team roster; the draft board has no entry, so no pick number exists'
+        : conf === 'team' ? 'pick number derived from the pick order — the board has no entry for it'
+        : 'pick number reconstructed from the pick order and the roster';
+      h += '<tr class="' + (p.is_me ? 'mine' : '') + '"' + (p.player_id ? ' data-pid="' + esc(p.player_id) + '"' : '') +
+        '><td class="n muted" title="' + esc(tip) + '">' + cell + '</td><td class="name" style="max-width:82px" title="' + esc(p.label || '') + '">' +
+        esc(p.label || (p.slot ? 'slot ' + p.slot : '—')) + '</td><td class="fill" title="' + esc(p.name || '') + '">' + esc(p.name || p.player_id) +
+        ' <span class="muted small">' + esc(p.position || '') + (p.team ? ' ' + esc(p.team) : '') + '</span>' +
+        ' <span class="badge roster" title="' + esc(tip) + '">roster</span></td></tr>';
+    }
+  }
+  if (!h) h = '<tr><td colspan="3" class="muted">' + (isLive() && !isMock() ? 'no picks — last checked ' + esc(hms(S.stateAt / 1000)) : 'no picks yet') + '</td></tr>';
   setHTML($('recent-tbl').querySelector('tbody'), h);
+  const n = num(get(st, 'draft.rostered_only', null)) || only.length;
+  setText($('recent-note'), n && only.some((p) => p.pick_no == null)
+    ? platformLabel(platform()) + ' published no pick number for the ' + n + ' player' + (n === 1 ? '' : 's') + ' marked "roster": they are gone from the pool, but their pick number is unknown.' : '');
 }
 function renderOpponents(st) {
   const opps = Array.isArray(st.opponents) ? st.opponents : [];
@@ -1512,6 +1630,272 @@ function renderFooter(st) {
   setHTML($('notes'), notes.length ? notes.map((n) => '<li>' + esc(n) + '</li>').join('') : '<li class="muted">no notes</li>');
   const lastErr = S.ui.espnDenied || get(st, 'status.last_error', '');
   setText($('last-error'), lastErr ? 'last error: ' + lastErr : '');
+}
+
+
+// ---- Draft: freshness, the "no picks" notice and the diagnostics panel ------
+/**
+ * What the last poll's ESPN read reported (`status.espn` of the render payload, §3.9). Null for Sleeper,
+ * for mocks, and on a server that does not send the block yet — every reader below tolerates that.
+ */
+function espnDiag() { const e = get(S.state, 'status.espn', null); return e && typeof e === 'object' ? e : null; }
+/** How long ESPN's answer has been byte-for-byte the same story (counts + flags): the stateless server cannot know. */
+function observeEspn(st) {
+  const e = get(st, 'status.espn', null);
+  if (!e || typeof e !== 'object') { S.espnSig = { sig: '', since: 0 }; return; }
+  const sig = [e.board_entries, e.board_picks, e.roster_drafted, e.rostered_total, e.drafted, e.in_progress].join('|');
+  if (S.espnSig.sig !== sig) S.espnSig = { sig: sig, since: Date.now() };
+}
+/** "updated 3 s ago" next to the Refresh button — the page must never look idle. Ticks every second. */
+function renderUpdated() {
+  const el = $('dh-updated');
+  const on = isLive() && S.stateAt > 0;
+  const age = Date.now() - S.stateAt;
+  const short = window.innerWidth <= 640;
+  setText(el, !on ? '' : S.ui.refreshing ? (short ? 'reading…' : 'refreshing…') : (short ? agoText(age, true) + ' old' : 'updated ' + agoText(age)));
+  el.title = on ? 'last answer at ' + hms(S.stateAt / 1000) + (S.ui.forcedAt ? ' • last forced refresh ' + hms(S.ui.forcedAt / 1000) : '') : 'when the last poll answered';
+  el.classList.toggle('stale', on && !S.ui.refreshing && age > 15000);
+  show(el, on);
+  renderRefresh();
+}
+/** The Refresh controls (draft header, Setup, notice): busy spinner + disabled while one is in flight. */
+function renderRefresh() {
+  for (const id of ['refresh-btn', 'refresh-btn2', 'notice-refresh']) {
+    const b = $(id); if (!b) continue;
+    b.disabled = S.ui.refreshing || !isLive();          // nothing to re-read without a session
+    b.classList.toggle('busy', S.ui.refreshing);
+  }
+}
+/** One line under the draft header: exactly what the platform answered on the last read (never a cookie, never a dump). */
+function renderEspnStrip(st) {
+  const el = $('dh-espn');
+  const e = st ? espnDiag() : null;
+  if (!e) { setText(el, ''); show(el, false); return; }
+  const parts = ['ESPN ' + (e.http_status != null ? e.http_status : '?')];
+  if (num(e.board_entries) != null) parts.push('board ' + (num(e.board_picks) || 0) + '/' + num(e.board_entries));
+  if (num(e.roster_drafted) != null) parts.push('rosters ' + num(e.roster_drafted));
+  if (e.source && e.source !== 'none') parts.push('from ' + e.source);
+  if (window.innerWidth > 640) {                                    // a phone header has no room for the read times
+    if (num(e.fetched_at) != null) parts.push('read ' + hms(e.fetched_at));
+    if (num(e.capture_age_s) != null) parts.push('capture ' + fmt(e.capture_age_s) + ' s');
+  }
+  setText(el, parts.join(' · '));
+  el.title = 'the last ESPN read — HTTP ' + (e.http_status != null ? e.http_status : '?') +
+    ', ' + (num(e.board_picks) || 0) + ' of ' + (num(e.board_entries) || 0) + ' board slots filled, ' +
+    (num(e.roster_drafted) || 0) + ' drafted players on team rosters, drafted=' + (e.drafted ? 'true' : 'false') +
+    ', inProgress=' + (e.in_progress ? 'true' : 'false') + (e.url ? '\n' + e.url : '') + '\nOpen Diagnostics for the full report.';
+  show(el, true);
+}
+/**
+ * Zero picks must never look like silence: say what the platform answered and when we last asked.
+ * ESPN is known not to publish picks while a draft runs — say that too, and after 90 s of an unchanged
+ * answer add what a practice ("mock") room means.
+ */
+function renderPicksNotice(st) {
+  const box = $('picks-notice');
+  if (!box) return;
+  if (!st || !isLive() || isMock()) { show(box, false); return; }
+  const d = st.draft || {};
+  const e = espnDiag();
+  const recent = Array.isArray(st.recent) ? st.recent : [];
+  const boardPicks = e && num(e.board_picks) != null ? num(e.board_picks) : num(d.board_picks) != null ? num(d.board_picks) : recent.length;
+  const rosterOnly = num(d.rostered_only) || 0;
+  const nothing = boardPicks + rosterOnly === 0;                    // the platform reports no pick at all
+  const boardEmpty = boardPicks === 0 && rosterOnly > 0;            // ... or only what the team rosters give away
+  if (d.is_complete || !(nothing || boardEmpty)) { show(box, false); return; }
+  const espn = isEspn();
+  const plat = platformLabel(platform());
+  setText($('notice-title'), nothing ? plat + ' reports no picks yet' : plat + "'s draft board is empty — the picks come from the team rosters");
+  const checked = e && num(e.fetched_at) != null ? num(e.fetched_at) * 1000 : S.stateAt;
+  const lines = ['<div>Last checked <b>' + esc(hms(checked / 1000)) + '</b> (' + esc(agoText(Date.now() - checked)) +
+    '). This page is polling every ' + (isEspn() && S.ui.espnDenied ? '5' : myTurn() ? '1' : '2') + ' s — it is not stuck.</div>'];
+  if (e) {
+    lines.push('<div class="said">' + esc(plat) + ' answered HTTP ' + esc(e.http_status != null ? e.http_status : '?') +
+      (num(e.board_entries) != null ? ' · board ' + esc(num(e.board_picks) || 0) + ' of ' + esc(num(e.board_entries)) + ' slots filled' : '') +
+      (num(e.roster_drafted) != null ? ' · rosters ' + esc(num(e.roster_drafted)) + ' drafted' : '') +
+      ' · drafted=' + (e.drafted ? 'true' : 'false') + ' · inProgress=' + (e.in_progress ? 'true' : 'false') + '</div>');
+  } else if (espn) {
+    lines.push('<div class="muted">This server sends no <span class="mono">status.espn</span> block, so what ESPN answered is unknown here — press Diagnostics.</div>');
+  }
+  if (espn) {
+    lines.push("<div>ESPN's API does not publish picks while a draft is in progress: the board stays empty and every pick lands at once when the draft finishes. " +
+      'Polling faster cannot change that — this page shows what ESPN returns.</div>');
+    const stuck = S.espnSig.since ? Date.now() - S.espnSig.since : 0;
+    if (stuck > 90000) {
+      lines.push('<div>Nothing has changed on ESPN for <b>' + esc(agoText(stuck, true)) + '</b>. ESPN practice ("mock") drafts run in their own room and are never ' +
+        "written back to a league, so a practice draft never appears here; a real league draft does. Check that the draft you are in is this league's draft.</div>");
+    }
+  } else {
+    lines.push('<div>' + esc(plat) + ' publishes picks as they are made, so this is what it currently reports for this draft.</div>');
+  }
+  if (boardEmpty) {
+    const conf = String(d.roster_pick_confidence || 'none');
+    lines.push('<div><b>' + rosterOnly + ' drafted player' + (rosterOnly === 1 ? ' is' : 's are') + '</b> already on team rosters, so they are out of the pool and their team is known — ' +
+      'but ' + esc(plat) + ' published no pick number for them' +
+      (conf === 'none' ? '' : conf === 'team' ? ' (the approximate numbers shown come from the pick order)' : ' (the numbers shown were reconstructed from the pick order)') +
+      '. The round / pick counter and "you pick in N" follow the board and stay behind until it fills.</div>');
+  }
+  setHTML($('notice-body'), lines.join(''));
+  show(box, true);
+}
+
+/* ---- diagnostics report (GET /api/espn/diagnose; nothing is fetched until you ask) ---- */
+const DIAG_LABELS = {
+  http_status: 'HTTP status', url: 'Request URL', views: 'View params', bytes: 'Response size',
+  board_entries: 'Board entries', board_picks: 'Board entries with a real player', board_real: 'Board entries with a real player',
+  board_placeholders: 'Board entries still empty (playerId −1)', has_draft_detail: 'ESPN sent a draft board',
+  roster_drafted: 'Roster entries acquired in a draft', rostered_total: 'Players on team rosters', roster_entries: 'Roster entries',
+  roster_fresh: 'Roster entries from THIS draft', roster_undated: 'Drafted roster entries with no date', roster_only: 'Known from rosters only',
+  roster_only_picks: 'Known from rosters only', teams_with_rosters: 'Teams with a roster', roster_confidence: 'Pick-number confidence',
+  drafted: 'ESPN flag: drafted', in_progress: 'ESPN flag: inProgress', complete_date: 'ESPN completeDate',
+  draft_status: 'Draft status', draft_date: 'Scheduled draft time', league_sub_type: 'ESPN league sub-type',
+  cache_headers: 'Cache headers', used_history: 'Answered by leagueHistory', season_returned: 'Season in the answer',
+  poll_rosters: 'Poll asks for rosters', capture_age_s: 'League capture age', fetched_at: 'Read at', read_at: 'Read at',
+  latency_ms: 'Round trip', source: 'Picks come from', forced: 'Forced refresh', league_id: 'League id', season: 'Season',
+  league_name: 'League', team_id: 'Team id', my_team_id: 'My team id', my_slot: 'My draft slot', teams: 'Teams',
+  rounds: 'Rounds', total_picks: 'Total picks', draft_type: 'Draft type', pick_order_known: 'Pick order known',
+  next_pick_no: 'Next pick', pick_no: 'Pick', player_id: 'Player id', playerId: 'playerId', teamId: 'teamId',
+  roundId: 'Round', overallPickNumber: 'Overall pick', keeper: 'Keeper', roster_id: 'Roster id', label: 'Team',
+  slot: 'Slot', drafted_entries: 'Drafted entries', fresh_entries: 'From this draft', picks_source: 'Picks come from',
+  rostered_only: 'Known from rosters only', identity: 'This league and draft', espn: "ESPN's last answer",
+  board_sample: 'First board entries', platform: 'Platform',
+};
+function diagLabel(k) { return DIAG_LABELS[k] || String(k).replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()); }
+function diagValue(k, v) {
+  if (v == null || v === '') return '<span class="muted">–</span>';
+  if (typeof v === 'boolean') return v ? 'yes' : 'no';
+  if (Array.isArray(v)) return v.length ? esc(v.map((x) => (x && typeof x === 'object' ? JSON.stringify(x) : String(x))).join(', ')) : '<span class="muted">none</span>';
+  if (k === 'fetched_at' || k === 'read_at' || k === 'captured_at') return esc(hms(v)) + ' <span class="muted">(' + esc(agoText(Date.now() - (num(v) > 1e11 ? num(v) : num(v) * 1000))) + ')</span>';
+  if (k === 'capture_age_s') return esc(fmt(v)) + ' s' + (num(v) > 300 ? ' <span class="muted">(stale — Force refresh re-captures it)</span>' : '');
+  if (k === 'draft_date') return num(v) ? esc(fmtTime(v)) : '<span class="muted">not set</span>';
+  if (k === 'league_sub_type' && /MOCK/i.test(String(v))) return esc(String(v)) + ' <span class="muted">(a throwaway practice room: ESPN may never write its picks back to a league)</span>';
+  if (k === 'latency_ms') return esc(fmt(v)) + ' ms';
+  if (k === 'bytes') return esc((num(v) / 1024).toFixed(1)) + ' kB';
+  if (k === 'complete_date') return num(v) ? esc(fmtTime(v)) : '<span class="muted">not set</span>';
+  if (k === 'url') return '<span class="mono">' + esc(v) + '</span>';
+  if (typeof v === 'object') return '<span class="mono">' + esc(JSON.stringify(v)) + '</span>';
+  return esc(String(v));
+}
+function diagKV(obj) {
+  const rows = Object.entries(obj || {}).filter(([, v]) => typeof v !== 'object' || v == null || Array.isArray(v));
+  return rows.map(([k, v]) => '<div class="kv"><span>' + esc(diagLabel(k)) + '</span><span>' + diagValue(k, v) + '</span></div>').join('');
+}
+/** An array of objects → a small table (per-team roster counts, the board sample). */
+function diagTable(rows) {
+  const cols = [];
+  for (const r of rows) if (r && typeof r === 'object') for (const k of Object.keys(r)) if (!cols.includes(k)) cols.push(k);
+  if (!cols.length) return '<div class="muted small">' + esc(rows.join(', ')) + '</div>';
+  let h = '<div class="tscroll" style="max-height:260px"><table><thead><tr>' + cols.map((c) => '<th>' + esc(diagLabel(c)) + '</th>').join('') + '</tr></thead><tbody>';
+  for (const r of rows) h += '<tr>' + cols.map((c) => '<td>' + diagValue(c, r ? r[c] : null) + '</td>').join('') + '</tr>';
+  return h + '</tbody></table></div>';
+}
+/** The whole report, whatever shape the server chose: explanation first, then every section as a readable list. */
+function diagReportHTML(r) {
+  if (!r || typeof r !== 'object') return '<div class="hint">empty report</div>';
+  let h = '';
+  if (typeof r.explanation === 'string' && r.explanation.trim()) h += '<div class="expl">' + esc(r.explanation) + '</div>';
+  const flat = {};
+  for (const [k, v] of Object.entries(r)) if (k !== 'explanation' && (v == null || typeof v !== 'object' || Array.isArray(v) && !v.some((x) => x && typeof x === 'object'))) flat[k] = v;
+  if (Object.keys(flat).length) h += diagKV(flat);
+  for (const [k, v] of Object.entries(r)) {
+    if (k === 'explanation' || v == null || typeof v !== 'object') continue;
+    if (Array.isArray(v)) {
+      if (!v.some((x) => x && typeof x === 'object')) continue;                       // already in the flat list
+      h += '<h3>' + esc(diagLabel(k)) + ' <span class="muted small">(' + v.length + ')</span></h3>' + diagTable(v);
+    } else {
+      h += '<h3>' + esc(diagLabel(k)) + '</h3>' + diagKV(v);
+      for (const [k2, v2] of Object.entries(v)) {
+        if (Array.isArray(v2) && v2.some((x) => x && typeof x === 'object')) h += '<h3>' + esc(diagLabel(k2)) + ' <span class="muted small">(' + v2.length + ')</span></h3>' + diagTable(v2);
+        else if (v2 && typeof v2 === 'object' && !Array.isArray(v2)) h += '<h3>' + esc(diagLabel(k2)) + '</h3>' + diagKV(v2);
+      }
+    }
+  }
+  return h || '<div class="hint">the report carried no readable fields</div>';
+}
+/** What the last poll already told us — shown before (and after) the full report is fetched. */
+function lastPollHTML() {
+  const st = S.state || {};
+  const e = espnDiag();
+  const recent = Array.isArray(st.recent) ? st.recent : [];
+  const basics = {
+    platform: platformLabel(platform()),
+    last_poll: S.stateAt ? hms(S.stateAt / 1000) + ' (' + agoText(Date.now() - S.stateAt) + ')' : '–',
+    picks_on_the_board: e && num(e.board_picks) != null ? num(e.board_picks) : recent.length,
+    rostered_only: num(get(st, 'draft.rostered_only', null)) || 0,
+    picks_source: get(st, 'draft.picks_source', null),
+    draft_status: get(st, 'draft.status', null),
+    last_error: get(st, 'status.last_error', null) || S.ui.espnDenied || null,
+  };
+  let h = diagKV(basics);
+  if (e) h += "<h3>The platform's last answer</h3>" + diagKV(e);
+  return h;
+}
+function diagBodyHTML() {
+  if (isMock()) return '<div class="hint">A mock draft runs in the server: there is no platform request to diagnose.</div>';
+  if (!isLive()) return '<div class="hint">Start a live draft to see what the platform returns.</div>';
+  let h = '';
+  if (S.diag.error) h += '<div class="hint" style="color:var(--red)">diagnostics: ' + esc(S.diag.error) + '</div>';
+  if (!isEspn()) {
+    return h + '<div class="hint">This is a ' + esc(platformLabel(platform())) + ' draft — the ESPN diagnostics do not apply. ' +
+      'Sleeper publishes each pick as it is made, so the picks below are what Sleeper returned on the last poll.</div>' + lastPollHTML();
+  }
+  if (S.diag.report) return h + diagReportHTML(S.diag.report);
+  return h + '<div class="hint">What the last poll reported. <b>Run diagnostics</b> asks the server for the full report (one extra ESPN read, no Claude, no cost).</div>' + lastPollHTML();
+}
+function renderDiag() {
+  const pill = $('diag-pill');
+  if (!pill) return;
+  const e = isEspn() ? espnDiag() : null;
+  if (e) {
+    setText(pill, 'ESPN ' + (e.http_status != null ? e.http_status : '?') + ' · board ' + (num(e.board_picks) || 0) + '/' + (num(e.board_entries) || 0));
+    setClass(pill, 'pill ' + (num(e.http_status) === 200 ? (num(e.board_picks) ? 'ok' : 'warn') : 'bad'));
+  }
+  show(pill, !!e);
+  $('diag-run').disabled = S.diag.loading || !isLive() || isMock();
+  $('diag-copy').disabled = !(S.diag.report || S.state);
+  setText($('diag-info'), S.diag.loading ? 'reading…' : S.diag.at ? 'report read at ' + hms(S.diag.at / 1000) : '');
+  setHTML($('diag-body'), diagBodyHTML());
+}
+/** GET /api/espn/diagnose — user-initiated only, cache-busted, and never on a timer. */
+async function loadDiagnostics() {
+  if (S.diag.loading || !isLive() || isMock()) return;
+  if (!isEspn()) { S.diag.report = null; S.diag.error = null; renderDiag(); return; }
+  S.diag.loading = true; S.diag.error = null; renderDiag();
+  try {
+    const r = await api('/api/espn/diagnose?' + sessionQuery({ _: nonce() }), { timeout: 60000 });
+    S.diag.report = r && typeof r === 'object' ? r : null;
+    S.diag.at = Date.now();
+    if (!S.diag.report) S.diag.error = 'the server answered with no report';
+  } catch (e) {
+    S.diag.report = null;
+    S.diag.error = e.status === 404 ? 'this server has no /api/espn/diagnose endpoint (404) — the block below is what the last poll reported'
+      : e.message;
+  }
+  S.diag.loading = false;
+  renderDiag();
+}
+function openDiag(run) {
+  const p = $('diag-panel');
+  if (p.classList.contains('closed')) { p.classList.remove('closed'); lsSet('da.panel.' + p.id, false); }
+  renderDiag();
+  p.scrollIntoView({ block: 'nearest' });
+  if (run && !S.diag.loading && isEspn()) loadDiagnostics();
+}
+/** Copy the report (or, before one was fetched, what the last poll reported) as JSON. */
+async function copyDiag() {
+  const payload = S.diag.report || { espn: espnDiag(), draft: get(S.state, 'draft', null), status: get(S.state, 'status', null), copied_at: new Date().toISOString() };
+  const text = JSON.stringify(payload, null, 2);
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(text);
+    else throw new Error('no clipboard api');
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e2) { toast('could not copy — select the report and copy manually'); ta.remove(); return; }
+    ta.remove();
+  }
+  toast('Diagnostics copied (' + text.length + ' characters)', 'ok', 2500);
 }
 
 // ---- Board (GET /api/projections?league_id=…) ----------------------------
@@ -1808,6 +2192,7 @@ function applyState(st, lastPicks) {
   S.state = st || {}; S.stateAt = Date.now();
   if (st.snapshot) S.snapshot = st.snapshot;
   observePick(S.state);
+  observeEspn(S.state);
   S.ui.fresh = {};
   if (Array.isArray(lastPicks)) for (const p of lastPicks) { const no = p && typeof p === 'object' ? p.pick_no : null; if (no != null) S.ui.fresh[String(no)] = true; }
   // fold notes that arrived inside cards into the note cache
@@ -1899,6 +2284,39 @@ async function loadNotes() {
     if (S.state) renderAll();
   } catch (e) { /* notes are optional */ }
 }
+/**
+ * Force refresh — the ⟳ button, the Setup button and the `r` key. Re-reads everything now, past every
+ * cache: the browser's (`cache: "no-store"` + a nonce), our warm server caches and any CDN. `force=1`
+ * makes the server re-capture the league (settings, teams, rosters, pick order, clock) instead of using
+ * its 10-minute capture, then re-read the draft. One press = one round of reads; nothing here is paid.
+ */
+async function forceRefresh() {
+  if (S.ui.refreshing) return;
+  S.ui.refreshing = true; renderRefresh(); renderUpdated();
+  try {
+    if (isMock()) { await mockAction('sync'); toast('Synced', 'ok', 2000); }
+    else if (mode() === 'live') {
+      const st = await api('/api/state?' + sessionQuery({ force: 1, _: nonce() }), { timeout: 60000 });
+      applyState(st, null);
+      S.ui.forcedAt = Date.now();
+      const e = espnDiag();
+      const recent = Array.isArray(get(S.state, 'recent', null)) ? S.state.recent : [];
+      const picks = e && num(e.board_picks) != null ? num(e.board_picks) : recent.length;
+      const only = num(get(S.state, 'draft.rostered_only', null)) || 0;
+      toast('Refreshed at ' + hms(Date.now() / 1000) + ' — ' + platformLabel(platform()) + (e && e.http_status != null ? ' ' + e.http_status : '') +
+        ', ' + picks + ' pick' + (picks === 1 ? '' : 's') + ' on the board' + (only ? ' + ' + only + ' from rosters' : ''), 'ok', 3500);
+      S.board.loaded = false;                        // the Board tab re-reads under the fresh capture when it is next opened
+      if (isEspn() && !$('diag-panel').classList.contains('closed')) await loadDiagnostics();
+    } else await loadStatus();
+  } catch (e) {
+    onFail(e);
+    if (!e.espnAuth) toast('refresh: ' + e.message);
+  } finally {
+    S.ui.refreshing = false;
+    renderAll();
+    if (isLive()) schedule();
+  }
+}
 async function tick() {
   if (mode() === 'live') {
     await loadLiveState();
@@ -1913,7 +2331,12 @@ function schedule(ms) {
   if (ms == null) ms = mode() === 'live' ? (S.ui.espnDenied ? 5000 : myTurn() ? 1000 : 2000) : isMock() ? 5000 : 2000;   // slower while ESPN says 401
   _pollTimer = setTimeout(tick, ms);
 }
-setInterval(() => { if (S.ui.tab === 'draft') renderCountdown(); }, 1000);
+setInterval(() => {
+  if (S.ui.tab !== 'draft') return;
+  renderCountdown();
+  renderUpdated();                       // "updated 3 s ago" must keep moving, or the page looks idle
+  if (S.state && !$('picks-notice').hidden) renderPicksNotice(S.state);
+}, 1000);
 
 // ---- mock actions -------------------------------------------------------------
 /** POST /api/mock/state {session, action, player_id?}; keeps `picks` from the response in the session + localStorage. */
@@ -2204,6 +2627,7 @@ document.addEventListener('keydown', (ev) => {
   if (typing || S.ui.settingsOpen) return;
   if (ev.key === 'Enter') { if (tag !== 'button' && S.ui.tab === 'draft') { ev.preventDefault(); takeRecommended(); } return; }   // Enter on a focused button keeps its default
   if (ev.key === 'c' || ev.key === 'C') { setChatOpen(!S.ui.chatOpen); return; }
+  if ((ev.key === 'r' || ev.key === 'R') && !ev.ctrlKey && !ev.metaKey && !ev.altKey) { forceRefresh(); return; }   // Ctrl/Cmd+R stays the browser's reload
   if (/^[1-4]$/.test(ev.key)) showTab(TABS[parseInt(ev.key, 10) - 1]);
 });
 
@@ -2213,6 +2637,16 @@ let _qTimer = null;
 $('board-q').addEventListener('input', (ev) => { S.board.q = ev.target.value.trim(); clearTimeout(_qTimer); _qTimer = setTimeout(loadBoard, 300); });
 $('board-top').addEventListener('change', (ev) => { S.board.top = parseInt(ev.target.value, 10) || 100; loadBoard(); });
 $('board-reload').addEventListener('click', loadBoard);
+
+// ---- Refresh + diagnostics
+for (const id of ['refresh-btn', 'refresh-btn2', 'notice-refresh']) $(id).addEventListener('click', forceRefresh);
+$('notice-diag').addEventListener('click', () => openDiag(true));
+$('diag-run').addEventListener('click', () => loadDiagnostics());
+$('diag-copy').addEventListener('click', copyDiag);
+$('diag-panel').querySelector('h2').addEventListener('click', () => {           // opening it fetches the report once
+  if (!$('diag-panel').classList.contains('closed') && isEspn() && !S.diag.report && !S.diag.loading) loadDiagnostics();
+  else renderDiag();
+});
 
 // ---- boot
 (async function boot() {

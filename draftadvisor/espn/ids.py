@@ -69,17 +69,25 @@ def dst_team(espn_id: Any) -> str | None:
 
 def is_real_player_id(espn_id: Any) -> bool:
     """True when ``espn_id`` identifies an actual player: a positive id, or a D/ST id
-    (``-16000 - proTeamId``).
+    (``-16000 - proTeamId``, i.e. any id at or below :data:`DST_ID_BASE`).
 
     ESPN pre-populates the whole draft board before (and during) a draft: every pick that has not
     been made yet is listed with ``playerId`` ``-1`` (``0`` in some seasons). Those entries are
     placeholders, not picks - counting them fills the board, makes the draft look complete and stops
     the poller. Every board / roster reader must go through this predicate.
+
+    The D/ST test is structural (``id <= -16000``), not "is this a team I know": naming a defense is
+    :func:`dst_team`'s job, and a pro team missing from :data:`PRO_TEAM_MAP` (a relocation, a new id)
+    must not make the pick disappear from the board.
     """
     i = _int(espn_id)
     if i is None:
         return False
-    return i > 0 or dst_team(i) is not None
+    if i > 0:
+        return True
+    if i <= DST_ID_BASE and dst_team(i) is None:
+        log.info("ESPN D/ST id %d has no pro team in PRO_TEAM_MAP; keeping the pick with a placeholder", i)
+    return i <= DST_ID_BASE
 
 
 def espn_team(pro_team_id: Any) -> str | None:

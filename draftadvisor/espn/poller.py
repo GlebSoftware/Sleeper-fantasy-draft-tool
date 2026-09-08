@@ -1,7 +1,10 @@
 """ESPN draft poller: keeps a :class:`DraftState` in sync with ``draftDetail`` (same contract as
 :class:`draftadvisor.sleeper.poller.DraftPoller`, so ``cli.DraftLoop`` can consume either).
 
-Each poll is one GET (views mDraftDetail + mSettings). Besides the picks and the drafted / inProgress
+Each poll is one GET (views mDraftDetail + mSettings; with ``DRAFTADVISOR_ESPN_POLL_ROSTERS=1`` also
+mTeam + mRoster in the same request, so a player ESPN has put on a team roster but not on the draft
+board still leaves the pool - he is attributed to his team but never given a pick number ESPN did not
+publish). Besides the picks and the drafted / inProgress
 flags, the poll re-reads ``draftSettings.pickOrder``, ``timePerSelection``, ``type``, the lineup
 slot counts and the owners of not-yet-made picks, so a commissioner changing the order / clock /
 rounds (or a pick trade) before or during the draft is followed (the state is rebuilt, including "my"
@@ -23,6 +26,7 @@ import asyncio
 import dataclasses
 import inspect
 import logging
+import os
 import time
 from typing import Any, Callable, Mapping
 
@@ -73,6 +77,11 @@ class EspnDraftPoller:
         self.names: dict[str, Mapping[str, Any]] = dict(names or {})
         self.swid, self.team_id, self.slot, self.username = swid, team_id, slot, username
         self.settings = settings or Settings(poll_seconds=float(poll_seconds))
+        #: Ask for the team rosters in the same per-poll GET (``DRAFTADVISOR_ESPN_POLL_ROSTERS=1``).
+        #: Off by default here: the CLI already re-reads the rosters with ``refresh_league()`` and a
+        #: terminal draft board is not worth doubling the payload of every poll for. The web app, which
+        #: cannot call refresh_league between requests, has it on.
+        self.poll_rosters = os.environ.get("DRAFTADVISOR_ESPN_POLL_ROSTERS", "0") == "1"
 
         self.state: DraftState | None = None
         self.last_error: str | None = None
@@ -118,7 +127,27 @@ class EspnDraftPoller:
             (str(p.get("overallPickNumber")), str(p.get("playerId")), str(p.get("teamId")),
              bool(p.get("keeper") or p.get("reservedForKeeper")))
             for p in cls._board_entries(draft_json)))
-        return (entries, bool(detail.get("drafted")), bool(detail.get("inProgress")), cls._order_signature(draft_json))
+        return (entries, bool(detail.get("drafted")), bool(detail.get("inProgress")), cls._order_signature(draft_json),
+                cls._roster_signature(draft_json))
+
+    @staticmethod
+    def _roster_signature(draft_json: Mapping[str, Any]) -> tuple:
+        """Digest of the rosters the poll returned (view mTeam + mRoster), so a pick that shows up only
+        on a team roster produces a new state exactly like a pick appended to the board. ``()`` when the
+        payload carries no teams: a poll without rosters must never look like "the rosters emptied"."""
+        teams = draft_json.get("teams")
+        if not isinstance(teams, list) or not teams:
+            return ()
+        out: list[tuple] = []
+        for t in teams:
+            if not isinstance(t, Mapping):
+                continue
+            tid = t.get("id")
+            for e in ((t.get("roster") or {}).get("entries") or []):
+                if isinstance(e, Mapping):
+                    out.append((str(tid), str(e.get("playerId")), str(e.get("acquisitionType")),
+                                str(e.get("acquisitionDate"))))
+        return tuple(sorted(out))
 
     def _build_state(self, draft_json: Mapping[str, Any], version: int = 0) -> DraftState:
         st = state_from_espn(self._league_json or {}, draft_json, self.id_map, names=self._names, swid=self.swid,
@@ -137,7 +166,7 @@ class EspnDraftPoller:
         t0 = time.perf_counter()
         if self._league_json is None:
             self._league_json = await self.client.get_settings_and_teams(self.league_id, self.season)
-        draft_json = await self.client.get_draft_detail(self.league_id, self.season)
+        draft_json = await self.client.get_draft_live(self.league_id, self.season, rosters=self.poll_rosters)
         self._refresh_names()
         prev_version = self.state.version if self.state is not None else -1
         self.state = self._build_state(draft_json, version=prev_version + 1)
@@ -179,7 +208,7 @@ class EspnDraftPoller:
         if self.state is None:
             return await self.bootstrap()
         t0 = time.perf_counter()
-        draft_json = await self.client.get_draft_detail(self.league_id, self.season)
+        draft_json = await self.client.get_draft_live(self.league_id, self.season, rosters=self.poll_rosters)
         self.poll_count += 1
         self.last_latency_ms = (time.perf_counter() - t0) * 1000.0
         self.last_poll_at = time.time()
@@ -188,7 +217,12 @@ class EspnDraftPoller:
         if sig == self._signature:
             return None
         old = self.state
-        if self._order_signature(draft_json) != self._order_signature(self._draft_json):
+        if self._roster_signature(draft_json) != self._roster_signature(self._draft_json):
+            # the poll brought a changed roster: rebuild so a player who was drafted onto a roster leaves
+            # the pool (and is attributed to his team) instead of being carried over from the last state
+            log.info("ESPN rosters changed; re-parsing league %s", self.league_id)
+            new_state = self._build_state(draft_json, version=old.version + 1)
+        elif self._order_signature(draft_json) != self._order_signature(self._draft_json):
             log.info("draft order / settings changed; re-parsing ESPN league %s", self.league_id)
             new_state = self._build_state(draft_json, version=old.version + 1)
         else:
@@ -201,7 +235,8 @@ class EspnDraftPoller:
             new_state = DraftState(
                 draft=draft, picks=parse_espn_picks(draft_json, self.id_map, draft, self._names), league=old.league,
                 managers=old.managers, my_user_id=old.my_user_id, my_slot=old.my_slot, version=old.version + 1,
-                rostered_ids=old.rostered_ids,
+                rostered_ids=old.rostered_ids, roster_spots=list(old.roster_spots),
+                roster_confidence=old.roster_confidence, roster_pick_numbers=dict(old.roster_pick_numbers),
             )
         self._draft_json = dict(draft_json)
         self._signature = sig

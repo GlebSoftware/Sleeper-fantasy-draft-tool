@@ -19,10 +19,18 @@ hits the same cache entry - and every poll is a single ESPN GET (picks + the cur
 settings, so a changed clock / pick order is followed). Private leagues need the ``espn_s2``
 / ``SWID`` cookies: headers ``X-ESPN-S2`` / ``X-ESPN-SWID`` (browser Settings), else the
 server's ``ESPN_S2`` / ``ESPN_SWID`` env. One :class:`EspnClient` per credential pair, keyed
-by a hash; cookie values never reach logs, cache keys or responses. Whether ESPN updates
-``draftDetail.picks`` while a draft is in progress could not be verified offline: the
-server renders whatever ESPN returns each poll and gives no pick countdown (ESPN picks
-carry no timestamps).
+by a hash; cookie values never reach logs, cache keys or responses.
+
+ESPN's REST API does **not** publish picks while a draft is running: the board is pre-populated with
+one ``playerId: -1`` entry per pick and flushed in one go when the draft completes. The per-poll GET
+therefore asks for the team rosters as well (views mDraftDetail + mSettings + mTeam + mRoster in one
+request, ``POLL_ROSTERS``), because a drafted player may show up there first: such a player leaves the
+pool and is attributed to his team, but never gets a pick number ESPN did not publish - the clock stays
+board-derived. Every poll reports what ESPN actually returned in ``status.espn`` (status, redacted URL,
+views, board entries / real picks, roster counts, the draft flags, capture age), ``GET
+/api/espn/diagnose`` expands that into a readable report, and ``GET /api/state?force=1`` re-captures the
+league (settings, teams, rosters, pick order, clock) and re-reads the board, rate-limited server-side.
+No pick countdown is claimed (ESPN picks carry no timestamps).
 """
 from __future__ import annotations
 
@@ -41,6 +49,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Mapping, Sequence
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, PrivateAttr, ValidationError
 
@@ -61,6 +70,13 @@ VERSION = "2.2"
 PLATFORMS: tuple[str, ...] = ("sleeper", "espn")
 ESPN_CLIENT_MAX = 16          # distinct credential pairs kept warm per process
 ESPN_PRIVATE_HINT = "ESPN says this league is private - add your espn_s2 and SWID cookies under Settings"
+#: Ask ESPN for the team rosters on every poll (same request, four views). ``DRAFTADVISOR_ESPN_POLL_ROSTERS=0``
+#: drops them without a deploy if ESPN ever chokes on them or the payload gets unreasonable.
+POLL_ROSTERS = os.environ.get("DRAFTADVISOR_ESPN_POLL_ROSTERS", "1") != "0"
+#: At most one forced re-capture per league per this many seconds; a forced call that arrives sooner
+#: falls back to an ordinary (still uncached) poll instead of hammering ESPN.
+FORCE_RECAPTURE_MIN_INTERVAL = 5.0
+NO_STORE = {"Cache-Control": "no-store, max-age=0", "Vary": "X-ESPN-S2, X-ESPN-SWID, X-Access-Code"}
 
 
 # ---------------------------------------------------------------------------
@@ -513,6 +529,27 @@ async def resolve_league(sess: Session) -> LeagueBundle:
         return lb
 
 
+def drop_capture(sess: Session) -> bool:
+    """Forget the cached capture of this session's league so the next :func:`resolve_league` re-reads
+    settings, teams, rosters, the pick order and the clock from the platform.
+
+    Rate-limited to one forced re-capture per league per :data:`FORCE_RECAPTURE_MIN_INTERVAL` seconds
+    (an ESPN re-capture is 3 GETs, not 1): returns ``False`` when the caller must make do with an
+    ordinary - still uncached - poll, which is what holding the Refresh button gets.
+    """
+    key = _capture_key(sess)
+    guard = f"force:{key}"
+    if CACHE.get(guard, FORCE_RECAPTURE_MIN_INTERVAL) is not None:
+        log.info("force refresh for %s came within %.0f s of the last one; polling without re-capturing",
+                 _league_key(sess), FORCE_RECAPTURE_MIN_INTERVAL)
+        return False
+    CACHE.set(guard, time.time())
+    lb = CACHE.get(key, LEAGUE_TTL)
+    for k in (_bundle_keys(lb, key) if isinstance(lb, LeagueBundle) else [key]):
+        CACHE.pop(k)
+    return True
+
+
 def _espn_me(lb: LeagueBundle, sess: Session) -> tuple[str | None, int | None]:
     """``(team id, slot)`` of the session's manager in an ESPN capture (precedence: slot > team id > SWID >
     username, see :func:`draftadvisor.espn.parsing.resolve_my_team`); ``ValueError`` names the teams when
@@ -677,6 +714,28 @@ def ensure_pick_players(players: dict[str, Player], st: DraftState) -> int:
     return n
 
 
+def ensure_roster_players(players: dict[str, Player], st: DraftState) -> int:
+    """Placeholder :class:`Player` for every roster-only player the universe does not know (an ESPN
+    player the poll found on a team roster but who is in neither the fetched pool nor the capture);
+    returns how many were added. Without it such a player renders as ``espn:<id>``."""
+    from ..espn.ids import placeholder_player
+
+    n = 0
+    for s in st.roster_spots:
+        if s.player_id in players:
+            continue
+        first, _, last = (s.name or "").partition(" ")
+        pl = placeholder_player({"id": s.espn_id or s.player_id, "firstName": first or None, "lastName": last or None},
+                                s.player_id)
+        if s.name:
+            pl.name = s.name
+        pl.position = s.position or pl.position or "UNK"
+        pl.fantasy_positions = (pl.position,)
+        players[s.player_id] = pl
+        n += 1
+    return n
+
+
 def _build_context(lb: LeagueBundle, settings: Settings, players_payload: dict | None, proj: dict | None,
                    rows: list[dict], notes: Mapping[str, ResearchNote]) -> Any:
     """Blocking build of the lean context. For ESPN the id map is indexed over the very universe the context
@@ -696,20 +755,20 @@ def _build_context(lb: LeagueBundle, settings: Settings, players_payload: dict |
                               ecr_rows=rows, notes=notes, settings=settings, **extra)
 
 
-async def league_context(lb: LeagueBundle, sess: Session) -> Any:
+async def league_context(lb: LeagueBundle, sess: Session, *, force: bool = False) -> Any:
     """Lean context for the league (rebuilt when notes / inputs change or after CONTEXT_TTL); identity-free,
-    so every session of the same league shares one build."""
+    so every session of the same league shares one build. ``force`` rebuilds it from the fresh capture."""
     from ..lean import context_fingerprint
 
     notes = notes_dict()
     proj = await sleeper_projections(DEFAULT_SEASON)
     players_payload = await sleeper_players()
     fp = context_fingerprint(lb.league, bool(proj), bool(players_payload), len(notes))
-    if lb.ctx is not None and lb.ctx_fp == fp and time.time() - lb.ctx.built_at < CONTEXT_TTL:
+    if not force and lb.ctx is not None and lb.ctx_fp == fp and time.time() - lb.ctx.built_at < CONTEXT_TTL:
         return lb.ctx
     ctx_key = f"ctx:{lb.league_key or lb.key}:{fp}"
     async with lock_for(ctx_key):
-        ctx = CACHE.get(ctx_key, CONTEXT_TTL)
+        ctx = None if force else CACHE.get(ctx_key, CONTEXT_TTL)
         if ctx is None:
             rows = await ecr_rows()
             settings = Settings.from_env(league_id=lb.league.league_id, draft_id=lb.draft.draft_id if lb.draft else None,
@@ -720,28 +779,122 @@ async def league_context(lb: LeagueBundle, sess: Session) -> Any:
         return ctx
 
 
-async def espn_live_state(lb: LeagueBundle, sess: Session, id_map: Any = None) -> DraftState:
-    """One ESPN GET (picks + current draft settings) -> DraftState; the clock and pick order are re-read.
-    ``id_map`` is the context's map (the board's universe); the capture's map is only the fallback."""
+def espn_diagnostics(info: Mapping[str, Any], poll_json: Mapping[str, Any] | None, st: DraftState,
+                     lb: LeagueBundle, *, forced: bool = False) -> dict:
+    """What ESPN actually returned on this poll: counts and flags only, never a payload dump and never
+    a cookie (the URL is redacted by the client). Built entirely from this one request - the server is
+    stateless, so nothing here compares against a previous poll.
+    """
+    from ..espn.ids import is_real_player_id
+    from ..espn.parsing import DRAFT_ACQUISITIONS, draft_detail_of, draft_settings_of, merge_league_payload
+
+    poll = poll_json if isinstance(poll_json, Mapping) else {}
+    detail = draft_detail_of(poll)
+    entries = [p for p in (detail.get("picks") or []) if isinstance(p, Mapping)]
+    real = sum(1 for p in entries if is_real_player_id(p.get("playerId")))
+    merged = merge_league_payload(lb.league_raw or {}, poll)
+    teams = [t for t in (merged.get("teams") or []) if isinstance(t, Mapping)]
+    with_rosters = sum(1 for t in teams if ((t.get("roster") or {}).get("entries") or []))
+    spots = st.roster_spots
+    drafted_entries = sum(1 for s in spots if (s.acquisition_type or "").upper() in DRAFT_ACQUISITIONS)
+    fresh = sum(1 for s in spots if s.is_fresh)
+    roster_only = len(st.roster_only_ids)
+    source = ("board+rosters" if (real and roster_only) else "board" if real else "rosters" if roster_only else "none")
+    ds = draft_settings_of(poll, lb.league_raw or {})
+    return {
+        "fetched_at": info.get("read_at"), "http_status": info.get("http_status"), "url": info.get("url"),
+        "views": list(info.get("views") or []), "bytes": info.get("bytes"), "latency_ms": info.get("latency_ms"),
+        "cache_headers": dict(info.get("cache_headers") or {}), "used_history": bool(info.get("used_history")),
+        "season_returned": info.get("season_returned"),
+        "has_draft_detail": bool(detail),
+        "board_entries": len(entries), "board_picks": real, "board_placeholders": len(entries) - real,
+        "roster_drafted": drafted_entries, "rostered_total": len(spots), "roster_fresh": fresh,
+        "roster_undated": max(0, drafted_entries - fresh), "roster_only": roster_only,
+        "teams_with_rosters": with_rosters, "roster_confidence": st.roster_confidence,
+        "drafted": bool(detail.get("drafted")), "in_progress": bool(detail.get("inProgress")),
+        "complete_date": detail.get("completeDate"), "draft_status": st.draft.status,
+        "draft_date": ds.get("date"), "league_sub_type": ds.get("leagueSubType"),
+        "league_id": lb.league.league_id if lb.league is not None else None, "season": lb.season,
+        "capture_age_s": _f(time.time() - lb.built_at, 1),
+        "source": source, "forced": bool(forced), "poll_rosters": POLL_ROSTERS,
+    }
+
+
+def espn_explanation(diag: Mapping[str, Any]) -> str:
+    """One plain-English paragraph saying what the numbers mean (the Diagnostics panel shows it verbatim)."""
+    board, entries = int(diag.get("board_picks") or 0), int(diag.get("board_entries") or 0)
+    fresh, drafted_on_rosters = int(diag.get("roster_fresh") or 0), int(diag.get("roster_drafted") or 0)
+    sub = str(diag.get("league_sub_type") or "")
+    if not diag.get("has_draft_detail"):
+        return ("ESPN answered without a draftDetail block at all: there is no draft board in the payload. "
+                "That is a degraded or throttled answer, not an empty draft - try Refresh.")
+    if board == 0 and fresh == 0:
+        msg = (f"ESPN returned a {entries}-entry board with 0 real picks and {drafted_on_rosters} drafted players on "
+               "team rosters: ESPN is not publishing this draft. ESPN's REST API does not update the draft board "
+               "while a draft is in progress - every pick appears at once when the draft finishes - so an empty "
+               "board here is what a working poller sees during an ESPN draft.")
+    elif board == 0:
+        conf = str(diag.get("roster_confidence") or "none")
+        where = {"exact": "Their pick numbers were reconstructed from the draft order and the order they were added.",
+                 "team": "Each team's pick numbers are known, the order within a team is a guess.",
+                 }.get(conf, "They carry no pick number: ESPN's board is the only place pick numbers come from.")
+        msg = (f"ESPN's board is still empty ({entries} placeholder entries) but {fresh} freshly drafted players are "
+               "already on team rosters, so the draft is running and those players have been removed from the pool. "
+               + where)
+    else:
+        msg = (f"ESPN's board holds {board} of {entries} entries as real picks"
+               + (f", and {fresh} drafted players are on team rosters." if fresh else "."))
+    if sub in ("MOCKDRAFT_LOBBY", "CUSTOM_MOCK"):
+        msg += (f" This room is a {sub}: an ESPN mock / practice draft is a throwaway room whose picks may never be "
+                "written back to any league, so they may never appear here at all.")
+    if diag.get("used_history"):
+        msg += " The answer came from ESPN's leagueHistory endpoint (the live league endpoint refused the request)."
+    age = diag.get("cache_headers", {}).get("age")
+    if age and str(age) != "0":
+        msg += f" A CDN answered this request (Age: {age}s), so it may be up to that old."
+    return msg
+
+
+async def espn_poll(lb: LeagueBundle, sess: Session, id_map: Any = None, *,
+                    forced: bool = False) -> tuple[DraftState, dict, dict]:
+    """One ESPN GET -> ``(state, diagnostics, the payload)``.
+
+    The single per-poll request asks for the board, the draft settings **and** the team rosters (four
+    views, one request): ESPN's board stays empty for the whole of a live draft, so the rosters are the
+    only live signal it does publish. ``id_map`` is the context's map (the board's universe); the
+    capture's map is only the fallback.
+    """
     from ..espn.parsing import state_from_espn
 
     league_id = sess.league_id or lb.league.league_id or ""
+    info: dict[str, Any] = {}
     async with espn_client(sess.espn_auth) as client:
         try:
-            draft_json = await client.get_draft_detail(league_id, lb.season)
+            poll_json = await client.get_draft_live(league_id, lb.season, rosters=POLL_ROSTERS, no_cache=forced,
+                                                    info=info)
         except Exception as e:  # noqa: BLE001
             raise espn_http_error(e, league_id, lb.season, sess.espn_auth)
-    return state_from_espn(lb.league_raw or {}, draft_json, id_map if id_map is not None else lb.id_map,
-                           names=lb.espn_names, **sess.espn_identity())
+    st = state_from_espn(lb.league_raw or {}, poll_json, id_map if id_map is not None else lb.id_map,
+                         names=lb.espn_names, **sess.espn_identity())
+    return st, espn_diagnostics(info, poll_json, st, lb, forced=forced), poll_json
 
 
-async def live_state(lb: LeagueBundle, sess: Session, id_map: Any = None) -> DraftState:
-    """Fetch the draft + picks right now and build the DraftState (2 Sleeper GETs, 1 ESPN GET)."""
+async def espn_live_state(lb: LeagueBundle, sess: Session, id_map: Any = None, *,
+                          forced: bool = False) -> tuple[DraftState, dict]:
+    """:func:`espn_poll` without the raw payload."""
+    st, diag, _ = await espn_poll(lb, sess, id_map, forced=forced)
+    return st, diag
+
+
+async def live_state(lb: LeagueBundle, sess: Session, id_map: Any = None, *,
+                     forced: bool = False) -> tuple[DraftState, dict]:
+    """Fetch the draft + picks right now and build the DraftState (2 Sleeper GETs, 1 ESPN GET).
+    Returns the state and, for ESPN, what that GET returned (``{}`` for Sleeper)."""
     from ..sleeper.client import SleeperAPIError, SleeperNotFound
     from ..sleeper.parsing import state_from_sleeper
 
     if lb.platform == "espn":
-        return await espn_live_state(lb, sess, id_map)
+        return await espn_live_state(lb, sess, id_map, forced=forced)
     draft_id = sess.draft_id or (lb.draft.draft_id if lb.draft else None)
     if not draft_id:
         raise HTTPException(400, "no draft id")
@@ -763,7 +916,7 @@ async def live_state(lb: LeagueBundle, sess: Session, id_map: Any = None) -> Dra
                             username=sess.username, user_id=sess.user_id, slot=sess.slot)
     if st.league is None:
         st.league = lb.league
-    return st
+    return st, {}
 
 
 def _mock_key(cfg: MockConfig) -> str:
@@ -828,7 +981,8 @@ def _note_dict(note: ResearchNote | None) -> dict | None:
 def card_from_player(pl: Player, pr: Projection | None, notes: Mapping[str, ResearchNote] | None = None,
                      vorp: float | None = None) -> dict:
     return {
-        "player_id": pl.player_id, "name": pl.name, "position": pl.position, "team": pl.team, "bye": pl.bye_week,
+        "player_id": pl.player_id, "espn_id": pl.espn_id, "name": pl.name, "position": pl.position, "team": pl.team,
+        "bye": pl.bye_week,
         "age": _f(pl.age), "years_exp": pl.years_exp, "injury_status": pl.injury_status,
         "depth_chart_order": pl.depth_chart_order,
         "points": _f(pr.points) if pr else None, "floor": _f(pr.floor) if pr else None,
@@ -925,6 +1079,14 @@ def build_payload(lb: LeagueBundle, ctx: Any, st: DraftState, rec: Recommendatio
         "last_picked": st.draft.last_picked, "rookie_draft": bool(getattr(st, "is_rookie_draft", False)),
         "rostered_excluded": len(getattr(st, "rostered_ids", set()) or ()),
     }
+    # where the picks we know about came from: ESPN's board, the team rosters, or nowhere
+    roster_only = sorted(getattr(st, "roster_only_ids", set()) or ())
+    draft.update({
+        "board_picks": len(st.picks), "rostered_only": len(roster_only), "roster_only_picks": len(roster_only),
+        "picks_source": ("board+rosters" if (st.picks and roster_only) else "board" if st.picks
+                         else "rosters" if roster_only else "none"),
+        "roster_pick_confidence": getattr(st, "roster_confidence", "none"),
+    })
     league_d = {"name": league.name, "scoring_type": league.scoring_type, "scoring_description": ctx.engine.describe(),
                 "roster_positions": list(league.roster_positions), "teams": league.total_rosters, "season": league.season}
     me = None
@@ -959,6 +1121,25 @@ def build_payload(lb: LeagueBundle, ctx: Any, st: DraftState, rec: Recommendatio
                        "player_id": p.player_id, "name": pl.name if pl else p.player_name,
                        "position": pl.position if pl else p.position, "team": pl.team if pl else p.metadata.get("team"),
                        "is_me": slot == st.my_slot, "is_keeper": p.is_keeper})
+    # players ESPN shows on a team roster but not on its draft board: they are gone from the pool and
+    # their team is known, but ESPN published no pick number for them, so none is invented here
+    roster_rows = []
+    slot_of_team = {rid: s_ for s_, rid in st.draft.slot_to_roster_id.items()}
+    confidence = getattr(st, "roster_confidence", "none")
+    pick_numbers: Mapping[str, int] = getattr(st, "roster_pick_numbers", {}) or {}
+    roster_only_set = set(roster_only)
+    for spot in sorted((s for s in getattr(st, "roster_spots", []) if s.player_id in roster_only_set),
+                       key=lambda s: -(s.acquired_at or 0)):
+        pl = players.get(spot.player_id)
+        slot = slot_of_team.get(spot.roster_id) if spot.roster_id is not None else None
+        roster_rows.append({"player_id": spot.player_id, "name": pl.name if pl else (spot.name or spot.player_id),
+                            "position": pl.position if pl else spot.position, "team": pl.team if pl else None,
+                            "slot": slot, "label": st.slot_label(slot) if slot else None,
+                            "roster_id": spot.roster_id, "acquired_at": spot.acquired_at,
+                            "acquisition_type": spot.acquisition_type,
+                            "pick_no": pick_numbers.get(spot.player_id) if confidence != "none" else None,
+                            "confidence": confidence, "source": "roster",
+                            "is_me": slot is not None and slot == st.my_slot})
     opponents = []
     if rec is not None:
         taken = getattr(st, "taken_pick_numbers", set())
@@ -968,12 +1149,13 @@ def build_payload(lb: LeagueBundle, ctx: Any, st: DraftState, rec: Recommendatio
                               "position_counts": dict(rs.position_counts),
                               "players": [{"name": pl.name, "position": pl.position} for pl in rs.players]})
     status = {"compute_ms": _f(rec.compute_ms) if rec else None, "ts": now, "sources": dict(ctx.sources),
-              "platform": lb.platform}
+              "platform": lb.platform, "espn": None}
     if extra_status:
         status.update(extra_status)
     return {"mode": mode, "version": st.version, "ts": now, "draft": draft, "league": league_d, "me": me,
             "best": [card_from_value(v, notes) for v in values[:BEST_N]], "by_position": by_position,
             "available": [card_from_value(v, notes) for v in values[:AVAILABLE_TOP_N]], "recent": recent,
+            "roster_only": roster_rows,
             "opponents": opponents, "pressure": {k: _f(v, 2) for k, v in (rec.position_pressure.items() if rec else [])},
             "notes": list(rec.notes) if rec else [], "snapshot": snapshot_payload(lb, st), "status": status}
 
@@ -995,9 +1177,11 @@ class Resolved:
     rec: Recommendation | None
     mock: Any = None
     last_picks: list = field(default_factory=list)
+    diag: dict = field(default_factory=dict)      # espn: what the poll's ESPN GET returned
 
 
-async def resolve(sess: Session, *, mock_action: str = "sync", player_id: str | None = None) -> Resolved:
+async def resolve(sess: Session, *, mock_action: str = "sync", player_id: str | None = None,
+                  force: bool = False) -> Resolved:
     if sess.mode == "mock":
         cfg = sess.mock or MockConfig()
         if not (2 <= cfg.teams <= 20 and 3 <= cfg.rounds <= 30 and 1 <= cfg.slot <= cfg.teams):
@@ -1037,14 +1221,17 @@ async def resolve(sess: Session, *, mock_action: str = "sync", player_id: str | 
             raise HTTPException(400, "league_id required for an ESPN league (the leagueId= number in the league URL)")
     elif not (sess.draft_id or sess.league_id):
         raise HTTPException(400, "draft_id or league_id required")
+    recaptured = drop_capture(sess) if force else False
     lb = await resolve_league(sess)
     resolve_me(lb, sess)                        # 400 for an unknown team / manager / slot, before any poll
-    ctx = await league_context(lb, sess)
-    st = await live_state(lb, sess, ctx.id_map)
+    ctx = await league_context(lb, sess, force=recaptured)
+    st, diag = await live_state(lb, sess, ctx.id_map, forced=force)
     if lb.platform == "espn":
         ensure_pick_players(ctx.players, st)
+        ensure_roster_players(ctx.players, st)
+        diag["recaptured"] = recaptured
     rec = recommend(ctx, st)
-    return Resolved(lb, ctx, st, rec)
+    return Resolved(lb, ctx, st, rec, diag=diag)
 
 
 # ---------------------------------------------------------------------------
@@ -1076,6 +1263,213 @@ class ChatReq(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Browser extension (POST /api/extension/advice)
+# ---------------------------------------------------------------------------
+#
+# ESPN's REST API does not publish picks while a draft runs (the board stays at ``playerId: -1`` until
+# the draft completes), so the owner's own draft-room tab is the only live source. A Chrome/Edge
+# extension reads the picks there and posts them here; this endpoint therefore makes **zero** outbound
+# calls (no ESPN, no Sleeper, no Anthropic - nothing metered, nothing networked). Everything it needs is
+# the bundle plus whatever Sleeper/ECR data happens to be warm in :data:`CACHE` already.
+
+
+EXT_TOP_N = 5                      # cards per list (overall + per position)
+EXT_INDEX_TTL = 6 * 3600
+EXT_SCORING = ("ppr", "half_ppr", "std")
+
+
+class ExtPlayerRef(BaseModel):
+    """One player the extension saw on the ESPN board: its numeric ESPN id and/or the name it read."""
+
+    espn_id: int | None = None
+    name: str | None = None
+
+
+class ExtAdviceReq(BaseModel):
+    taken: list[ExtPlayerRef]                       # every player off the board, mine included
+    mine: list[ExtPlayerRef] = []                   # the subset on my roster
+    scoring: str = "ppr"
+    teams: int = 12
+    rounds: int = 16
+    superflex: bool = False
+    roster_positions: list[str] | None = None       # Sleeper slot labels; None -> the default lineup
+
+
+def ext_league(req: ExtAdviceReq) -> LeagueSettings:
+    """The synthetic league one extension request describes (no platform call is made for it)."""
+    from ..lean import default_league
+
+    league = default_league(req.scoring, req.teams)
+    if req.roster_positions:
+        positions = [str(p).upper() for p in req.roster_positions if str(p).strip()]
+    else:
+        starters = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX"] + (["SUPER_FLEX"] if req.superflex else []) + ["K", "DEF"]
+        positions = starters + ["BN"] * max(0, req.rounds - len(starters))
+    league.roster_positions = positions
+    league.league_id = f"ext_{req.scoring}_{req.teams}_{int(req.superflex)}_{hashlib.sha1(','.join(positions).encode()).hexdigest()[:8]}"
+    league.name = f"Extension league ({req.teams} teams, {req.scoring})"
+    return league
+
+
+def ext_context_key(league: LeagueSettings, rounds: int) -> str:
+    return f"ctx:ext:{league.league_id}:{rounds}"
+
+
+async def ext_context(league: LeagueSettings, rounds: int) -> Any:
+    """Lean context for one extension league, cached per (scoring, teams, superflex, roster positions).
+
+    Built from the bundle plus only what is **already warm** - Sleeper projections and ECR rows are read
+    out of the cache, never fetched: this endpoint must answer with no network at all.
+    """
+    from ..lean import CACHE as LEAN_CACHE, ECR_TTL, build_lean_context, get_bundle
+
+    key = ext_context_key(league, rounds)
+    hit = CACHE.get(key, CONTEXT_TTL)
+    if hit is not None:
+        return hit
+    async with lock_for(key):
+        hit = CACHE.get(key, CONTEXT_TTL)
+        if hit is not None:
+            return hit
+        proj = CACHE.get("sleeper_proj", 3600)
+        rows = LEAN_CACHE.get("ecr", ECR_TTL) or []
+        try:
+            notes = notes_dict()
+        except Exception:  # noqa: BLE001
+            notes = {}
+        ctx = await asyncio.to_thread(build_lean_context, get_bundle(), league, None, sleeper_players=None,
+                                      sleeper_proj=proj, ecr_rows=rows, notes=notes)
+        CACHE.set(key, ctx)
+        return ctx
+
+
+def ext_index() -> dict[str, Any]:
+    """``espn_id -> player_id`` and ``normalised name -> [player_id]`` over the bundle, built once."""
+    from ..data.names import normalize_name
+    from ..lean import get_bundle
+
+    hit = CACHE.get("ext:index", EXT_INDEX_TTL)
+    if hit is not None:
+        return hit
+    by_espn: dict[str, str] = {}
+    by_name: dict[str, list[str]] = {}
+    for pid, pl in get_bundle().players.items():
+        if pl.espn_id:
+            by_espn.setdefault(str(pl.espn_id).strip(), pid)
+        n = normalize_name(pl.name)
+        if n:
+            by_name.setdefault(n, []).append(pid)
+    idx = {"espn": by_espn, "name": by_name}
+    CACHE.set("ext:index", idx)
+    return idx
+
+
+def ext_resolve(refs: Sequence[ExtPlayerRef], idx: Mapping[str, Any], ctx: Any) -> tuple[list[str], list[str]]:
+    """``(player ids, labels we could not match)`` for one list of extension references.
+
+    ESPN id first (D/ST ids are negative, ``-16000 - proTeamId``: :func:`draftadvisor.espn.ids.dst_team`),
+    then the normalised name. A name several players share is settled by projected points; a name nobody
+    has is reported in ``unresolved`` - a request never fails over one unknown player.
+    """
+    from ..data.names import normalize_name
+    from ..espn.ids import dst_team, is_real_player_id
+
+    out: list[str] = []
+    unresolved: list[str] = []
+    seen: set[str] = set()
+    for ref in refs:
+        label = ref.name or (f"espn:{ref.espn_id}" if ref.espn_id is not None else "?")
+        pid: str | None = None
+        if ref.espn_id is not None and is_real_player_id(ref.espn_id):
+            pid = idx["espn"].get(str(int(ref.espn_id)))
+            if pid is None:
+                team = dst_team(ref.espn_id)
+                if team and team in ctx.players:
+                    pid = team
+        if pid is None:
+            cands = [p for p in (idx["name"].get(normalize_name(ref.name)) or []) if p in ctx.players]
+            if len(cands) == 1:
+                pid = cands[0]
+            elif cands:
+                pid = max(cands, key=lambda p: (ctx.projections[p].points if p in ctx.projections else 0.0))
+        if pid is None or pid not in ctx.players:
+            unresolved.append(label)
+            continue
+        if pid not in seen:
+            seen.add(pid)
+            out.append(pid)
+    return out, unresolved
+
+
+def ext_state(ctx: Any, league: LeagueSettings, rounds: int, taken: Sequence[str], mine: Sequence[str]) -> DraftState:
+    """A :class:`DraftState` that holds exactly what the extension reported: every taken player is
+    unavailable and my players sit on my slot, so roster needs and lineup value are real.
+
+    The slot is the one whose share of the picks made so far matches the size of my roster, and the
+    pick numbers exist only to place the players consistently - none of them is reported back.
+    """
+    from ..mock.simulator import MY_USER_ID, make_mock_draft
+
+    teams = league.total_rosters
+    mine_ids = [p for p in mine]
+    mine_set = set(mine_ids)
+    others = [p for p in taken if p not in mine_set]
+    made = len(mine_ids) + len(others)
+    order = make_mock_draft(league, 1, teams, rounds)
+    my_slot, best = 1, None
+    for s in range(1, teams + 1):
+        d = abs(sum(1 for n in order.picks_for_slot(s) if n <= made) - len(mine_ids))
+        if best is None or d < best:
+            best, my_slot = d, s
+    draft = make_mock_draft(league, my_slot, teams, rounds)
+    my_numbers = draft.picks_for_slot(my_slot)
+    mine_numbers = set(my_numbers)
+
+    def _pick(no: int, pid: str) -> Any:
+        from ..models import Pick
+
+        pl = ctx.players.get(pid)
+        slot = draft.slot_for_pick(no)
+        return Pick(pick_no=no, round=draft.round_of(no), draft_slot=slot, player_id=pid,
+                    roster_id=draft.original_roster_for_slot(slot),
+                    metadata={"position": pl.position if pl else None, "team": pl.team if pl else None,
+                              "first_name": (pl.name.split(" ")[0] if pl and pl.name else None)})
+
+    picks = [_pick(n, pid) for pid, n in zip(mine_ids, my_numbers)]
+    free = (n for n in range(1, draft.total_picks + 1) if n not in mine_numbers)
+    for pid in others:
+        n = next(free, None)
+        if n is None:
+            break
+        picks.append(_pick(n, pid))
+    picks.sort(key=lambda p: p.pick_no)
+    return DraftState(draft=draft, picks=picks, league=league, my_user_id=MY_USER_ID, my_slot=my_slot,
+                      rostered_ids=set(taken) | mine_set)
+
+
+def ext_card(v: PlayerValue) -> dict:
+    pl = v.player
+    return {"player_id": pl.player_id, "espn_id": pl.espn_id, "name": pl.name, "position": pl.position,
+            "team": pl.team, "bye": pl.bye_week, "points": _f(v.projection.points) if v.projection else None,
+            "vorp": _f(v.vorp), "adp": _f(pl.adp), "tier": v.tier, "why": "; ".join(list(v.reasons)[:2])}
+
+
+def ext_payload(rec: Recommendation, counts: Mapping[str, int], unresolved: Sequence[str], ms: float) -> dict:
+    overall = [ext_card(v) for v in rec.best_overall[:EXT_TOP_N]]
+    by_position = {pos: [ext_card(v) for v in adv.candidates[:EXT_TOP_N]] for pos, adv in rec.by_position.items()}
+    suggestion = None
+    if rec.best_overall:
+        top = rec.best_overall[0]
+        adv = rec.by_position.get(top.player.position or "")
+        suggestion = {"player_id": top.player_id, "name": top.player.name, "position": top.player.position,
+                      "team": top.player.team, "action": adv.action if adv else "take",
+                      "why": (adv.rationale if adv and adv.rationale else "; ".join(list(top.reasons)[:2]))}
+    return {"overall": overall, "by_position": by_position, "suggestion": suggestion,
+            "needs": rec.my_roster.needs() if rec.my_roster is not None else [],
+            "counts": dict(counts), "unresolved": list(unresolved), "ms": int(round(ms))}
+
+
+# ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
 
@@ -1083,6 +1477,29 @@ class ChatReq(BaseModel):
 def create_app() -> FastAPI:
     app = FastAPI(title="draftadvisor", docs_url="/api/docs", redoc_url=None)
     guarded = [Depends(require_access)]
+
+    # The browser extension calls this API from inside the ESPN draft room (https://*.espn.com). The API
+    # holds no secrets and no cookies (credentials are off, so "*" cannot be used to read anyone's data),
+    # and the CORS middleware sits above routing, so the OPTIONS preflight succeeds even when
+    # DRAFTADVISOR_ACCESS_CODE is set - the access code is still required on the actual request.
+    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_origin_regex=r"https://([a-z0-9-]+\.)*espn\.com",
+                       allow_credentials=False, allow_methods=["GET", "POST", "OPTIONS"], allow_headers=["*"],
+                       max_age=600)
+
+    @app.middleware("http")
+    async def no_store_api(request: Request, call_next: Any) -> Any:
+        """Never let a CDN or proxy answer an API request.
+
+        Every ``/api/`` URL is byte-identical from one poll to the next and the answer depends on request
+        *headers* (the ESPN cookies, the access code), so a shared cache would both freeze the board and
+        risk serving one user's league to another. Endpoints that set their own ``Cache-Control`` (the
+        chat stream) keep it.
+        """
+        response = await call_next(request)
+        if request.url.path.startswith("/api/"):
+            response.headers.setdefault("Cache-Control", NO_STORE["Cache-Control"])
+            response.headers.setdefault("Vary", NO_STORE["Vary"])
+        return response
 
     @app.get("/", include_in_schema=False)
     async def index() -> Any:
@@ -1192,17 +1609,45 @@ def create_app() -> FastAPI:
                 "draft_order_known": bool(lb.draft and lb.draft.draft_order), "message": message}
 
     @app.get("/api/state", dependencies=guarded)
-    async def state(request: Request) -> dict:
+    async def state(request: Request) -> Any:
+        """The poll. ``force=1`` re-captures the league (settings, teams, rosters, pick order, clock),
+        rebuilds the lean context from it and re-reads the draft, bypassing every warm cache; it is
+        rate-limited server-side (see :func:`drop_capture`) so holding the button cannot hammer ESPN.
+
+        The response is ``no-store``: the poll URL is byte-identical every time and varies on the ESPN
+        cookie headers, so a CDN or proxy answering it would freeze the board (and could hand one
+        user's league to another).
+        """
         sess = Session.from_query(request)
         if sess.mode == "mock":
             r = await resolve(sess, mock_action="sync")
             payload = build_payload(r.lb, r.ctx, r.state, r.rec, "mock")
             payload["picks"] = r.state.metadata["picks"]  # type: ignore[attr-defined]
             payload["last_picks"] = []
-            return payload
+            return Response(json.dumps(payload), media_type="application/json", headers=NO_STORE)
         t0 = time.perf_counter()
-        r = await resolve(sess)
-        return build_payload(r.lb, r.ctx, r.state, r.rec, "live", {"latency_ms": _f((time.perf_counter() - t0) * 1000)})
+        force = str(request.query_params.get("force", "")).lower() in ("1", "true", "yes")
+        r = await resolve(sess, force=force)
+        payload = build_payload(r.lb, r.ctx, r.state, r.rec, "live",
+                                {"latency_ms": _f((time.perf_counter() - t0) * 1000), "espn": r.diag or None,
+                                 "forced": force})
+        return Response(json.dumps(payload), media_type="application/json", headers=NO_STORE)
+
+    @app.get("/api/espn/diagnose", dependencies=guarded)
+    async def espn_diagnose(request: Request) -> Any:
+        """What ESPN returned on one read of this session's league, in numbers the owner can read.
+
+        Costs one ESPN GET (the same request a poll makes), never a re-capture. Cookie values appear
+        nowhere: the URL is redacted and only counts and flags are reported.
+        """
+        sess = Session.from_query(request)
+        if sess.platform != "espn" or sess.mode == "mock":
+            return Response(json.dumps({
+                "platform": sess.platform, "espn": None, "teams": [], "board_sample": [], "identity": None,
+                "explanation": "ESPN diagnostics do not apply to this session (it is not an ESPN live draft).",
+            }), media_type="application/json", headers=NO_STORE)
+        report = await espn_diagnose_report(sess)
+        return Response(json.dumps(report), media_type="application/json", headers=NO_STORE)
 
     @app.post("/api/mock/state", dependencies=guarded)
     async def mock_state(req: MockStateReq, request: Request) -> dict:
@@ -1215,6 +1660,32 @@ def create_app() -> FastAPI:
                                   "player_id": p.player_id, "name": p.player_name, "position": p.position,
                                   "is_me": p.draft_slot == r.state.my_slot} for p in r.last_picks]
         return payload
+
+    @app.post("/api/extension/advice", dependencies=guarded)
+    async def extension_advice(req: ExtAdviceReq) -> Any:
+        """Recommendations for a draft the caller describes: it says who is gone and who is mine.
+
+        Zero outbound calls (no ESPN, no Sleeper, nothing metered): the ESPN draft room is the only place
+        picks appear while a draft runs, so the extension reads them there and posts them here. Cost of
+        one call: 0 tokens, $0.00.
+        """
+        t0 = time.perf_counter()
+        if req.scoring not in EXT_SCORING:
+            raise HTTPException(400, f"scoring must be one of {', '.join(EXT_SCORING)}")
+        if not 2 <= req.teams <= 20 or not 1 <= req.rounds <= 40:
+            raise HTTPException(400, "teams must be 2-20 and rounds 1-40")
+        league = ext_league(req)
+        ctx = await ext_context(league, req.rounds)
+        idx = ext_index()
+        taken, unresolved = ext_resolve(req.taken, idx, ctx)
+        mine, unresolved_mine = ext_resolve(req.mine, idx, ctx)
+        taken_all = list(dict.fromkeys(list(taken) + list(mine)))
+        st = ext_state(ctx, league, req.rounds, taken_all, mine)
+        rec = await asyncio.to_thread(ctx.advisor.recommend, st, EXT_TOP_N, EXT_TOP_N)
+        counts = {"taken": len(req.taken), "resolved": len(taken_all), "mine": len(mine)}
+        payload = ext_payload(rec, counts, unresolved + [u for u in unresolved_mine if u not in unresolved],
+                              (time.perf_counter() - t0) * 1000.0)
+        return Response(json.dumps(payload), media_type="application/json", headers=NO_STORE)
 
     @app.post("/api/chat", dependencies=guarded)
     async def chat(req: ChatReq, request: Request) -> StreamingResponse:
@@ -1346,6 +1817,56 @@ def _espn_owner_names(team: Mapping[str, Any], members: Mapping[str, Mapping[str
         if name and name not in names:
             names.append(str(name))
     return names
+
+
+async def espn_diagnose_report(sess: Session) -> dict:
+    """``GET /api/espn/diagnose``: one ESPN read of the session's league, reported in numbers.
+
+    The ``espn`` block is the one the poll puts in ``status.espn``; on top of it come the per-team roster
+    counts, up to ten board entries as ESPN sent them (pick number, player id, team id, keeper flag - no
+    names needed), the resolved league / draft identity, and a plain-English explanation. Nothing here
+    can carry a cookie: the URL is redacted by the client and only counts and flags are copied out.
+    """
+    from ..espn.parsing import DRAFT_ACQUISITIONS, draft_detail_of, merge_league_payload
+
+    if not sess.league_id:
+        raise HTTPException(400, "league_id required for an ESPN league (the leagueId= number in the league URL)")
+    lb = await resolve_league(sess)
+    ctx = await league_context(lb, sess)
+    st, diag, poll_json = await espn_poll(lb, sess, ctx.id_map)
+    merged = merge_league_payload(lb.league_raw or {}, poll_json)
+    spots_by_team: dict[Any, list] = {}
+    for s in st.roster_spots:
+        spots_by_team.setdefault(s.roster_id, []).append(s)
+    teams = []
+    for t in (merged.get("teams") or []):
+        if not isinstance(t, Mapping) or t.get("id") is None:
+            continue
+        tid = int(t["id"])
+        mine = spots_by_team.get(tid, [])
+        m = st.managers.get(str(tid))
+        teams.append({"team_id": tid, "label": (m.team_name or m.display_name) if m else f"Team {tid}",
+                      "slot": st.draft.draft_order.get(str(tid)),
+                      "roster_entries": len(((t.get("roster") or {}).get("entries") or [])),
+                      "drafted_entries": sum(1 for s in mine if (s.acquisition_type or "").upper() in DRAFT_ACQUISITIONS),
+                      "fresh_entries": sum(1 for s in mine if s.is_fresh),
+                      "board_picks": sum(1 for p in st.picks if p.roster_id == tid)})
+    detail = draft_detail_of(poll_json)
+    sample = []
+    for raw in (detail.get("picks") or [])[:10]:
+        if isinstance(raw, Mapping):
+            sample.append({"overallPickNumber": raw.get("overallPickNumber"), "roundId": raw.get("roundId"),
+                           "playerId": raw.get("playerId"), "teamId": raw.get("teamId"),
+                           "keeper": bool(raw.get("keeper") or raw.get("reservedForKeeper"))})
+    return {
+        "platform": "espn", "espn": diag, "teams": teams, "board_sample": sample,
+        "identity": {"league_id": lb.league.league_id, "league_name": lb.league.name, "season": lb.season,
+                     "teams": st.draft.teams, "rounds": st.draft.rounds, "total_picks": st.draft.total_picks,
+                     "draft_type": st.draft.type, "draft_status": st.draft.status,
+                     "my_team_id": st.my_user_id, "my_slot": st.my_slot,
+                     "pick_order_known": bool(st.draft.draft_order), "next_pick_no": st.next_pick_no},
+        "explanation": espn_explanation(diag),
+    }
 
 
 async def espn_lookup(league_id: str, season: int, auth: EspnAuth) -> dict:

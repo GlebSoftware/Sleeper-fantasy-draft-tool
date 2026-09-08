@@ -3,17 +3,24 @@
 Routes (``base_url`` = ``http://127.0.0.1:<port>/apis/v3/games/ffl``):
 
 * ``/seasons/{season}/segments/0/leagues/{id}?view=...`` and ``/leagueHistory/{id}?seasonId=`` (the
-  latter answers with a one-element list, like ESPN): the response is chosen by the ``view`` params -
-  ``kona_player_info`` -> ``players_kona.json``; ``mDraftDetail`` -> the draft fixture selected by
-  :attr:`EspnStub.draft` (``complete`` / ``in_progress`` / ``pre_draft`` / ``live``); anything else ->
-  ``league_settings_teams.json`` (or ``league_modern.json`` when :attr:`EspnStub.league` is ``"modern"``);
+  latter answers with a one-element list, like ESPN): the response is *composed* from the ``view``
+  params, as ESPN composes one payload out of every view of a request - ``kona_player_info`` ->
+  ``players_kona.json`` (exclusive); ``mDraftDetail`` -> the draft fixture selected by
+  :attr:`EspnStub.draft` (``complete`` / ``in_progress`` / ``pre_draft`` / ``live``); ``mTeam`` /
+  ``mRoster`` -> the ``teams`` and ``members`` of the league fixture; neither -> the whole league
+  payload (``league_settings_teams.json``, ``league_modern.json`` when :attr:`EspnStub.league` is
+  ``"modern"``, or a synthetic 12-team / 16-round league with a 192-entry placeholder board when it is
+  ``"twelve"``);
 * unknown league ids -> 404; a private stub without ``espn_s2`` + ``SWID`` cookies -> 401;
 * ``/apis/v2/fans/{swid}`` -> a minimal Fan API payload naming the fixture league.
 
 Knobs: ``picks_visible`` truncates the served pick list (``draft="live"`` serves the complete draft's
-first N picks with ``inProgress`` until all are visible), ``timer_override`` / ``pick_order_override``
-rewrite ``draftSettings``, ``fail_next`` makes the next N requests fail with ``fail_status``. Every
-request is recorded in :attr:`EspnStub.requests` (path, query, headers, cookies).
+first N picks with ``inProgress`` until all are visible), ``roster_picks`` moves the first N picks off
+the board and onto the owning teams' rosters as ``acquisitionType: DRAFT`` entries - what a real ESPN
+draft looks like over REST while it is running: the board stays at ``playerId: -1`` and only the
+rosters fill - ``timer_override`` / ``pick_order_override`` rewrite ``draftSettings``, ``fail_next``
+makes the next N requests fail with ``fail_status``. Every request is recorded in
+:attr:`EspnStub.requests` (path, query, headers, cookies).
 
 The per-poll (``mDraftDetail``) payload carries ``draftSettings`` - the order / clock / type / date the
 poller re-reads - but not ``rosterSettings``: the stub serves several league flavours (classic,
@@ -44,6 +51,8 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures" / "espn"
 LEAGUE_ID = "368876"
 SEASON = 2018
 SWID_TEAM_1 = "{6863-6934-3455}"          # primary owner of team 1 ("Goin' HAM Newton", draft slot 3)
+DRAFT_DATE_MS = 1535198400000             # draftSettings.date of the draft fixtures
+TWELVE_TEAMS, TWELVE_ROUNDS = 12, 16      # the "twelve" league flavour: 192 picks, like the reported one
 
 _LEAGUE_RE = re.compile(r"^/apis/v3/games/ffl/seasons/(\d+)/segments/0/leagues/([^/]+)/?$")
 _HISTORY_RE = re.compile(r"^/apis/v3/games/ffl/leagueHistory/([^/]+)/?$")
@@ -60,12 +69,14 @@ class EspnStub:
 
     def __init__(self, *, league_ids: tuple[str, ...] = (LEAGUE_ID,), private: bool = False, draft: str = "complete",
                  league: str = "classic", picks_visible: int | None = None, host: str = "127.0.0.1", port: int = 0,
-                 latency: float = 0.0):
+                 latency: float = 0.0, roster_picks: int | None = None, empty_rosters: bool = False):
         self.league_ids = {str(x) for x in league_ids}
         self.private = private
         self.draft = draft
         self.league = league
         self.picks_visible = picks_visible
+        self.roster_picks = roster_picks
+        self.empty_rosters = empty_rosters
         self.timer_override: int | None = None
         self.pick_order_override: list[int] | None = None
         self.fail_next = 0
@@ -140,7 +151,49 @@ class EspnStub:
         return copy.deepcopy(self._cache[name])
 
     def league_payload(self) -> dict:
+        if self.league == "twelve":
+            return self.twelve_payload()
         return self.fixture("league_modern.json" if self.league == "modern" else "league_settings_teams.json")
+
+    def twelve_payload(self) -> dict:
+        """The classic league grown to 12 teams and 16 rounds - the shape of the league this app was
+        reported broken on (12 teams, 16 rounds = 192 picks, PPR). Teams 11 and 12 are clones of the
+        first two with fresh ids and empty rosters; one bench slot is added so a full roster is 16."""
+        league = self.fixture("league_settings_teams.json")
+        teams = league["teams"]
+        next_id = max(int(t["id"]) for t in teams) + 1               # the fixture's ids are not 1..10
+        for i, src in enumerate(teams[:2]):
+            clone = copy.deepcopy(src)
+            tid = next_id + i
+            clone.update({"id": tid, "abbrev": f"T{tid}", "location": "Expansion", "nickname": f"Team {tid}",
+                          "owners": [], "primaryOwner": None, "roster": {"entries": []}})
+            teams.append(clone)
+        st = league["settings"]
+        st["size"] = TWELVE_TEAMS
+        st["draftSettings"]["pickOrder"] = [t["id"] for t in teams]
+        st["draftSettings"]["type"] = "SNAKE"
+        st["draftSettings"]["date"] = DRAFT_DATE_MS
+        counts = st["rosterSettings"]["lineupSlotCounts"]
+        counts["20"] = int(counts.get("20") or 0) + 1              # one more bench slot: 16 rounds
+        return league
+
+    def twelve_board(self) -> dict:
+        """A pre-populated 192-entry board for :meth:`twelve_payload`: one entry per pick in snake order,
+        every ``playerId`` -1 - exactly what ESPN serves before *and throughout* a live draft."""
+        league = self.twelve_payload()
+        order = league["settings"]["draftSettings"]["pickOrder"]
+        picks = []
+        for rnd in range(1, TWELVE_ROUNDS + 1):
+            slots = order if rnd % 2 else list(reversed(order))
+            for i, team_id in enumerate(slots, start=1):
+                picks.append({"overallPickNumber": (rnd - 1) * TWELVE_TEAMS + i, "roundId": rnd, "roundPickNumber": i,
+                              "teamId": team_id, "playerId": -1, "keeper": False, "reservedForKeeper": False,
+                              "bidAmount": 0, "autoDraftTypeId": 0, "id": (rnd - 1) * TWELVE_TEAMS + i,
+                              "lineupSlotId": 0, "nominatingTeamId": 0})
+        live = self.draft in ("live", "in_progress")
+        return {"gameId": 1, "id": int(LEAGUE_ID), "seasonId": SEASON, "segmentId": 0,
+                "settings": {"draftSettings": copy.deepcopy(league["settings"]["draftSettings"])},
+                "draftDetail": {"completeDate": 0, "drafted": False, "inProgress": live, "picks": picks}}
 
     def _apply_overrides(self, payload: dict) -> dict:
         ds = payload.setdefault("settings", {}).setdefault("draftSettings", {})
@@ -151,6 +204,8 @@ class EspnStub:
         return payload
 
     def draft_payload(self) -> dict:
+        if self.league == "twelve":
+            return self._apply_overrides(self.twelve_board())
         if self.draft == "live":
             d = self.fixture("draft_complete.json")
             picks = d["draftDetail"]["picks"]
@@ -169,6 +224,37 @@ class EspnStub:
 
     def players_payload(self) -> dict:
         return self.fixture("players_kona.json")
+
+    def teams_payload(self) -> dict:
+        """``teams`` + ``members`` as views mTeam + mRoster return them.
+
+        With ``roster_picks`` set, the rosters are rebuilt to hold exactly the first N picks of the
+        draft fixture (``acquisitionType`` DRAFT, ``acquisitionDate`` a second apart from the draft's
+        scheduled time) and nothing else - the live-draft shape the board never shows. With
+        ``empty_rosters`` every roster is emptied (a redraft league before its draft).
+        """
+        league = self.league_payload()
+        teams = league.get("teams") or []
+        if self.empty_rosters or self.roster_picks is not None:
+            for t in teams:
+                t["roster"] = {"entries": []}
+        if self.roster_picks:
+            # the players of the first N picks of the completed fixture, on the teams that own picks
+            # 1..N of the board actually being served, stamped a second apart from the draft's start
+            drafted = self.fixture("draft_complete.json")["draftDetail"]["picks"]
+            board = sorted((p for p in self.draft_payload()["draftDetail"]["picks"]),
+                           key=lambda p: p.get("overallPickNumber") or 0)
+            by_id = {t.get("id"): t for t in teams}
+            for i, (owner, pick) in enumerate(list(zip(board, drafted))[: int(self.roster_picks)]):
+                team = by_id.get(owner.get("teamId"))
+                if team is None:
+                    continue
+                team["roster"]["entries"].append({
+                    "playerId": pick["playerId"], "lineupSlotId": 20, "acquisitionType": "DRAFT",
+                    "acquisitionDate": DRAFT_DATE_MS + 1000 * i, "injuryStatus": "NORMAL",
+                    "playerPoolEntry": {"id": pick["playerId"], "player": {"id": pick["playerId"]}},
+                })
+        return {"teams": teams, "members": league.get("members") or []}
 
     def fan_payload(self, swid: str) -> dict:
         return {
@@ -214,6 +300,8 @@ class EspnStub:
             payload: Any = self.players_payload()
         elif "mDraftDetail" in views:
             payload = self.draft_payload()
+            if any(v in views for v in ("mTeam", "mRoster")):
+                payload.update(self.teams_payload())      # ESPN answers one payload for every view asked
         else:
             payload = self.league_payload()
         return 200, ([payload] if history else payload)
@@ -224,12 +312,14 @@ def main() -> None:
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--draft", default="live", choices=("complete", "in_progress", "pre_draft", "live"))
-    ap.add_argument("--league", default="classic", choices=("classic", "modern"))
+    ap.add_argument("--league", default="classic", choices=("classic", "modern", "twelve"))
     ap.add_argument("--picks", type=int, default=None, help="number of picks visible")
+    ap.add_argument("--roster-picks", type=int, default=None,
+                    help="serve the first N picks on team rosters only (live-draft shape: empty board)")
     ap.add_argument("--private", action="store_true", help="require espn_s2 + SWID cookies")
     args = ap.parse_args()
     stub = EspnStub(private=args.private, draft=args.draft, league=args.league, picks_visible=args.picks,
-                    host=args.host, port=args.port).start()
+                    roster_picks=args.roster_picks, host=args.host, port=args.port).start()
     print(f"ESPN stub serving league {LEAGUE_ID} ({SEASON}) at {stub.base_url}")
     print(f"export DRAFTADVISOR_ESPN_BASE={stub.base_url}")
     try:

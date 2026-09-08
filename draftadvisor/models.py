@@ -250,6 +250,30 @@ class Pick:
         return f"{f or ''} {l or ''}".strip() or self.player_id
 
 
+@dataclass(frozen=True, slots=True)
+class RosterSpot:
+    """One player sitting on a league roster, with the provenance the platform published.
+
+    Platform-neutral (ESPN fills it from ``teams[].roster.entries[]``; Sleeper can later). It is *not*
+    a :class:`Pick`: a roster tells us a player is gone and whose team he is on, never at which pick
+    number he went, so a spot must never reach ``taken_pick_numbers`` / ``next_pick_no``.
+
+    ``lineup_slot_id`` is used for exactly three things: skipping IR entries when deciding whether a
+    spot looks like a fresh pick, a position fallback when the entry carries no player object, and a
+    tooltip. It never orders or groups a roster panel.
+    """
+
+    player_id: str                              # canonical id
+    espn_id: str | None = None
+    roster_id: int | None = None                # platform team id (ESPN ``teams[].id``)
+    acquisition_type: str | None = None         # DRAFT / ADD / TRADE / ... (may be absent)
+    acquired_at: int | None = None              # platform epoch ms, verbatim: never compared to our clock
+    lineup_slot_id: int | None = None
+    name: str | None = None
+    position: str | None = None
+    is_fresh: bool = False                      # looks like a pick of the draft being watched
+
+
 # ---------------------------------------------------------------------------
 # Draft state (what the poller produces every tick)
 # ---------------------------------------------------------------------------
@@ -268,6 +292,12 @@ class DraftState:
     updated_at: float = field(default_factory=time.time)
     version: int = 0                            # increments whenever picks change
     rostered_ids: set[str] = field(default_factory=set)  # players already on league rosters (dynasty/keeper): undraftable
+    roster_spots: list[RosterSpot] = field(default_factory=list)   # the same players with team + provenance
+    #: How much of a pick number the roster spots justify: ``"exact"`` (the reconstruction matched the
+    #: draft order), ``"team"`` (each team's own picks are known, their order is a guess) or ``"none"``.
+    roster_confidence: str = "none"
+    #: canonical player id -> the pick number the reconstruction attached (only when it could be proved)
+    roster_pick_numbers: dict[str, int] = field(default_factory=dict)
 
     # -- basic derived values ---------------------------------------------------
     @property
@@ -282,6 +312,23 @@ class DraftState:
     def unavailable_ids(self) -> set[str]:
         """Players nobody can draft: already picked (incl. keepers on the board) or on a league roster."""
         return self.drafted_ids | self.rostered_ids
+
+    @property
+    def roster_only_ids(self) -> set[str]:
+        """On a roster and *not* on the board: known to be gone, with no pick number of their own."""
+        return {s.player_id for s in self.roster_spots} - self.drafted_ids
+
+    def roster_spots_by_slot(self) -> dict[int, list[RosterSpot]]:
+        """Roster-only spots grouped by draft slot; spots whose team is unknown land under key ``0``
+        (counted, never attributed). Players already on the board are left out - they are picks."""
+        slot_of_team = {rid: slot for slot, rid in self.draft.slot_to_roster_id.items()}
+        drafted = self.drafted_ids
+        out: dict[int, list[RosterSpot]] = {}
+        for s in self.roster_spots:
+            if s.player_id in drafted:
+                continue
+            out.setdefault(slot_of_team.get(s.roster_id, 0) if s.roster_id is not None else 0, []).append(s)
+        return out
 
     @property
     def is_rookie_draft(self) -> bool:
@@ -409,7 +456,10 @@ class DraftState:
             my_slot=self.my_slot,
             updated_at=time.time(),
             version=self.version + 1,
-            rostered_ids=set(self.rostered_ids),
+            rostered_ids=set(self.rostered_ids) | {s.player_id for s in self.roster_spots},
+            roster_spots=list(self.roster_spots),
+            roster_confidence=self.roster_confidence,
+            roster_pick_numbers=dict(self.roster_pick_numbers),
         )
 
 
