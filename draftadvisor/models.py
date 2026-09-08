@@ -46,6 +46,7 @@ class Player:
     search_rank: int | None = None              # Sleeper popularity rank (lower is better); 9999999 = unranked
     gsis_id: str | None = None                  # nflverse id "00-00xxxxx"
     fantasypros_id: str | None = None
+    espn_id: str | None = None                  # ESPN fantasy player id (str; team defenses map by pro-team abbreviation)
     draft_year: int | None = None
     draft_round: int | None = None
     draft_pick_overall: int | None = None

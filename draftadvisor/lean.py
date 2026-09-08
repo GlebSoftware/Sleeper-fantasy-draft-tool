@@ -51,7 +51,7 @@ def _player_from_dict(d: Mapping[str, Any]) -> Player:
         team=d.get("team"), fantasy_positions=tuple(fps), age=d.get("age"), years_exp=d.get("years_exp"),
         injury_status=d.get("injury_status"), status=d.get("status"), depth_chart_order=d.get("depth_chart_order"),
         depth_chart_position=d.get("depth_chart_position"), bye_week=d.get("bye_week"), search_rank=d.get("search_rank"),
-        gsis_id=d.get("gsis_id"), fantasypros_id=d.get("fantasypros_id"), draft_year=d.get("draft_year"),
+        gsis_id=d.get("gsis_id"), fantasypros_id=d.get("fantasypros_id"), espn_id=d.get("espn_id"), draft_year=d.get("draft_year"),
         draft_round=d.get("draft_round"), draft_pick_overall=d.get("draft_pick_overall"), adp=d.get("adp"),
         adp_source=d.get("adp_source"), ecr=d.get("ecr"), ecr_sd=d.get("ecr_sd"), ecr_pos_rank=d.get("ecr_pos_rank"),
     )
@@ -63,7 +63,7 @@ def player_to_dict(pl: Player) -> dict:
         "fantasy_positions": list(pl.fantasy_positions), "age": pl.age, "years_exp": pl.years_exp,
         "injury_status": pl.injury_status, "status": pl.status, "depth_chart_order": pl.depth_chart_order,
         "depth_chart_position": pl.depth_chart_position, "bye_week": pl.bye_week, "search_rank": pl.search_rank,
-        "gsis_id": pl.gsis_id, "fantasypros_id": pl.fantasypros_id, "draft_year": pl.draft_year,
+        "gsis_id": pl.gsis_id, "fantasypros_id": pl.fantasypros_id, "espn_id": pl.espn_id, "draft_year": pl.draft_year,
         "draft_round": pl.draft_round, "draft_pick_overall": pl.draft_pick_overall,
         # build-time market snapshot: used only when the live ECR fetch fails
         "ecr": pl.ecr, "ecr_sd": pl.ecr_sd, "ecr_pos_rank": pl.ecr_pos_rank,
@@ -200,7 +200,8 @@ def _player_from_sleeper(pid: str, p: Mapping[str, Any]) -> Player | None:
                   age=_f(p.get("age")), years_exp=_i(p.get("years_exp")), injury_status=p.get("injury_status") or None,
                   status=p.get("status"), depth_chart_order=_i(p.get("depth_chart_order")),
                   depth_chart_position=p.get("depth_chart_position") if isinstance(p.get("depth_chart_position"), str) else None,
-                  search_rank=_i(p.get("search_rank")), gsis_id=p.get("gsis_id"))
+                  search_rank=_i(p.get("search_rank")), gsis_id=p.get("gsis_id"),
+                  espn_id=str(p["espn_id"]) if p.get("espn_id") not in (None, "") else None)
 
 
 def players_from_sleeper_payload(payload: Mapping[str, Mapping], base: Mapping[str, Player]) -> dict[str, Player]:
@@ -217,6 +218,7 @@ def players_from_sleeper_payload(payload: Mapping[str, Mapping], base: Mapping[s
         if b is not None:
             pl.gsis_id = pl.gsis_id or b.gsis_id
             pl.fantasypros_id = b.fantasypros_id
+            pl.espn_id = pl.espn_id or b.espn_id
             pl.draft_year, pl.draft_round, pl.draft_pick_overall = b.draft_year, b.draft_round, b.draft_pick_overall
             if pl.age is None:
                 pl.age = b.age
