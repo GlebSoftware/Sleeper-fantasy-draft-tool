@@ -1,7 +1,19 @@
 """Command line interface (argparse). See DESIGN.md §3.6.
 
 Subcommands: ``prep``, ``train``, ``draft``, ``mock``, ``projections``, ``trade``, ``analyze``,
-``research``, ``ask``, ``ids``, ``capture``. Global flags: ``--home DIR``, ``--offline``, ``-v``.
+``ask``, ``ids``, ``web``, ``capture``. Global flags: ``--home DIR``, ``--offline``, ``--season``, ``-v``.
+
+Every command that involves a league takes ``--platform sleeper|espn`` (default Sleeper). For ESPN,
+``--league`` is the ``leagueId=`` number of the league URL, the draft is addressed by ``--season``,
+"me" is ``--team-id`` / ``--slot`` / ``--username`` (team or owner name) or the team owned by the
+``--swid`` cookie, and a private league needs ``--espn-s2`` + ``--swid`` (env ``ESPN_S2`` /
+``ESPN_SWID``). The player universe, ECR and the ML projections are shared; ESPN supplies the ADP,
+a projected stat line for players Sleeper does not project, and the live draft through
+:class:`draftadvisor.espn.poller.EspnDraftPoller` (same interface as the Sleeper poller). ESPN
+publishes no pick timestamps: the TUI shows "ESPN clock: N s per pick" and only an approximate,
+labelled countdown anchored to the last pick change this process observed.
+
+Only ``ask`` talks to Claude (one request per invocation); the draft loop never does.
 
 The live draft loop (:class:`DraftLoop` / :func:`run_draft_loop`) is written against small
 duck-typed interfaces (a poller-like ``run(on_update, stop)`` or an async iterable of states, an
@@ -16,20 +28,20 @@ import logging
 import os
 import sys
 import time
-from typing import Any, AsyncIterable, Callable, Iterable, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from rich import box
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from .config import DEFAULT_SEASON, SKILL_POSITIONS, TRAIN_SEASONS, Settings
-from .models import DraftState, LeagueSettings, Player, Projection, Recommendation
+from .config import DEFAULT_SEASON, PLATFORMS, SKILL_POSITIONS, TRAIN_SEASONS, Settings
+from .models import DraftState, Player, Recommendation
 
 log = logging.getLogger(__name__)
 
 __all__ = ["main", "build_parser", "DraftLoop", "run_draft_loop", "resolve_player_input", "parse_seasons",
-           "MIN_POLL_SECONDS"]
+           "MIN_POLL_SECONDS", "ESPN_LEAGUE_ID_HELP", "ESPN_COOKIE_HELP"]
 
 EXIT_OK = 0
 EXIT_USAGE = 2
@@ -42,17 +54,43 @@ EXIT_ERROR = 1
 # ---------------------------------------------------------------------------
 
 
+#: Where to find an ESPN league id / team id when the fan API cannot list them.
+ESPN_LEAGUE_ID_HELP = (
+    "Find the ESPN league id in the league's URL on fantasy.espn.com: ...?leagueId=NNNNNNN (your team's page adds "
+    "teamId=N). Then: draftadvisor capture --platform espn --league NNNNNNN --season YYYY [--team-id N]"
+)
+#: How to get the cookies of a private ESPN league.
+ESPN_COOKIE_HELP = (
+    "Private league: pass --espn-s2 VALUE --swid VALUE (or export ESPN_S2 / ESPN_SWID). Find them logged in at "
+    "espn.com -> browser dev tools -> Application/Storage -> Cookies -> espn_s2 and SWID (SWID looks like "
+    "{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}, braces included). They are never logged."
+)
+
+
+def _add_platform_args(p: argparse.ArgumentParser) -> None:
+    """``--platform`` + the ESPN cookie flags (shared by every command that names a league)."""
+    p.add_argument("--platform", choices=PLATFORMS, default=None,
+                   help="league provider: sleeper (default) or espn (env DRAFTADVISOR_PLATFORM)")
+    p.add_argument("--espn-s2", dest="espn_s2", default=None, metavar="COOKIE",
+                   help="ESPN espn_s2 cookie of a private league (env ESPN_S2)")
+    p.add_argument("--swid", default=None, metavar="COOKIE",
+                   help="ESPN SWID cookie, {XXXXXXXX-...} (env ESPN_SWID); also identifies your team")
+
+
 def _add_league_args(p: argparse.ArgumentParser, draft: bool = True) -> None:
-    p.add_argument("--league", dest="league_id", help="Sleeper league id")
+    p.add_argument("--league", dest="league_id",
+                   help="Sleeper league id; with --platform espn the ESPN league id (leagueId= in the league URL)")
     if draft:
-        p.add_argument("--draft", dest="draft_id", help="Sleeper draft id")
+        p.add_argument("--draft", dest="draft_id", help="Sleeper draft id (ESPN drafts are addressed by --league + --season)")
+    _add_platform_args(p)
 
 
 def _add_identity_args(p: argparse.ArgumentParser) -> None:
     g = p.add_mutually_exclusive_group()
-    g.add_argument("--username", help="your Sleeper username (case-insensitive)")
+    g.add_argument("--username", help="your Sleeper username (ESPN: your team or owner name), case-insensitive")
     g.add_argument("--user-id", dest="user_id", help="your Sleeper user id")
     g.add_argument("--slot", type=int, help="your draft slot (1-based)")
+    g.add_argument("--team-id", dest="team_id", type=int, help="your ESPN team id (--platform espn)")
 
 
 #: Smallest accepted ``--poll`` interval (seconds); anything lower would hammer Sleeper and kill the error backoff.
@@ -78,7 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
     The global flags (``--home``, ``--offline``, ``--season``, ``-v``) are accepted both before and
     after the subcommand (``draftadvisor --offline mock`` and ``draftadvisor mock --offline``).
     """
-    p = argparse.ArgumentParser(prog="draftadvisor", description="Live Sleeper fantasy-football draft advisor.")
+    p = argparse.ArgumentParser(prog="draftadvisor", description="Live fantasy-football draft advisor (Sleeper / ESPN).")
     _add_global_args(p)
     common = argparse.ArgumentParser(add_help=False)
     _add_global_args(common, suppress=True)
@@ -93,13 +131,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = _Sub()
 
-    s = sub.add_parser("prep", help="download data, train the model, cache projections (+ optional Claude research)")
+    s = sub.add_parser("prep", help="download data, train the model, cache projections")
     _add_league_args(s)
     _add_identity_args(s)
     s.add_argument("--refresh", action="store_true", help="re-download data / rebuild caches")
     s.add_argument("--no-train", action="store_true", help="skip model training")
-    s.add_argument("--research", action="store_true", help="run Claude research on the top players")
-    s.add_argument("--top", type=int, default=200, help="how many players to research (default 200)")
     s.set_defaults(func=cmd_prep)
 
     s = sub.add_parser("train", help="(re)train the projection model and print the backtest")
@@ -107,11 +143,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--refresh", action="store_true")
     s.set_defaults(func=cmd_train)
 
-    s = sub.add_parser("draft", help="live draft advisor")
+    s = sub.add_parser("draft", help="live draft advisor (Sleeper or ESPN)")
     _add_league_args(s)
     _add_identity_args(s)
-    s.add_argument("--poll", type=float, default=None, help=f"poll interval seconds (default 2, min {MIN_POLL_SECONDS})")
-    s.add_argument("--no-claude", action="store_true", help="disable Claude advice")
+    s.add_argument("--poll", type=float, default=None,
+                   help=f"poll interval seconds (default 2 Sleeper / 3 ESPN, min {MIN_POLL_SECONDS})")
     s.add_argument("--no-tui", action="store_true", help="plain text output instead of the dashboard")
     s.add_argument("--no-model", action="store_true", help="skip the ML model (offline projections)")
     s.add_argument("--refresh", action="store_true", help="rebuild cached projections")
@@ -128,7 +164,6 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--speed", type=float, default=0.5, help="seconds between bot picks (0 = instant)")
     s.add_argument("--no-tui", action="store_true", help="plain text instead of the dashboard")
     s.add_argument("--no-model", action="store_true", help="skip the ML model (offline projections)")
-    s.add_argument("--no-claude", action="store_true")
     s.add_argument("--refresh", action="store_true", help="rebuild cached projections")
     s.set_defaults(func=cmd_mock)
 
@@ -155,21 +190,16 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-model", action="store_true")
     s.set_defaults(func=cmd_analyze)
 
-    s = sub.add_parser("research", help="run Claude research notes")
-    _add_league_args(s, draft=False)
-    s.add_argument("--top", type=int, default=200)
-    s.add_argument("--no-model", action="store_true")
-    s.set_defaults(func=cmd_research)
-
-    s = sub.add_parser("ask", help="free-form Claude question with draft context")
+    s = sub.add_parser("ask", help="free-form Claude question with draft context (one paid request)")
     s.add_argument("question")
     _add_league_args(s)
     _add_identity_args(s)
     s.add_argument("--no-model", action="store_true")
     s.set_defaults(func=cmd_ask)
 
-    s = sub.add_parser("ids", help="list your leagues and drafts with ids")
-    s.add_argument("--username", required=True)
+    s = sub.add_parser("ids", help="list your leagues and drafts with ids (Sleeper: --username; ESPN: --swid)")
+    s.add_argument("--username", default=None, help="your Sleeper username")
+    _add_platform_args(s)
     s.set_defaults(func=cmd_ids)
 
     s = sub.add_parser("web", help="start the local web app (http://127.0.0.1:8787) and open the browser")
@@ -178,7 +208,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-browser", action="store_true")
     s.set_defaults(func=cmd_web)
 
-    s = sub.add_parser("capture", help="one-time league info capture (scoring diff, draft order, your picks)")
+    s = sub.add_parser("capture", help="one-time league info capture (scoring diff, draft order, your picks; Sleeper or ESPN)")
     _add_league_args(s)
     _add_identity_args(s)
     s.set_defaults(func=cmd_capture)
@@ -211,16 +241,26 @@ def _poll_seconds(value: float | None) -> float | None:
 
 def _settings_from_args(args: argparse.Namespace) -> Settings:
     s = Settings.from_env(
+        platform=getattr(args, "platform", None),
         league_id=getattr(args, "league_id", None),
         draft_id=getattr(args, "draft_id", None),
         username=getattr(args, "username", None),
         user_id=getattr(args, "user_id", None),
         slot=getattr(args, "slot", None) if getattr(args, "command", "") != "mock" else None,
+        team_id=getattr(args, "team_id", None),
+        espn_s2=getattr(args, "espn_s2", None),
+        swid=getattr(args, "swid", None),
         poll_seconds=_poll_seconds(getattr(args, "poll", None)),
         season=getattr(args, "season", None),
     )
-    if getattr(args, "no_claude", False):
-        s.use_claude = False
+    if s.is_espn and getattr(args, "draft_id", None):
+        log.warning("--draft is ignored with --platform espn (an ESPN draft is addressed by --league and --season)")
+        s.draft_id = None
+    if not s.is_espn:
+        given = [f for f, a in (("--team-id", "team_id"), ("--espn-s2", "espn_s2"), ("--swid", "swid"))
+                 if getattr(args, a, None) is not None]
+        if given:
+            log.warning("%s only apply with --platform espn", " / ".join(given))
     return s
 
 
@@ -257,8 +297,26 @@ def _configure_logging(verbose: int) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _espn_error_types() -> tuple:
+    """``(EspnAPIError, EspnAccessDenied, EspnNotFound)`` or ``()`` when the ESPN package is unavailable."""
+    try:
+        from .espn.client import EspnAccessDenied, EspnAPIError, EspnNotFound
+
+        return EspnAPIError, EspnAccessDenied, EspnNotFound
+    except Exception:  # noqa: BLE001
+        return ()
+
+
+def _is_access_denied(e: BaseException) -> bool:
+    """ESPN 401 / 403: a private league without (valid) ``espn_s2`` + ``SWID`` cookies."""
+    types = _espn_error_types()
+    return bool(types) and isinstance(e, types[1])
+
+
 def _is_not_found_error(e: BaseException) -> bool:
-    """A Sleeper 404 / JSON ``null`` (unknown draft or league id) or any other 4xx client error."""
+    """A Sleeper / ESPN 404 (unknown draft or league id) or any other 4xx client error (not 401 / 403 / 429)."""
+    if _is_access_denied(e):
+        return False
     try:
         from .sleeper.client import SleeperAPIError, SleeperNotFound
 
@@ -269,12 +327,19 @@ def _is_not_found_error(e: BaseException) -> bool:
             return code is not None and 400 <= int(code) < 500 and int(code) != 429
     except Exception:  # noqa: BLE001
         pass
+    types = _espn_error_types()
+    if types:
+        if isinstance(e, types[2]):
+            return True
+        if isinstance(e, types[0]):
+            code = getattr(e, "status_code", None)
+            return code is not None and 400 <= int(code) < 500 and int(code) not in (401, 403, 429)
     return False
 
 
 def _is_network_error(e: BaseException) -> bool:
-    """Transport errors, timeouts, 5xx / 429 from Sleeper: things a connection check can fix."""
-    if _is_not_found_error(e):
+    """Transport errors, timeouts, 5xx / 429 from Sleeper or ESPN: things a connection check can fix."""
+    if _is_not_found_error(e) or _is_access_denied(e):
         return False
     try:
         import httpx
@@ -290,16 +355,46 @@ def _is_network_error(e: BaseException) -> bool:
             return True
     except Exception:  # noqa: BLE001
         pass
+    types = _espn_error_types()
+    if types and isinstance(e, types[0]):
+        return True
     return isinstance(e, (ConnectionError, TimeoutError, OSError))
 
 
-def _network_message(e: BaseException) -> str:
-    return (f"Could not reach the Sleeper API ({type(e).__name__}: {e}).\n"
-            "Check your connection (or that api.sleeper.app is reachable from here); offline commands still work:\n"
+def _platform_of(e: BaseException, settings: Settings | None) -> str:
+    """Which API an error came from: the exception type first, then the settings."""
+    types = _espn_error_types()
+    if types and isinstance(e, types[0]):
+        return "espn"
+    try:
+        from .sleeper.client import SleeperAPIError
+
+        if isinstance(e, SleeperAPIError):
+            return "sleeper"
+    except Exception:  # noqa: BLE001
+        pass
+    return settings.platform if settings is not None else "sleeper"
+
+
+def _network_message(e: BaseException, settings: Settings | None = None) -> str:
+    if _platform_of(e, settings) == "espn":
+        api, host = "ESPN", "lm-api-reads.fantasy.espn.com"
+    else:
+        api, host = "Sleeper", "api.sleeper.app"
+    return (f"Could not reach the {api} API ({type(e).__name__}: {e}).\n"
+            f"Check your connection (or that {host} is reachable from here); offline commands still work:\n"
             "  draftadvisor mock --auto        draftadvisor projections        draftadvisor train")
 
 
 def _not_found_message(e: BaseException, settings: Settings | None = None) -> str:
+    url = getattr(e, "url", None)
+    url_line = f"  ({url})\n" if url and str(url) not in str(e) else ""
+    if _platform_of(e, settings) == "espn":
+        league = settings.league_id if settings is not None and settings.league_id else "that id"
+        season = settings.season if settings is not None else DEFAULT_SEASON
+        return (f"ESPN has no league {league} for season {season} ({type(e).__name__}: {e}).\n" + url_line
+                + "Check the leagueId= number in the league URL and --season (a private league answers 401, not 404).\n"
+                + ESPN_LEAGUE_ID_HELP)
     ids = []
     if settings is not None:
         if settings.draft_id:
@@ -307,19 +402,32 @@ def _not_found_message(e: BaseException, settings: Settings | None = None) -> st
         if settings.league_id:
             ids.append(f"league {settings.league_id}")
     what = " / ".join(ids) if ids else "that draft/league id"
-    url = getattr(e, "url", None)
-    return (f"Sleeper has no {what} ({type(e).__name__}: {e}).\n"
-            + (f"  ({url})\n" if url and str(url) not in str(e) else "")
+    return (f"Sleeper has no {what} ({type(e).__name__}: {e}).\n" + url_line
             + "Check the id (draft ids and league ids differ): `draftadvisor ids --username U` lists yours.")
 
 
+def _access_denied_message(e: BaseException, settings: Settings | None = None) -> str:
+    league = settings.league_id if settings is not None and settings.league_id else "this"
+    lines = [f"ESPN says league {league} is private ({type(e).__name__}: {e})."]
+    if settings is not None and settings.has_espn_cookies:
+        lines.append("The espn_s2 / SWID cookies given were rejected: they expire after a while (copy fresh ones from "
+                     "the browser) and the ESPN account must be a member of the league.")
+    else:
+        lines.append("Add your espn_s2 and SWID cookies under --espn-s2 / --swid (or export ESPN_S2 / ESPN_SWID).")
+    lines.append(ESPN_COOKIE_HELP)
+    return "\n".join(lines)
+
+
 def _report_api_error(e: BaseException, console: Console, settings: Settings | None = None) -> int | None:
-    """Print a friendly message for not-found / network errors; return the exit code, or None to re-raise."""
+    """Print a friendly message for access-denied / not-found / network errors; return the exit code, or None to re-raise."""
+    if _is_access_denied(e):
+        console.print(_access_denied_message(e, settings), markup=False, highlight=False, style="red")
+        return EXIT_USAGE
     if _is_not_found_error(e):
         console.print(_not_found_message(e, settings), markup=False, highlight=False)
         return EXIT_USAGE
     if _is_network_error(e):
-        console.print(_network_message(e), markup=False, highlight=False, style="red")
+        console.print(_network_message(e, settings), markup=False, highlight=False, style="red")
         return EXIT_NETWORK
     return None
 
@@ -337,40 +445,31 @@ def _run(coro):
 
 
 class DraftLoop:
-    """Glue between a state source, the advisor, the dashboard and the Claude layer.
+    """Glue between a state source, the advisor and the dashboard.
 
-    ``advisor`` needs ``recommend(state)``; ``dashboard`` (optional) ``start/update/refresh/stop``;
-    ``researcher`` (optional) ``enabled`` and ``async on_the_clock_advice(state, rec, players, notes)``.
-    Claude advice is requested as a background task whenever it is my turn or I pick within one
-    pick, and never blocks rendering.
+    ``advisor`` needs ``recommend(state)``; ``dashboard`` (optional) ``start/update/refresh/stop``.
+    The loop never calls Claude: every update is recommend + render and nothing else (ask
+    Claude yourself with ``draftadvisor ask``).
     """
 
     def __init__(self, advisor: Any, players: Mapping[str, Player], dashboard: Any = None, *,
-                 researcher: Any = None, notes: Mapping | None = None, status: dict | None = None,
-                 tui: bool = True, out: Callable[[str], None] | None = None, refresh_seconds: float = 1.0,
-                 claude_lookahead: int = 1, claude_grace_s: float = 2.0) -> None:
+                 status: dict | None = None, tui: bool = True, out: Callable[[str], None] | None = None,
+                 refresh_seconds: float = 1.0) -> None:
         self.advisor = advisor
         self.players = players
         self.dashboard = dashboard if tui else None
-        self.researcher = researcher
-        self.notes = dict(notes or {})
-        # shared by reference on purpose: the caller (web server / cmd_draft) reads poll health,
-        # staleness and the Claude status out of the very dict it passed in
+        # shared by reference on purpose: the caller (cmd_draft) reads poll health and staleness
+        # out of the very dict it passed in
         self.status: dict = status if status is not None else {}
         self.tui = tui and dashboard is not None
         self.out = out or print
         self.refresh_seconds = refresh_seconds
-        self.claude_lookahead = claude_lookahead
-        self.claude_grace_s = claude_grace_s
         self.state: DraftState | None = None
         self.rec: Recommendation | None = None
         self.recommend_calls = 0
-        self.claude_requests = 0
-        self._claude_task: asyncio.Task | None = None
         self._ticker: asyncio.Task | None = None
         self._last_turn_key: tuple | None = None
         self.source: Any = None
-        self.status.setdefault("claude", "off" if not (researcher is not None and getattr(researcher, "enabled", False)) else "idle")
 
     # -- rendering ----------------------------------------------------------------------
     def render(self) -> None:
@@ -381,7 +480,15 @@ class DraftLoop:
         else:
             from .ui.dashboard import render_text
 
-            self.out(render_text(self.rec, self.state, self.players))
+            self.out(render_text(self.rec, self.state, self.players, self.status))
+
+    def _track_pick_change(self, state: DraftState) -> None:
+        """Remember when *this process* saw the pick number advance (a previous state must exist: the
+        bootstrap state is not an observed pick). The ESPN clock, which has no timestamps of its own,
+        counts approximately from here; Sleeper's real clock (``draft.last_picked``) ignores it."""
+        prev = self.state
+        if prev is not None and prev.next_pick_no != state.next_pick_no:
+            self.status["last_pick_seen_at"] = time.time()
 
     def _track_turn(self, state: DraftState) -> None:
         if state.is_my_turn:
@@ -432,7 +539,8 @@ class DraftLoop:
 
     # -- state updates -------------------------------------------------------------------
     async def handle(self, state: DraftState, source: Any = None) -> Recommendation | None:
-        """Process one state update: recommend, render, maybe ask Claude."""
+        """Process one state update: recommend and render."""
+        self._track_pick_change(state)
         self.state = state
         self._track_turn(state)
         if source is not None:
@@ -450,44 +558,7 @@ class DraftLoop:
         self.status["compute_ms"] = (time.perf_counter() - t0) * 1000.0
         self.rec = rec
         self.render()
-        if rec is not None and self.wants_claude(state):
-            self.schedule_claude(state, rec)
         return rec
-
-    def wants_claude(self, state: DraftState) -> bool:
-        if self.researcher is None or not getattr(self.researcher, "enabled", False):
-            return False
-        if state.is_complete:
-            return False
-        until = state.picks_until_my_turn
-        return state.is_my_turn or (until is not None and until <= self.claude_lookahead)
-
-    def schedule_claude(self, state: DraftState, rec: Recommendation) -> asyncio.Task:
-        """Kick off ``on_the_clock_advice`` in the background; fill ``rec.claude_advice`` when done."""
-        if self._claude_task is not None and not self._claude_task.done():
-            self._claude_task.cancel()
-        self.claude_requests += 1
-        self.status["claude"] = "thinking"
-
-        async def _go() -> None:
-            text = None
-            try:
-                text = await self.researcher.on_the_clock_advice(state, rec, self.players, self.notes)
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:  # noqa: BLE001
-                log.warning("Claude advice failed: %s", e)
-                self.status["claude"] = "error"
-            if text:
-                rec.claude_advice = text
-                self.status["claude"] = "ready"
-            elif self.status.get("claude") == "thinking":
-                self.status["claude"] = "no answer"
-            if self.rec is rec:
-                self.render()
-
-        self._claude_task = asyncio.ensure_future(_go())
-        return self._claude_task
 
     # -- ticking ---------------------------------------------------------------------------
     async def _tick(self) -> None:
@@ -508,7 +579,6 @@ class DraftLoop:
             self.dashboard.start()
         if self.tui and self.refresh_seconds > 0:
             self._ticker = asyncio.ensure_future(self._tick())
-        grace = self.claude_grace_s
         try:
             if hasattr(source, "run") and callable(source.run):
                 async def on_update(state: DraftState) -> None:
@@ -525,30 +595,14 @@ class DraftLoop:
                     await self.handle(state, source)
                     if state.is_complete:
                         break
-        except asyncio.CancelledError:
-            grace = 0.0                      # Ctrl-C: leave immediately
-            raise
         finally:
-            await self._shutdown(grace)
+            self._shutdown()
         return self.state
 
-    async def _shutdown(self, grace: float) -> None:
-        """Stop the ticker, let an in-flight Claude request finish for ``grace`` seconds, close the TUI."""
+    def _shutdown(self) -> None:
+        """Stop the ticker and close the TUI."""
         if self._ticker is not None and not self._ticker.done():
             self._ticker.cancel()
-        task = self._claude_task
-        if task is not None and not task.done():
-            if grace > 0:
-                try:
-                    await asyncio.wait({task}, timeout=grace)
-                except Exception:  # noqa: BLE001
-                    pass
-            if not task.done():
-                task.cancel()
-                try:
-                    await asyncio.wait({task}, timeout=0.5)
-                except Exception:  # noqa: BLE001
-                    pass
         if self.tui and self.dashboard is not None:
             self.dashboard.stop()
 
@@ -573,12 +627,10 @@ async def _aiter(source: Any):
 
 
 async def run_draft_loop(source: Any, advisor: Any, dashboard: Any = None, *, players: Mapping[str, Player],
-                         researcher: Any = None, notes: Mapping | None = None, status: dict | None = None,
-                         tui: bool = True, stop: asyncio.Event | None = None, out: Callable[[str], None] | None = None,
-                         refresh_seconds: float = 1.0) -> DraftLoop:
+                         status: dict | None = None, tui: bool = True, stop: asyncio.Event | None = None,
+                         out: Callable[[str], None] | None = None, refresh_seconds: float = 1.0) -> DraftLoop:
     """Convenience wrapper: build a :class:`DraftLoop`, run it, return it (for inspection)."""
-    loop = DraftLoop(advisor, players, dashboard, researcher=researcher, notes=notes, status=status, tui=tui,
-                     out=out, refresh_seconds=refresh_seconds)
+    loop = DraftLoop(advisor, players, dashboard, status=status, tui=tui, out=out, refresh_seconds=refresh_seconds)
     await loop.run(source, stop)
     return loop
 
@@ -669,14 +721,32 @@ def _print_sources(console: Console, ctx) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _espn_client(settings: Settings):
+    """An :class:`draftadvisor.espn.client.EspnClient` with the session's cookies (the base URL honours
+    ``DRAFTADVISOR_ESPN_BASE``, which the tests point at a local stub)."""
+    from .espn.client import EspnClient
+
+    return EspnClient(espn_s2=settings.espn_s2, swid=settings.swid)
+
+
 def _league_for(settings: Settings, args: argparse.Namespace):
-    """(league, draft) from Sleeper when ids are given and online, else from a snapshot, else None."""
-    from .app import fetch_league, load_snapshot_league
+    """``(league, draft, extra)`` from the platform's API when ids are given and online, else from a
+    snapshot, else ``(None, None, {})``. ``extra`` carries ESPN inputs for :func:`_build`
+    (``espn_players`` for :func:`draftadvisor.app.build_context`, ``espn_league_json`` for the rosters);
+    a saved ESPN capture supplies both too, so offline rosters keep their names / ADP / projections."""
+    from .app import fetch_espn_league, fetch_league, load_saved_snapshot
 
     if not (settings.league_id or settings.draft_id):
-        return None, None
+        return None, None, {}
     if not getattr(args, "offline", False):
         try:
+            if settings.is_espn:
+                async def go_espn():
+                    async with _espn_client(settings) as client:
+                        return await fetch_espn_league(client, settings.league_id, settings.season)
+
+                league, draft, league_json, kona = _run(go_espn())
+                return league, draft, {"espn_players": kona, "espn_league_json": league_json}
             from .sleeper.client import SleeperClient
 
             async def go():
@@ -685,19 +755,34 @@ def _league_for(settings: Settings, args: argparse.Namespace):
 
             league, draft = _run(go())
             if league is not None:
-                return league, draft
+                return league, draft, {}
         except Exception as e:  # noqa: BLE001
+            if settings.is_espn and (_is_access_denied(e) or _is_not_found_error(e)):
+                raise                       # wrong id / missing cookies: a snapshot would hide the real problem
             log.warning("league lookup failed (%s); trying snapshot", e)
-    return load_snapshot_league(settings)
+    snap = load_saved_snapshot(settings)
+    if snap is None:
+        return None, None, {}
+    extra: dict = {}
+    if settings.is_espn:
+        raw = snap.raw or {}
+        extra = {"espn_players": list(raw.get("players") or []), "espn_league_json": dict(raw.get("league") or {})}
+    return snap.league, snap.draft, extra
 
 
 def _build(settings: Settings, args: argparse.Namespace, league=None, draft=None, **kw):
     from .app import build_context
 
+    extra: dict = {}
     if league is None:
-        league, draft = _league_for(settings, args)
-    return build_context(settings, league, draft, offline=getattr(args, "offline", False),
-                         use_model=not getattr(args, "no_model", False), refresh=getattr(args, "refresh", False), **kw)
+        league, draft, extra = _league_for(settings, args)
+    league_json = extra.pop("espn_league_json", None)
+    ctx = build_context(settings, league, draft, offline=getattr(args, "offline", False),
+                        use_model=not getattr(args, "no_model", False), refresh=getattr(args, "refresh", False),
+                        **extra, **kw)
+    if settings.is_espn:
+        ctx.sources["espn_inputs"] = {"league_json": league_json, "players": list(extra.get("espn_players") or [])}
+    return ctx
 
 
 def cmd_prep(args: argparse.Namespace) -> int:
@@ -708,13 +793,19 @@ def cmd_prep(args: argparse.Namespace) -> int:
     if args.offline:
         console.print("[dim]--offline: Sleeper will not be contacted[/dim]")
     progress = lambda s: console.print(Text("… ", style="cyan") + Text(str(s)))  # noqa: E731
-    kw = dict(research=args.research, refresh=args.refresh, train=not args.no_train, top=args.top, progress=progress)
+    kw = dict(refresh=args.refresh, train=not args.no_train, progress=progress)
     try:
-        ctx = _run(prep(settings, offline=args.offline, **kw))
-    except TypeError as e:
-        if "offline" not in str(e):
+        try:
+            ctx = _run(prep(settings, offline=args.offline, **kw))
+        except TypeError as e:
+            if "offline" not in str(e):
+                raise
+            ctx = _run(prep(settings, **kw))    # older app.prep without the offline parameter
+    except ValueError as e:                     # ESPN: unknown --username / --team-id / --slot (the message lists the teams)
+        if not settings.is_espn:
             raise
-        ctx = _run(prep(settings, **kw))    # older app.prep without the offline parameter
+        console.print(str(e), style="red", markup=False, highlight=False)
+        return EXIT_USAGE
     snap = ctx.sources.get("snapshot")
     if snap is not None:
         try:
@@ -728,33 +819,7 @@ def cmd_prep(args: argparse.Namespace) -> int:
         console.print(mt)
     console.print(_projection_table(ctx, 30, title=f"Top 30 — {ctx.league.name}"))
     _print_sources(console, ctx)
-    if args.research:
-        console.print(f"research notes written: {ctx.sources.get('research', 0)}")
-        _print_research_problems(console, ctx.researcher)
     return EXIT_OK
-
-
-def _print_research_problems(console: Console, researcher: Any) -> None:
-    err = getattr(researcher, "last_error", None)
-    if err:
-        console.print(Text(f"research problem: {err}", style="yellow"))
-
-
-def _research_counts(notes: Mapping[str, Any], started_at: float) -> tuple[int, int, int]:
-    """(ok, failed, cached) for the notes returned by ``research_players``."""
-    try:
-        from .research.claude import UNAVAILABLE_SUMMARY
-    except Exception:  # noqa: BLE001
-        UNAVAILABLE_SUMMARY = "(research unavailable)"  # noqa: N806
-    ok = failed = cached = 0
-    for n in notes.values():
-        if float(getattr(n, "generated_at", 0.0) or 0.0) < started_at:
-            cached += 1
-        elif str(getattr(n, "summary", "")).startswith(UNAVAILABLE_SUMMARY):
-            failed += 1
-        else:
-            ok += 1
-    return ok, failed, cached
 
 
 def cmd_train(args: argparse.Namespace) -> int:
@@ -813,7 +878,88 @@ async def _resolve_draft_id(client, settings: Settings, console: Console) -> str
     return None
 
 
+def _announce_slot(console: Console, state: DraftState, hint: str) -> None:
+    if state.my_slot is None:
+        console.print(f"[yellow]could not resolve your slot ({hint}); observer mode[/yellow]")
+    else:
+        console.print(f"you are slot {state.my_slot} ({state.slot_label(state.my_slot)}), picks "
+                      + ", ".join(f"#{p}" for p in state.my_pick_numbers()[:4]) + " …")
+
+
+async def _sleeper_inputs(settings: Settings, console: Console) -> tuple[Any, Any]:
+    """``(players payload, season projections payload)`` from Sleeper: the player universe of every
+    platform. ``(None, None)`` when Sleeper is unreachable (the offline roster universe is used then)."""
+    try:
+        from .sleeper.client import SleeperClient
+
+        console.print("[cyan]…[/cyan] loading Sleeper players & projections (the player universe)")
+        async with SleeperClient() as client:
+            players = await client.get_players()
+            proj = await client.get_season_projections(settings.season)
+            return players, proj
+    except Exception as e:  # noqa: BLE001
+        log.warning("Sleeper players/projections unavailable (%s); using the offline universe", e)
+        return None, None
+
+
+async def _draft_espn_async(args: argparse.Namespace, settings: Settings, console: Console) -> int:
+    """The ESPN live draft: capture (settings / teams / draft / player pool), context, then
+    :class:`~draftadvisor.espn.poller.EspnDraftPoller` through the same :class:`DraftLoop`."""
+    from .app import build_context
+    from .capture import print_snapshot
+    from .espn.capture import capture_espn_league, espn_names
+    from .espn.ids import EspnIdMap
+    from .espn.parsing import roster_names
+    from .espn.poller import EspnDraftPoller
+    from .ui.dashboard import Dashboard
+
+    if not settings.league_id:
+        console.print("[red]draft --platform espn needs --league ID (the leagueId= number in the ESPN league URL)[/red]")
+        return EXIT_USAGE
+    async with _espn_client(settings) as client:
+        console.print(f"[cyan]…[/cyan] connecting to ESPN league {settings.league_id} (season {settings.season})")
+        try:
+            snap = await capture_espn_league(client, settings.league_id, settings.season, swid=settings.swid,
+                                             team_id=settings.team_id, slot=settings.slot, username=settings.username,
+                                             save=True)
+        except ValueError as e:                     # unknown --username / --team-id: the message lists the teams
+            console.print(str(e), style="red", markup=False, highlight=False)
+            return EXIT_USAGE
+        print_snapshot(snap, console)
+        league_json = dict(snap.raw.get("league") or {})
+        kona = list(snap.raw.get("players") or [])
+        sleeper_players, sleeper_proj = await _sleeper_inputs(settings, console)
+        console.print("[cyan]…[/cyan] building projections")
+        ctx = build_context(settings, snap.league, snap.draft, sleeper_players=sleeper_players, sleeper_proj=sleeper_proj,
+                            espn_players=kona, refresh=args.refresh, use_model=not args.no_model, quiet=True)
+        _print_sources(console, ctx)
+        names: dict[str, Any] = dict(roster_names(league_json))
+        names.update(espn_names(kona))
+        poller = EspnDraftPoller(client, settings.league_id, settings.season, id_map=EspnIdMap.from_players(ctx.players),
+                                 names=names, swid=settings.swid, team_id=settings.team_id, slot=settings.slot,
+                                 username=settings.username, settings=settings, league_json=league_json)
+        state = await poller.bootstrap()
+        _announce_slot(console, state, "use --team-id/--slot/--username, or --swid so your team is recognised")
+        if state.draft.status == "pre_draft" and not state.draft.draft_order:
+            console.print("[yellow]draft order not set yet; your slot and pick numbers appear once the commissioner "
+                          "sets the order / the draft starts[/yellow]")
+        dashboard = None if args.no_tui else Dashboard(console, projections=ctx.projections)
+        clock = f"ESPN clock: {state.draft.pick_timer} s per pick" if state.draft.pick_timer else "ESPN clock: no pick timer"
+        status = {"mode": "live", "platform": "espn", "projections": ctx.projections,
+                  "hint": f"Ctrl-C to quit • {clock} (ESPN gives no pick timestamps: any countdown is approximate) "
+                          "• the board refreshes on every poll"}
+        loop = DraftLoop(ctx.advisor, ctx.players, dashboard, status=status, tui=not args.no_tui,
+                         out=_plain_printer(console))
+        final = await loop.run(poller)
+        if final is not None and final.is_complete:
+            console.print("[green]Draft complete.[/green]")
+            _print_final_rosters(console, final, ctx)
+    return EXIT_OK
+
+
 async def _draft_async(args: argparse.Namespace, settings: Settings, console: Console) -> int:
+    if settings.is_espn:
+        return await _draft_espn_async(args, settings, console)
     from .app import build_context
     from .sleeper.client import SleeperClient
     from .sleeper.poller import DraftPoller
@@ -830,11 +976,7 @@ async def _draft_async(args: argparse.Namespace, settings: Settings, console: Co
         league = state.league
         if league is not None:
             settings.league_id = settings.league_id or league.league_id
-        if state.my_slot is None:
-            console.print("[yellow]could not resolve your slot (use --username/--user-id/--slot); observer mode[/yellow]")
-        else:
-            console.print(f"you are slot {state.my_slot} ({state.slot_label(state.my_slot)}), picks "
-                          + ", ".join(f"#{p}" for p in state.my_pick_numbers()[:4]) + " …")
+        _announce_slot(console, state, "use --username/--user-id/--slot")
         try:
             from .capture import capture_league, print_snapshot
 
@@ -855,10 +997,10 @@ async def _draft_async(args: argparse.Namespace, settings: Settings, console: Co
                             refresh=args.refresh, use_model=not args.no_model, quiet=True)
         _print_sources(console, ctx)
         dashboard = None if args.no_tui else Dashboard(console, projections=ctx.projections)
-        status = {"mode": "live", "projections": ctx.projections,
-                  "hint": "Ctrl-C to quit • advice refreshes on every pick"}
-        loop = DraftLoop(ctx.advisor, ctx.players, dashboard, researcher=ctx.researcher, notes=ctx.notes,
-                         status=status, tui=not args.no_tui, out=_plain_printer(console))
+        status = {"mode": "live", "platform": "sleeper", "projections": ctx.projections,
+                  "hint": "Ctrl-C to quit • the board refreshes on every pick"}
+        loop = DraftLoop(ctx.advisor, ctx.players, dashboard, status=status, tui=not args.no_tui,
+                         out=_plain_printer(console))
         final = await loop.run(poller)
         if final is not None and final.is_complete:
             console.print("[green]Draft complete.[/green]")
@@ -867,7 +1009,7 @@ async def _draft_async(args: argparse.Namespace, settings: Settings, console: Co
 
 
 def _plain_printer(console: Console) -> Callable[[str], None]:
-    """Print plain text: no rich markup / highlighting (advice text may contain ``[brackets]``)."""
+    """Print plain text: no rich markup / highlighting (names and notes may contain ``[brackets]``)."""
     return lambda s: console.print(str(s), markup=False, highlight=False)
 
 
@@ -942,7 +1084,7 @@ def cmd_mock(args: argparse.Namespace) -> int:
     mock = MockDraft(ctx.players, league, draft, args.slot, seed=args.seed)
     advisor = ctx.advisor
     dashboard = None if args.no_tui else Dashboard(console, projections=ctx.projections)
-    status = {"mode": "mock", "projections": ctx.projections, "claude": "off",
+    status = {"mode": "mock", "platform": "mock", "projections": ctx.projections,
               "hint": "Enter = take the top recommendation • type a name or player_id • q to quit"}
     quit_ = False
     try:
@@ -965,13 +1107,13 @@ def cmd_mock(args: argparse.Namespace) -> int:
                 why = "; ".join(top.reasons[:2]) if top else "best available"
                 console.print(Text(f"#{pick.pick_no:>3} R{pick.round:<2} You      {pl.name} ({pl.position}) — {why}", style="bold"))
                 if args.verbose:
-                    console.print(render_text(rec, state, ctx.players), markup=False, highlight=False)
+                    console.print(render_text(rec, state, ctx.players, status), markup=False, highlight=False)
                 continue
             status["turn_started_at"] = time.time()
             if dashboard is not None:
                 console.print(dashboard.build(state, rec, ctx.players, status))
             else:
-                console.print(render_text(rec, state, ctx.players), markup=False, highlight=False)
+                console.print(render_text(rec, state, ctx.players, status), markup=False, highlight=False)
             while True:
                 try:
                     raw = input(f"Pick #{state.next_pick_no} (Enter = {top.player.name if top else 'best available'}): ")
@@ -1023,8 +1165,85 @@ def cmd_projections(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-def _rosters_for_league(settings: Settings, args: argparse.Namespace, console: Console):
-    """{roster_id: {"user": Manager-ish dict, "players": [ids]}} from Sleeper or the snapshot."""
+def _espn_rosters_for_league(settings: Settings, args: argparse.Namespace, console: Console, ctx=None) -> dict[int, dict]:
+    """``{team id: {user_id, name, username, display_name, players}}`` from the ESPN league payload: the one
+    the context was built from, else a fresh fetch, else the saved capture. Player ids resolve through the
+    context's universe (placeholders included) so they match ``ctx.players``."""
+    from .app import load_snapshot
+    from .espn.capture import espn_rosters
+    from .espn.ids import EspnIdMap
+    from .espn.parsing import parse_espn_draft, parse_espn_managers
+
+    league_json = ((ctx.sources.get("espn_inputs") or {}).get("league_json")) if ctx is not None else None
+    if not league_json and not args.offline:
+        try:
+            async def go():
+                async with _espn_client(settings) as client:
+                    return await client.get_settings_and_teams(settings.league_id, settings.season)
+
+            league_json = _run(go())
+        except Exception as e:  # noqa: BLE001
+            if _is_access_denied(e) or _is_not_found_error(e):
+                raise
+            log.warning("ESPN unreachable (%s); trying snapshot", e)
+    if not league_json:
+        snap = load_snapshot(str(settings.league_id), "espn")
+        league_json = dict(snap.raw.get("league") or {}) if snap is not None else None
+    if not league_json:
+        console.print("[red]no rosters available (ESPN unreachable and no snapshot; run "
+                      "`draftadvisor capture --platform espn` online)[/red]")
+        return {}
+    draft = parse_espn_draft(league_json)
+    managers = parse_espn_managers(league_json, draft)
+    id_map = EspnIdMap.from_players(ctx.players) if ctx is not None else EspnIdMap()
+    if ctx is not None:
+        _add_roster_placeholders(league_json, id_map, ctx.players)
+    out: dict[int, dict] = {}
+    dropped: list[str] = []
+    for r in espn_rosters(league_json, id_map):
+        rid = int(r["roster_id"])
+        m = managers.get(str(rid))
+        out[rid] = {
+            "user_id": str(rid),
+            "name": ((m.team_name or m.display_name) if m else None) or f"Team {rid}",
+            "username": (m.display_name if m else "") or "",
+            "display_name": (m.display_name if m else "") or "",
+            "players": [str(p) for p in r["players"]],
+        }
+        if ctx is not None:
+            dropped += [str(p) for p in r["players"] if str(p) not in ctx.players]
+    if dropped:
+        log.warning("%d rostered ESPN player(s) are not in the player universe and are left out of the rosters: %s",
+                    len(dropped), ", ".join(sorted(set(dropped))))
+    return out
+
+
+def _add_roster_placeholders(league_json: Mapping[str, Any], id_map: Any, players: dict[str, Player]) -> int:
+    """Add a placeholder :class:`~draftadvisor.models.Player` to ``players`` for every roster entry of the
+    ESPN league payload (``teams[].roster.entries[]``) whose id is not in the universe, so ``analyze`` /
+    ``trade`` name every rostered player (offline too, when no kona pool was fetched); returns how many."""
+    from .espn.ids import placeholder_player
+
+    added = 0
+    for team in league_json.get("teams") or []:
+        if not isinstance(team, Mapping):
+            continue
+        for entry in ((team.get("roster") or {}).get("entries") or []):
+            if not isinstance(entry, Mapping):
+                continue
+            pid = id_map.resolve_player_json(entry)
+            if pid not in players:
+                players[pid] = placeholder_player(entry, pid)
+                added += 1
+    if added:
+        log.info("%d rostered ESPN player(s) outside the universe added as placeholders", added)
+    return added
+
+
+def _rosters_for_league(settings: Settings, args: argparse.Namespace, console: Console, ctx=None):
+    """{roster_id: {"user": Manager-ish dict, "players": [ids]}} from Sleeper / ESPN or the snapshot."""
+    if settings.is_espn:
+        return _espn_rosters_for_league(settings, args, console, ctx)
     users: list[dict] = []
     rosters: list[dict] = []
     if not args.offline:
@@ -1042,9 +1261,9 @@ def _rosters_for_league(settings: Settings, args: argparse.Namespace, console: C
             log.warning("Sleeper unreachable (%s); trying snapshot", e)
     if not rosters:
         try:
-            from .capture import LeagueSnapshot
+            from .app import load_snapshot
 
-            snap = LeagueSnapshot.load(str(settings.league_id))
+            snap = load_snapshot(str(settings.league_id), settings.platform)      # never an ESPN capture
             if snap is not None:
                 users = list(snap.raw.get("users") or [])
                 rosters = list(snap.raw.get("rosters") or [])
@@ -1088,7 +1307,7 @@ def cmd_trade(args: argparse.Namespace) -> int:
         console.print("[red]trade needs --league ID[/red]")
         return EXIT_USAGE
     ctx = _build(settings, args, quiet=True)
-    rosters = _rosters_for_league(settings, args, console)
+    rosters = _rosters_for_league(settings, args, console, ctx)
     if not rosters:
         return EXIT_NETWORK
     me, them = _find_roster(rosters, args.me), _find_roster(rosters, args.them)
@@ -1131,7 +1350,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         console.print("[red]analyze needs --league ID[/red]")
         return EXIT_USAGE
     ctx = _build(settings, args, quiet=True)
-    rosters = _rosters_for_league(settings, args, console)
+    rosters = _rosters_for_league(settings, args, console, ctx)
     if not rosters:
         return EXIT_NETWORK
     from .strategy.lineup import optimal_lineup
@@ -1166,6 +1385,8 @@ def cmd_analyze(args: argparse.Namespace) -> int:
                      " ".join(f"{k}{v}" for k, v in sorted(counts.items()))))
     rows.sort(key=lambda x: -x[0])
     mine = (args.username or settings.username or "").lower()
+    if settings.is_espn and settings.team_id is not None and settings.team_id in rosters:
+        mine = rosters[settings.team_id]["name"].lower()
     for i, row in enumerate(rows, start=1):
         style = "bold green" if mine and mine in row[2].lower() else ""
         t.add_row(str(i), row[2], f"{row[0]:.0f}", f"{row[1]:.0f}", *row[3:], style=style)
@@ -1187,67 +1408,66 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-def cmd_research(args: argparse.Namespace) -> int:
-    from .app import top_players_by_adp
+def _usage_line(claude: Any) -> str:
+    """'12.1k in / 0.4k out - about $0.07 (claude-sonnet-5)' for the last request, or ''.
 
-    console = Console()
-    settings = _settings_from_args(args)
-    ctx = _build(settings, args, quiet=True)
-    if not ctx.researcher.enabled:
-        console.print("[yellow]Claude is off — set ANTHROPIC_API_KEY to run research.[/yellow]")
-        return EXIT_USAGE
-    targets = top_players_by_adp(ctx.players, args.top)
-    console.print(f"[cyan]…[/cyan] researching {len(targets)} players (cached notes are reused; Ctrl-C keeps what is done)")
-    started_at = time.time()
+    When the model is not in the price table (``last_cost_usd`` is ``None``) the line says so instead of
+    silently dropping the estimate. The model shown is the served id when the chat client records one
+    (``last_model``), else the configured ``model``."""
+    usage = getattr(claude, "last_usage", None) or {}
+    if not usage:
+        return ""
+    k = lambda n: f"{(n or 0) / 1000:.1f}k"  # noqa: E731
+    text = f"{k(usage.get('input_tokens'))} in / {k(usage.get('output_tokens'))} out"
+    cost = getattr(claude, "last_cost_usd", None)
+    if cost is not None:
+        text += f" - about ${cost:.2f}" if cost >= 0.005 else " - under $0.01"
+    else:
+        text += " - cost unknown (model not in the price table)"
+    model = getattr(claude, "last_model", None) or getattr(claude, "model", None) or "?"
+    return f"{text} ({model})"
 
-    def progress(done: int, total: int, name: str) -> None:
-        console.print(Text(f"[{done}/{total}] {name}", style="dim"))
 
-    try:
-        notes = _run(ctx.researcher.research_players(targets, ctx.projections, progress=progress))
-    except TypeError as e:
-        if "progress" not in str(e):
-            raise
-        notes = _run(ctx.researcher.research_players(targets, ctx.projections))
-    t = Table(title="Research notes", box=box.SIMPLE_HEAD)
-    for col in ("Player", "Pos", "Inj", "Role", "Summary"):
-        t.add_column(col, justify="right" if col in ("Inj", "Role") else "left")
-    for pl in targets:
-        n = notes.get(pl.player_id) or ctx.notes.get(pl.player_id)
-        if n is None:
-            continue
-        t.add_row(pl.name, pl.position, f"{n.injury_risk:.2f}", f"{n.role_certainty:.2f}", n.summary[:90])
-    console.print(t)
-    ok, failed, cached = _research_counts(notes, started_at)
-    console.print(f"{len(notes)} notes: {ok} researched, {failed} failed, {cached} cached")
-    _print_research_problems(console, ctx.researcher)
-    if failed and not ok:
-        return EXIT_ERROR
-    return EXIT_OK
+async def _live_context_text(settings: Settings, ctx) -> str:
+    """The current draft state (one bootstrap of the platform's poller) rendered for Claude."""
+    from .research.claude import build_context_text
+
+    if settings.is_espn:
+        from .espn.capture import espn_names
+        from .espn.ids import EspnIdMap
+        from .espn.poller import EspnDraftPoller
+
+        inputs = ctx.sources.get("espn_inputs") or {}
+        async with _espn_client(settings) as client:
+            poller = EspnDraftPoller(client, settings.league_id, settings.season,
+                                     id_map=EspnIdMap.from_players(ctx.players), names=espn_names(inputs.get("players")),
+                                     swid=settings.swid, team_id=settings.team_id, slot=settings.slot,
+                                     username=settings.username, settings=settings, league_json=inputs.get("league_json"))
+            state = await poller.bootstrap()
+    else:
+        from .sleeper.client import SleeperClient
+        from .sleeper.poller import DraftPoller
+
+        async with SleeperClient() as client:
+            poller = DraftPoller(client, settings.draft_id, league_id=settings.league_id, settings=settings)
+            state = await poller.bootstrap()
+    rec = ctx.advisor.recommend(state)
+    return build_context_text(state, rec, ctx.players, ctx.notes)
 
 
 def cmd_ask(args: argparse.Namespace) -> int:
+    """One Claude request with the draft context; the only CLI path that costs money."""
     console = Console()
     settings = _settings_from_args(args)
     ctx = _build(settings, args, quiet=True)
-    if not ctx.researcher.enabled:
+    if not ctx.claude.enabled:
         console.print("[yellow]Claude is off — set ANTHROPIC_API_KEY to ask questions.[/yellow]")
         return EXIT_USAGE
     context_text = ""
-    if settings.draft_id and not args.offline:
+    live = (settings.is_espn and settings.league_id) or (not settings.is_espn and settings.draft_id)
+    if live and not args.offline:
         try:
-            from .research.claude import build_context_text
-            from .sleeper.client import SleeperClient
-            from .sleeper.poller import DraftPoller
-
-            async def go():
-                async with SleeperClient() as client:
-                    poller = DraftPoller(client, settings.draft_id, league_id=settings.league_id, settings=settings)
-                    state = await poller.bootstrap()
-                    rec = ctx.advisor.recommend(state)
-                    return build_context_text(state, rec, ctx.players, ctx.notes)
-
-            context_text = _run(go())
+            context_text = _run(_live_context_text(settings, ctx))
         except Exception as e:  # noqa: BLE001
             if not _is_network_error(e):
                 raise
@@ -1258,11 +1478,54 @@ def cmd_ask(args: argparse.Namespace) -> int:
             "Top projected players:\n" + "\n".join(
                 f"- {ctx.players[p.player_id].name} ({p.position}, {ctx.players[p.player_id].team or 'FA'}) {p.points:.0f} pts, "
                 f"ADP {ctx.players[p.player_id].adp or '-'}" for p in top if p.player_id in ctx.players)
-    answer = _run(ctx.researcher.ask(args.question, context_text))
+    answer = _run(ctx.claude.ask(args.question, context_text))
     if not answer:
-        console.print(f"[red]no answer ({getattr(ctx.researcher, 'last_error', None) or 'unknown error'})[/red]")
+        console.print(f"[red]no answer ({getattr(ctx.claude, 'last_error', None) or 'unknown error'})[/red]")
         return EXIT_ERROR
-    console.print(answer)
+    console.print(answer, markup=False, highlight=False)
+    usage = _usage_line(ctx.claude)
+    if usage:
+        console.print(Text(usage, style="dim"))
+    return EXIT_OK
+
+
+def _ids_espn(args: argparse.Namespace, settings: Settings, console: Console) -> int:
+    """ESPN leagues of the SWID's account via the fan API (best effort), else how to find the id."""
+    if not settings.swid:
+        console.print("[red]ids --platform espn needs your SWID cookie: --swid {...} or ESPN_SWID[/red]")
+        console.print(ESPN_LEAGUE_ID_HELP, markup=False, highlight=False)
+        console.print(ESPN_COOKIE_HELP, markup=False, highlight=False)
+        return EXIT_USAGE
+
+    async def go():
+        async with _espn_client(settings) as client:
+            return await client.get_fan_leagues(settings.swid)
+
+    try:
+        leagues = _run(go())
+    except Exception as e:  # noqa: BLE001
+        rc = _report_api_error(e, console, settings)
+        if rc is not None:
+            return rc
+        raise
+    if not leagues:
+        console.print("ESPN's fan API listed no fantasy football leagues for that SWID (it is best effort and "
+                      "sometimes empty).", markup=False, highlight=False)
+        console.print(ESPN_LEAGUE_ID_HELP, markup=False, highlight=False)
+        console.print(ESPN_COOKIE_HELP, markup=False, highlight=False)
+        return EXIT_OK
+    t = Table(title="Your ESPN leagues", box=box.SIMPLE_HEAD)
+    for col in ("League", "league_id", "Season", "Your team", "team_id"):
+        t.add_column(col)
+    for lg in leagues:
+        t.add_row(str(lg.get("name") or ""), str(lg.get("league_id")), str(lg.get("season") or settings.season),
+                  str(lg.get("team_name") or ""), str(lg.get("team_id") if lg.get("team_id") is not None else "-"))
+    console.print(t)
+    first = leagues[0]
+    console.print(f"next: draftadvisor draft --platform espn --league {first.get('league_id')} "
+                  f"--season {first.get('season') or settings.season}"
+                  + (f" --team-id {first.get('team_id')}" if first.get("team_id") is not None else " --swid ...")
+                  + "  (private league: add --espn-s2 / --swid)", markup=False, highlight=False)
     return EXIT_OK
 
 
@@ -1271,6 +1534,11 @@ def cmd_ids(args: argparse.Namespace) -> int:
     settings = _settings_from_args(args)
     if args.offline:
         console.print("[red]ids needs the network[/red]")
+        return EXIT_USAGE
+    if settings.is_espn:
+        return _ids_espn(args, settings, console)
+    if not args.username:
+        console.print("[red]ids needs --username U (Sleeper) or --platform espn --swid {...} (ESPN)[/red]")
         return EXIT_USAGE
     from .sleeper.client import SleeperClient
 
@@ -1322,18 +1590,63 @@ def cmd_web(args: argparse.Namespace) -> int:
     return web_main(argv)
 
 
+def _capture_espn(args: argparse.Namespace, settings: Settings, console: Console) -> int:
+    from .capture import print_snapshot
+
+    if not settings.league_id:
+        console.print("[red]capture --platform espn needs --league ID (the leagueId= number in the ESPN league URL)[/red]")
+        return EXIT_USAGE
+    if args.offline:
+        from .app import load_snapshot
+
+        snap = load_snapshot(str(settings.league_id), "espn") or load_snapshot(f"espn-{settings.league_id}-{settings.season}", "espn")
+        if snap is None:
+            console.print("[red]no saved ESPN snapshot for this league; run online first[/red]")
+            return EXIT_USAGE
+        print_snapshot(snap, console)
+        return EXIT_OK
+    from .espn.capture import capture_espn_league
+
+    async def go():
+        async with _espn_client(settings) as client:
+            return await capture_espn_league(client, settings.league_id, settings.season, swid=settings.swid,
+                                             team_id=settings.team_id, slot=settings.slot, username=settings.username,
+                                             save=True)
+
+    try:
+        snap = _run(go())
+    except ValueError as e:                         # unknown --username / --team-id: the message lists the teams
+        console.print(str(e), style="red", markup=False, highlight=False)
+        return EXIT_USAGE
+    except Exception as e:  # noqa: BLE001
+        rc = _report_api_error(e, console, settings)
+        if rc is not None:
+            return rc
+        raise
+    print_snapshot(snap, console)
+    if snap.my_user_id is None:
+        console.print("not identified as a team: pass --team-id N, --slot N or --username \"team or owner name\" "
+                      "(or --swid: your SWID cookie identifies your team)", style="yellow", markup=False, highlight=False)
+    return EXIT_OK
+
+
 def cmd_capture(args: argparse.Namespace) -> int:
     console = Console()
     settings = _settings_from_args(args)
+    if settings.is_espn:
+        return _capture_espn(args, settings, console)
     if not (settings.league_id or settings.draft_id):
         console.print("[red]capture needs --league ID or --draft ID[/red]")
         return EXIT_USAGE
-    from .capture import LeagueSnapshot, capture_league, print_snapshot
+    from .capture import capture_league, print_snapshot
 
     if args.offline:
-        snap = LeagueSnapshot.load(str(settings.league_id or settings.draft_id))
+        from .app import load_snapshot
+
+        snap = load_snapshot(str(settings.league_id or settings.draft_id), settings.platform)   # never an ESPN capture
         if snap is None:
-            console.print("[red]no saved snapshot; run online first[/red]")
+            console.print("[red]no saved snapshot for this league on Sleeper; run online first "
+                          "(an ESPN capture needs --platform espn)[/red]")
             return EXIT_USAGE
         print_snapshot(snap, console)
         return EXIT_OK
@@ -1375,11 +1688,14 @@ def main(argv: list[str] | None = None) -> int:
         print("\nstopped.", file=sys.stderr)
         return EXIT_OK
     except Exception as e:  # noqa: BLE001
+        if _is_access_denied(e):
+            print(_access_denied_message(e, _settings_from_args(args)), file=sys.stderr)
+            return EXIT_USAGE
         if _is_not_found_error(e):
             print(_not_found_message(e, _settings_from_args(args)), file=sys.stderr)
             return EXIT_USAGE
         if _is_network_error(e):
-            print(_network_message(e), file=sys.stderr)
+            print(_network_message(e, _settings_from_args(args)), file=sys.stderr)
             return EXIT_NETWORK
         if args.verbose:
             raise

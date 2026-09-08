@@ -55,6 +55,12 @@ def main(argv=None) -> int:
     (out / "players.json").write_text(json.dumps([player_to_dict(p) for p in players.values()]), encoding="utf-8")
     (out / "byes.json").write_text(json.dumps(byes), encoding="utf-8")
     print(f"  {len(players)} players, {len(byes)} byes")
+    espn_n = sum(1 for p in players.values() if p.espn_id)
+    espn_pos = {pos: (sum(1 for p in players.values() if p.position == pos and p.espn_id),
+                      sum(1 for p in players.values() if p.position == pos))
+                for pos in sorted({p.position for p in players.values()})}
+    print(f"  espn ids: {espn_n} of {len(players)} players "
+          f"({', '.join(f'{pos} {n}/{m}' for pos, (n, m) in espn_pos.items())})")
 
     print("• model predictions")
     agg, team_ctx, rosters = load_training_inputs(range(lo, hi + 1))
@@ -92,7 +98,7 @@ def main(argv=None) -> int:
     print(f"  {len(rows)} player-seasons")
 
     meta = {"built_at": time.time(), "season": season, "seasons": f"{lo}-{hi}", "players": len(players),
-            "ml_rows": len(ml), "season_totals": len(rows)}
+            "espn_ids": espn_n, "ml_rows": len(ml), "season_totals": len(rows)}
     (out / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
     sizes = {p.name: round(p.stat().st_size / 1e6, 2) for p in out.glob("*.json")}
     print(f"done in {time.time() - t0:.0f}s: {sizes} MB")

@@ -3,7 +3,26 @@
 No background tasks and no per-process draft state: the browser owns the session
 (league / draft ids, identity, mock pick list) and sends it with every request. The
 server keeps only warm caches (bundle, Sleeper payloads, ECR, per-league contexts)
-and persists research notes through :mod:`draftadvisor.research.store`.
+and reads the legacy research notes through :mod:`draftadvisor.research.store`
+(read-only: nothing researches any more).
+
+The only endpoint that calls the Anthropic API is ``POST /api/chat`` (the user sent a
+message); it forwards the token usage and the estimated cost of every answer. Nothing
+calls Claude on a poll, on a state change or in a loop.
+
+Platforms: ``session.platform`` is ``"sleeper"`` (default) or ``"espn"``. An ESPN session
+carries ``league_id`` + ``season`` (+ ``team_id``); the capture (settings, teams, rosters,
+draft, player pool with ADP / projections) is identity-free and cached per league + season
+(ESPN: + credential pair) for ``LEAGUE_TTL`` - who "me" is gets resolved per request
+(:func:`resolve_me`), so the session the browser sends back after ``/api/session/start``
+hits the same cache entry - and every poll is a single ESPN GET (picks + the current draft
+settings, so a changed clock / pick order is followed). Private leagues need the ``espn_s2``
+/ ``SWID`` cookies: headers ``X-ESPN-S2`` / ``X-ESPN-SWID`` (browser Settings), else the
+server's ``ESPN_S2`` / ``ESPN_SWID`` env. One :class:`EspnClient` per credential pair, keyed
+by a hash; cookie values never reach logs, cache keys or responses. Whether ESPN updates
+``draftDetail.picks`` while a draft is in progress could not be verified offline: the
+server renders whatever ESPN returns each poll and gives no pick countdown (ESPN picks
+carry no timestamps).
 """
 from __future__ import annotations
 
@@ -16,13 +35,14 @@ import os
 import threading
 import time
 import webbrowser
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator, Mapping, Sequence
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, PrivateAttr, ValidationError
 
 from ..config import DEFAULT_SEASON, Settings, home_dir
 from ..models import DraftSettings, DraftState, LeagueSettings, Player, PlayerValue, Projection, Recommendation, ResearchNote
@@ -37,14 +57,41 @@ BEST_N = 8
 LEAGUE_TTL = 10 * 60          # league / users / rosters / snapshot
 TRADED_TTL = 30
 CONTEXT_TTL = 10 * 60
-ADVICE_TIMEOUT_S = 14.0
-RESEARCH_TIMEOUT_S = 100.0
-VERSION = "2.0"
+VERSION = "2.2"
+PLATFORMS: tuple[str, ...] = ("sleeper", "espn")
+ESPN_CLIENT_MAX = 16          # distinct credential pairs kept warm per process
+ESPN_PRIVATE_HINT = "ESPN says this league is private - add your espn_s2 and SWID cookies under Settings"
 
 
 # ---------------------------------------------------------------------------
 # Session model (what the browser sends)
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class EspnAuth:
+    """ESPN private-league cookies for one request: headers first, else the server's env. Never logged."""
+
+    espn_s2: str | None = None
+    swid: str | None = None
+
+    @property
+    def present(self) -> bool:
+        return bool(self.espn_s2 and self.swid)
+
+    @property
+    def key(self) -> str:
+        """Hash of the credential pair (cache / client key); ``anon`` without cookies."""
+        if not (self.espn_s2 or self.swid):
+            return "anon"
+        return hashlib.sha1(f"{self.espn_s2 or ''}\n{self.swid or ''}".encode()).hexdigest()[:12]
+
+    @classmethod
+    def from_request(cls, request: Request | None) -> "EspnAuth":
+        h: Mapping[str, str] = request.headers if request is not None else {}
+        s2 = (h.get("x-espn-s2") or os.environ.get("ESPN_S2") or "").strip() or None
+        swid = (h.get("x-espn-swid") or os.environ.get("ESPN_SWID") or "").strip() or None
+        return cls(s2, swid)
 
 
 class MockConfig(BaseModel):
@@ -56,30 +103,107 @@ class MockConfig(BaseModel):
     seed: int | None = None
 
 
+def _query_int(q: Mapping[str, str], name: str) -> int | None:
+    raw = q.get(name)
+    if raw in (None, ""):
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        raise HTTPException(400, f"{name} must be an integer")
+
+
+def _mock_from_query(q: Mapping[str, str]) -> MockConfig:
+    """Mock settings from GET params: ``mock_<key>`` (what the page sends) wins over a bare ``<key>``."""
+    def raw(name: str) -> str | None:
+        v = q.get(f"mock_{name}")
+        return v if v not in (None, "") else q.get(name)
+
+    def num(name: str, default: int) -> int:
+        v = raw(name)
+        if v in (None, ""):
+            return default
+        try:
+            return int(v)
+        except ValueError:
+            raise HTTPException(400, f"{name} must be an integer")
+
+    seed = raw("seed")
+    return MockConfig(teams=num("teams", 12), rounds=num("rounds", 15), slot=num("slot", 5),
+                      scoring=raw("scoring") or "half_ppr", superflex=(raw("superflex") or "false").lower() in ("1", "true"),
+                      seed=num("seed", 0) if seed not in (None, "") else None)
+
+
 class Session(BaseModel):
     mode: str = "live"                      # live | mock
+    platform: str = "sleeper"               # sleeper | espn
     draft_id: str | None = None
-    league_id: str | None = None
+    league_id: str | None = None            # espn: the leagueId= number of the league URL
+    season: int | None = None               # espn: league season (default DEFAULT_SEASON)
     username: str | None = None
-    user_id: str | None = None
+    user_id: str | None = None              # espn: str(team id) once resolved
     slot: int | None = None
-    use_claude: bool = True
+    team_id: int | None = None              # espn: my team id
+    use_claude: bool = True                 # accepted for compatibility; triggers nothing (chat is user-initiated)
     mock: MockConfig | None = None
     picks: list[str] = []                   # mock only: player ids in pick order
+    _espn: EspnAuth | None = PrivateAttr(default=None)
 
     @classmethod
     def from_query(cls, request: Request) -> "Session":
+        """The session of a GET request: the ``session`` JSON parameter when the page sends one, else the
+        flat parameters (mock settings as ``mock_<key>`` or bare ``<key>``, picks as a comma list)."""
         q = request.query_params
-        mock = None
-        if q.get("mode") == "mock":
-            mock = MockConfig(teams=int(q.get("teams", 12)), rounds=int(q.get("rounds", 15)), slot=int(q.get("slot", 5)),
-                              scoring=q.get("scoring", "half_ppr"), superflex=q.get("superflex", "false").lower() in ("1", "true"),
-                              seed=int(q["seed"]) if q.get("seed") else None)
+        blob = q.get("session")
+        if blob:
+            try:
+                data = json.loads(blob)
+            except ValueError:
+                data = None
+            if not isinstance(data, Mapping):
+                raise HTTPException(400, "session must be a JSON object")
+            try:
+                sess = cls.model_validate(data)
+            except ValidationError as e:
+                raise HTTPException(400, f"invalid session: {e.errors()[0].get('msg') if e.errors() else e}")
+            return sess.with_auth(request)
+        mode = q.get("mode", "live")
+        mock = _mock_from_query(q) if mode == "mock" else None
         picks = [p for p in (q.get("picks") or "").split(",") if p]
-        return cls(mode=q.get("mode", "live"), draft_id=q.get("draft_id") or None, league_id=q.get("league_id") or None,
-                   username=q.get("username") or None, user_id=q.get("user_id") or None,
-                   slot=int(q["slot"]) if q.get("slot") and q.get("mode") != "mock" else None,
+        sess = cls(mode=mode, platform=(q.get("platform") or "sleeper").lower(),
+                   draft_id=q.get("draft_id") or None, league_id=q.get("league_id") or None,
+                   season=_query_int(q, "season"), username=q.get("username") or None, user_id=q.get("user_id") or None,
+                   slot=_query_int(q, "slot") if mode != "mock" else None, team_id=_query_int(q, "team_id"),
                    use_claude=q.get("use_claude", "true").lower() not in ("0", "false"), mock=mock, picks=picks)
+        return sess.with_auth(request)
+
+    # -- ESPN identity ----------------------------------------------------------
+    def with_auth(self, request: Request | None) -> "Session":
+        """Attach the request's ESPN cookies (kept out of ``model_dump`` and therefore out of responses)."""
+        self._espn = EspnAuth.from_request(request)
+        return self
+
+    @property
+    def espn_auth(self) -> EspnAuth:
+        return self._espn if self._espn is not None else EspnAuth.from_request(None)
+
+    @property
+    def espn_season(self) -> int:
+        return int(self.season or DEFAULT_SEASON)
+
+    @property
+    def espn_team_id(self) -> int | None:
+        """``team_id``, else ``user_id`` when it is a team id (a resumed session stores both)."""
+        if self.team_id is not None:
+            return int(self.team_id)
+        return int(self.user_id) if self.user_id and self.user_id.isdigit() else None
+
+    def espn_identity(self) -> dict[str, Any]:
+        """Who am I for :func:`draftadvisor.espn.parsing.resolve_my_team`: the team id is the stable identity,
+        so ``slot`` only counts when no team is known (the commissioner may reorder the draft)."""
+        tid = self.espn_team_id
+        return {"swid": self.espn_auth.swid, "team_id": tid, "slot": self.slot if tid is None else None,
+                "username": self.username if tid is None else None}
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +233,8 @@ class _Cache:
 CACHE = _Cache()
 _STORE: NoteStore | None = None
 _SLEEPER: Any = None
-_RESEARCHERS: dict[str, Any] = {}
+_ESPN_CLIENTS: dict[str, "_PooledClient"] = {}   # EspnAuth.key -> pooled EspnClient, least recently used first
+_CLAUDE_CLIENTS: dict[str, Any] = {}
 _LOCKS: dict[str, asyncio.Lock] = {}
 
 
@@ -129,6 +254,63 @@ def sleeper() -> Any:
     return _SLEEPER
 
 
+@dataclass
+class _PooledClient:
+    """An :class:`EspnClient` of the pool with its in-flight request count; ``retired`` once evicted."""
+
+    client: Any
+    in_flight: int = 0
+    retired: bool = False
+
+
+async def _close_quietly(client: Any) -> None:
+    try:
+        await client.aclose()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+@asynccontextmanager
+async def espn_client(auth: EspnAuth) -> AsyncIterator[Any]:
+    """One :class:`EspnClient` per credential pair, bounded to ``ESPN_CLIENT_MAX`` (the least recently
+    used is evicted first). A client evicted while a request is still using it is closed when that
+    request finishes, never underneath it."""
+    from ..espn.client import EspnClient
+
+    entry = _ESPN_CLIENTS.pop(auth.key, None)
+    if entry is None:
+        while len(_ESPN_CLIENTS) >= ESPN_CLIENT_MAX:
+            oldest = _ESPN_CLIENTS.pop(next(iter(_ESPN_CLIENTS)))
+            oldest.retired = True
+            if oldest.in_flight == 0:
+                await _close_quietly(oldest.client)
+        entry = _PooledClient(EspnClient(espn_s2=auth.espn_s2, swid=auth.swid, retries=2))
+    _ESPN_CLIENTS[auth.key] = entry                  # (re)inserted last: most recently used
+    entry.in_flight += 1
+    try:
+        yield entry.client
+    finally:
+        entry.in_flight -= 1
+        if entry.retired and entry.in_flight == 0:
+            await _close_quietly(entry.client)
+
+
+def espn_http_error(e: Exception, league_id: Any, season: int, auth: EspnAuth | None = None) -> HTTPException:
+    """ESPN client failures -> HTTP: private league 401, unknown league 404, anything else 502."""
+    from ..espn.client import EspnAccessDenied, EspnAPIError, EspnNotFound
+
+    if isinstance(e, EspnAccessDenied):
+        if auth is not None and auth.present:
+            return HTTPException(401, ESPN_PRIVATE_HINT + " (the cookies you set were rejected: they expire, and the "
+                                      "account must be a member of this league)")
+        return HTTPException(401, ESPN_PRIVATE_HINT)
+    if isinstance(e, EspnNotFound):
+        return HTTPException(404, f"ESPN has no league {league_id} for season {season}")
+    if isinstance(e, EspnAPIError):
+        return HTTPException(502, f"ESPN API error: {e}")
+    return HTTPException(502, f"could not reach the ESPN API: {e}")
+
+
 def lock_for(key: str) -> asyncio.Lock:
     if key not in _LOCKS:
         _LOCKS[key] = asyncio.Lock()
@@ -145,16 +327,29 @@ def notes_dict() -> dict[str, ResearchNote]:
     return out
 
 
-def researcher_for(api_key: str | None) -> Any:
-    from ..research.claude import ClaudeResearcher
+def claude_for(api_key: str | None) -> Any:
+    """One :class:`ClaudeChat` per API key (header key, else the server's); disabled without a key."""
+    from ..research.claude import ClaudeChat
 
     key = api_key or os.environ.get("ANTHROPIC_API_KEY") or ""
     h = hashlib.sha1(key.encode()).hexdigest()[:10] if key else "none"
-    r = _RESEARCHERS.get(h)
+    r = _CLAUDE_CLIENTS.get(h)
     if r is None:
-        r = ClaudeResearcher(api_key=key or None, cache_dir=home_dir() / "research")
-        _RESEARCHERS[h] = r
+        r = ClaudeChat(api_key=key or None, cache_dir=home_dir() / "research")
+        _CLAUDE_CLIENTS[h] = r
     return r
+
+
+def chat_model() -> str:
+    """The default chat model: ``DRAFTADVISOR_CHAT_MODEL`` when it is a priced model, else ``CHAT_MODEL``
+    (only models in the price table may be billed, see ``POST /api/chat``)."""
+    from ..research.claude import CHAT_MODEL, model_prices
+
+    env = (os.environ.get("DRAFTADVISOR_CHAT_MODEL") or "").strip()
+    if env and model_prices(env) is None:
+        log.warning("DRAFTADVISOR_CHAT_MODEL=%r is not a priced model; using %s", env, CHAT_MODEL)
+        return CHAT_MODEL
+    return env or CHAT_MODEL
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +435,15 @@ async def ecr_rows() -> list[dict]:
 
 @dataclass
 class LeagueBundle:
-    """Everything cached for one draft: league/draft/users/rosters/snapshot + the lean context."""
+    """Everything cached for one league capture: league/draft/users/rosters/snapshot + the lean context.
+
+    The capture is identity-free (nobody is "me" in ``snapshot``; :func:`resolve_me` resolves the asking
+    manager per request), so one bundle serves every session of the same league and the session the
+    browser sends back after ``/api/session/start`` hits the same cache entry. ``key`` is the cache key
+    (ESPN: + the credential hash, so a private league's data never serves another cookie pair);
+    ``league_key`` keys the shared lean context (``ctx:<league_key>:<fingerprint>``). ESPN bundles also
+    carry the id map the capture used, the fetched player pool and its names (``espn_id -> {name, ...}``).
+    """
 
     key: str
     league: LeagueSettings
@@ -254,14 +457,46 @@ class LeagueBundle:
     ctx: Any = None
     ctx_fp: str = ""
     built_at: float = field(default_factory=time.time)
+    platform: str = "sleeper"
+    season: int = DEFAULT_SEASON
+    league_key: str = ""
+    id_map: Any = None                                  # espn: EspnIdMap the capture used (the board uses ctx.id_map)
+    espn_players: list = field(default_factory=list)    # espn: kona_player_info entries (ADP / projections)
+    espn_names: dict = field(default_factory=dict)      # espn: espn_id -> player fields
+
+
+def _league_key(sess: Session) -> str:
+    """Identity-free key of a league: ESPN league + season (the draft id derives from them); Sleeper draft
+    id, else league id (the capture is aliased under both once the other one is known)."""
+    if sess.platform == "espn":
+        return f"espn::{sess.league_id or ''}:{sess.espn_season}"
+    return f"sleeper:{sess.draft_id or ''}:{'' if sess.draft_id else (sess.league_id or '')}:"
+
+
+def _capture_key(sess: Session) -> str:
+    """Cache key of the capture: the league key plus, for ESPN, the credential hash (never the cookies)."""
+    key = f"league:{_league_key(sess)}"
+    return f"{key}:{sess.espn_auth.key}" if sess.platform == "espn" else key
+
+
+def _bundle_keys(lb: LeagueBundle, key: str) -> list[str]:
+    """Every cache key a bundle answers to: the requested one plus, for Sleeper, the resolved draft id and
+    league id (a session started by league id polls with the draft id filled in, and vice versa)."""
+    keys = [key]
+    if lb.platform == "sleeper":
+        if lb.draft is not None and lb.draft.draft_id:
+            keys.append(f"league:sleeper:{lb.draft.draft_id}::")
+        league_id = (lb.league_raw or {}).get("league_id")
+        if league_id:
+            keys.append(f"league:sleeper::{league_id}:")
+    return list(dict.fromkeys(keys))
 
 
 async def resolve_league(sess: Session) -> LeagueBundle:
-    """Capture (cached) the league behind a session; raises HTTP errors for bad ids."""
-    from ..capture import capture_league
-    from ..sleeper.client import SleeperAPIError, SleeperNotFound
-
-    key = f"league:{sess.draft_id or ''}:{sess.league_id or ''}"
+    """Capture (cached per league, identity-free) the league behind a session; raises HTTP errors for bad ids."""
+    if sess.platform not in PLATFORMS:
+        raise HTTPException(400, f"platform must be one of {', '.join(PLATFORMS)}")
+    key = _capture_key(sess)
     hit = CACHE.get(key, LEAGUE_TTL)
     if hit is not None:
         return hit
@@ -269,37 +504,202 @@ async def resolve_league(sess: Session) -> LeagueBundle:
         hit = CACHE.get(key, LEAGUE_TTL)
         if hit is not None:
             return hit
-        try:
-            snap = await capture_league(sleeper(), sess.league_id, sess.draft_id, username=sess.username,
-                                        user_id=sess.user_id, slot=sess.slot, season=DEFAULT_SEASON, save=False)
-        except SleeperNotFound as e:
-            raise HTTPException(404, f"Sleeper has no league/draft with that id ({e})")
-        except ValueError as e:
-            raise HTTPException(400, str(e))
-        except SleeperAPIError as e:
-            raise HTTPException(502, f"Sleeper API error: {e}")
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(502, f"could not reach the Sleeper API: {e}")
-        if snap.draft is None and snap.league is None:
-            raise HTTPException(404, "no league or draft found")
-        league = snap.league
-        if league is None:  # draft without a league (e.g. mock draft on Sleeper): derive scoring from metadata
-            from ..lean import default_league
-
-            league = default_league({"ppr": "ppr", "half_ppr": "half_ppr", "std": "std"}.get(snap.draft.scoring_type or "", "half_ppr"),
-                                    snap.draft.teams)
-        raw = snap.raw or {}
-        lb = LeagueBundle(key=key, league=league, draft=snap.draft, snapshot=snap, league_raw=raw.get("league"),
-                          users_raw=raw.get("users") or [], rosters_raw=raw.get("rosters") or [],
-                          traded_raw=raw.get("traded_picks") or [], traded_at=time.time())
-        CACHE.set(key, lb)
-        CACHE.set("sleeper_ok", True)
+        lb = await (_capture_espn(sess, key) if sess.platform == "espn" else _capture_sleeper(sess, key))
+        lb.league_key = _league_key(sess)
+        if lb.platform == "sleeper" and lb.draft is not None and lb.draft.draft_id:
+            lb.league_key = f"sleeper:{lb.draft.draft_id}::"          # one context per draft, however it was asked for
+        for k in _bundle_keys(lb, key):
+            CACHE.set(k, lb)
         return lb
 
 
+def _espn_me(lb: LeagueBundle, sess: Session) -> tuple[str | None, int | None]:
+    """``(team id, slot)`` of the session's manager in an ESPN capture (precedence: slot > team id > SWID >
+    username, see :func:`draftadvisor.espn.parsing.resolve_my_team`); ``ValueError`` names the teams when
+    the given team id / username matches none of them."""
+    from ..espn.parsing import resolve_my_team
+
+    ident = sess.espn_identity()
+    managers = lb.snapshot.managers if lb.snapshot is not None else {}
+    my_uid, my_slot = resolve_my_team(lb.draft, managers, lb.league_raw, **ident)
+    if (ident["username"] or ident["team_id"] is not None) and my_uid is None:
+        teams = ", ".join(sorted(f"{m.team_name or m.display_name} (team {m.user_id}, {m.display_name})"
+                                 for m in managers.values()))
+        raise ValueError(f"could not find {ident['username'] or ident['team_id']!r} among the ESPN league's teams: {teams}")
+    return my_uid, my_slot
+
+
+def resolve_me(lb: LeagueBundle, sess: Session) -> tuple[str | None, int | None]:
+    """``(my user / team id, my slot)`` of the session's manager in a shared, identity-free capture.
+
+    400 when the given username / user id / team id matches nobody or the slot lies outside the draft;
+    ``(None, None)`` is a spectator. Pure and cheap: called on every request that names a league.
+    """
+    from ..capture import resolve_identity
+
+    if lb.draft is None:
+        return None, None
+    if sess.slot is not None and lb.draft.teams and not 1 <= int(sess.slot) <= lb.draft.teams:
+        raise HTTPException(400, f"slot must be between 1 and {lb.draft.teams}")
+    try:
+        if lb.platform == "espn":
+            return _espn_me(lb, sess)
+        managers = lb.snapshot.managers if lb.snapshot is not None else {}
+        return resolve_identity(lb.draft, managers, lb.users_raw, username=sess.username, user_id=sess.user_id,
+                                slot=sess.slot)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+async def _capture_sleeper(sess: Session, key: str) -> LeagueBundle:
+    from ..capture import capture_league
+    from ..sleeper.client import SleeperAPIError, SleeperNotFound
+
+    try:
+        snap = await capture_league(sleeper(), sess.league_id, sess.draft_id, season=DEFAULT_SEASON, save=False)
+    except SleeperNotFound as e:
+        raise HTTPException(404, f"Sleeper has no league/draft with that id ({e})")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except SleeperAPIError as e:
+        raise HTTPException(502, f"Sleeper API error: {e}")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"could not reach the Sleeper API: {e}")
+    if snap.draft is None and snap.league is None:
+        raise HTTPException(404, "no league or draft found")
+    league = snap.league
+    if league is None:  # draft without a league (e.g. mock draft on Sleeper): derive scoring from metadata
+        from ..lean import default_league
+
+        league = default_league({"ppr": "ppr", "half_ppr": "half_ppr", "std": "std"}.get(snap.draft.scoring_type or "", "half_ppr"),
+                                snap.draft.teams)
+    raw = snap.raw or {}
+    lb = LeagueBundle(key=key, league=league, draft=snap.draft, snapshot=snap, league_raw=raw.get("league"),
+                      users_raw=raw.get("users") or [], rosters_raw=raw.get("rosters") or [],
+                      traded_raw=raw.get("traded_picks") or [], traded_at=time.time())
+    CACHE.set("sleeper_ok", True)
+    return lb
+
+
+async def espn_id_map() -> Any:
+    """ESPN id -> canonical id map over the player universe (the Sleeper payload when reachable, else the
+    bundle), cached alongside the payload; the capture's snapshot resolves through it. The board and every
+    poll use the context's own map instead (:func:`league_context`), which is indexed over the very
+    universe the board shows."""
+    from ..espn.ids import EspnIdMap
+    from ..lean import get_bundle, players_from_sleeper_payload
+
+    payload = await sleeper_players()
+    key = "espn_idmap:" + ("sleeper" if payload else "bundle")
+    hit = CACHE.get(key, 6 * 3600)
+    if hit is not None:
+        return hit
+    async with lock_for(key):
+        hit = CACHE.get(key, 6 * 3600)
+        if hit is not None:
+            return hit
+        bundle = get_bundle()
+
+        def _build() -> Any:
+            universe = players_from_sleeper_payload(payload, bundle.players) if payload else bundle.players
+            return EspnIdMap.from_players(universe)
+
+        id_map = await asyncio.to_thread(_build)
+        CACHE.set(key, id_map)
+        return id_map
+
+
+async def _capture_espn(sess: Session, key: str) -> LeagueBundle:
+    """Settings / teams / rosters, draft and player pool of one ESPN league (3 GETs, cached for LEAGUE_TTL)."""
+    from ..espn.capture import capture_espn_league, espn_names
+
+    league_id, season, auth = sess.league_id, sess.espn_season, sess.espn_auth
+    if not league_id:
+        raise HTTPException(400, "league_id required for an ESPN league")
+    id_map = await espn_id_map()
+    async with espn_client(auth) as client:
+        try:
+            snap = await capture_espn_league(client, league_id, season, id_map=id_map, save=False)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except Exception as e:  # noqa: BLE001
+            raise espn_http_error(e, league_id, season, auth)
+    if snap.league is None or snap.draft is None:
+        raise HTTPException(404, f"ESPN has no league {league_id} for season {season}")
+    raw = snap.raw or {}
+    pool = list(raw.get("players") or [])
+    return LeagueBundle(key=key, league=snap.league, draft=snap.draft, snapshot=snap, league_raw=raw.get("league"),
+                        users_raw=[], rosters_raw=raw.get("rosters") or [], platform="espn", season=season,
+                        id_map=id_map, espn_players=pool, espn_names=espn_names(pool))
+
+
+def espn_context_inputs(lb: LeagueBundle, id_map: Any) -> dict[str, Any]:
+    """The ESPN-specific inputs of :func:`draftadvisor.lean.build_lean_context` for one league.
+
+    ``id_map`` indexes the universe the context is built from (see :func:`_build_context`), so the pool's
+    ESPN ADP and projected season lines are keyed by the ids the board uses; players of the pool or of a
+    league roster that resolve to a synthetic ``espn:<id>`` become placeholder :class:`Player` objects
+    (with their ESPN ADP / projection) so the board never shows a blank name.
+    """
+    from ..espn.capture import espn_adp, espn_projections
+    from ..espn.ids import EspnIdMap, placeholder_player
+
+    entries: list[Mapping[str, Any]] = list(lb.espn_players)
+    for team in (lb.league_raw or {}).get("teams") or []:
+        if isinstance(team, Mapping):
+            entries.extend(e for e in ((team.get("roster") or {}).get("entries") or []) if isinstance(e, Mapping))
+    extra: dict[str, Player] = {}
+    for entry in entries:
+        pid = id_map.resolve_player_json(entry)
+        if EspnIdMap.is_synthetic(pid) and pid not in extra:
+            extra[pid] = placeholder_player(entry, pid)
+    return {"adp_override": espn_adp(lb.espn_players, id_map), "adp_source": "espn",
+            "proj_fallback": espn_projections(lb.espn_players, id_map, lb.season), "proj_fallback_source": "espn",
+            "extra_players": extra}
+
+
+def ensure_pick_players(players: dict[str, Player], st: DraftState) -> int:
+    """Placeholder :class:`Player` for every pick whose id the universe does not know (an ESPN player
+    outside the fetched pool and off every roster); returns how many were added."""
+    from ..espn.ids import placeholder_player
+
+    n = 0
+    for p in st.picks:
+        if p.player_id in players:
+            continue
+        md = p.metadata or {}
+        pl = placeholder_player({"id": md.get("espn_id") or p.player_id, "firstName": md.get("first_name"),
+                                 "lastName": md.get("last_name")}, p.player_id)
+        pl.position, pl.team = md.get("position") or "UNK", md.get("team") or None
+        pl.fantasy_positions = (pl.position,)
+        players[p.player_id] = pl
+        n += 1
+    return n
+
+
+def _build_context(lb: LeagueBundle, settings: Settings, players_payload: dict | None, proj: dict | None,
+                   rows: list[dict], notes: Mapping[str, ResearchNote]) -> Any:
+    """Blocking build of the lean context. For ESPN the id map is indexed over the very universe the context
+    is built from (and stored on it as ``ctx.id_map``), so picks, rosters and the player pool resolve into
+    the ids the board shows - whichever source (Sleeper payload or bundle) the universe came from."""
+    from ..lean import build_lean_context, get_bundle, lean_universe
+
+    bundle = get_bundle()
+    extra: dict[str, Any] = {}
+    if lb.platform == "espn":
+        from ..espn.ids import EspnIdMap
+
+        universe, source = lean_universe(bundle, players_payload)
+        id_map = EspnIdMap.from_players(universe)
+        extra = dict(espn_context_inputs(lb, id_map), players=universe, players_source=source, id_map=id_map)
+    return build_lean_context(bundle, lb.league, lb.draft, sleeper_players=players_payload, sleeper_proj=proj,
+                              ecr_rows=rows, notes=notes, settings=settings, **extra)
+
+
 async def league_context(lb: LeagueBundle, sess: Session) -> Any:
-    """Lean context for the league (rebuilt when notes / inputs change or after CONTEXT_TTL)."""
-    from ..lean import build_lean_context, context_fingerprint, get_bundle
+    """Lean context for the league (rebuilt when notes / inputs change or after CONTEXT_TTL); identity-free,
+    so every session of the same league shares one build."""
+    from ..lean import context_fingerprint
 
     notes = notes_dict()
     proj = await sleeper_projections(DEFAULT_SEASON)
@@ -307,25 +707,41 @@ async def league_context(lb: LeagueBundle, sess: Session) -> Any:
     fp = context_fingerprint(lb.league, bool(proj), bool(players_payload), len(notes))
     if lb.ctx is not None and lb.ctx_fp == fp and time.time() - lb.ctx.built_at < CONTEXT_TTL:
         return lb.ctx
-    async with lock_for(lb.key + ":ctx"):
-        if lb.ctx is not None and lb.ctx_fp == fp and time.time() - lb.ctx.built_at < CONTEXT_TTL:
-            return lb.ctx
-        rows = await ecr_rows()
-        settings = Settings.from_env(league_id=lb.league.league_id, draft_id=lb.draft.draft_id if lb.draft else None,
-                                     username=sess.username, user_id=sess.user_id, slot=sess.slot)
-        settings.use_claude = sess.use_claude
-        ctx = await asyncio.to_thread(build_lean_context, get_bundle(), lb.league, lb.draft,
-                                      sleeper_players=players_payload, sleeper_proj=proj, ecr_rows=rows,
-                                      notes=notes, settings=settings)
+    ctx_key = f"ctx:{lb.league_key or lb.key}:{fp}"
+    async with lock_for(ctx_key):
+        ctx = CACHE.get(ctx_key, CONTEXT_TTL)
+        if ctx is None:
+            rows = await ecr_rows()
+            settings = Settings.from_env(league_id=lb.league.league_id, draft_id=lb.draft.draft_id if lb.draft else None,
+                                         username=sess.username, user_id=sess.user_id, slot=sess.slot)
+            ctx = await asyncio.to_thread(_build_context, lb, settings, players_payload, proj, rows, notes)
+            CACHE.set(ctx_key, ctx)
         lb.ctx, lb.ctx_fp = ctx, fp
         return ctx
 
 
-async def live_state(lb: LeagueBundle, sess: Session) -> DraftState:
-    """Fetch the draft + picks right now and build the DraftState (2 Sleeper GETs)."""
+async def espn_live_state(lb: LeagueBundle, sess: Session, id_map: Any = None) -> DraftState:
+    """One ESPN GET (picks + current draft settings) -> DraftState; the clock and pick order are re-read.
+    ``id_map`` is the context's map (the board's universe); the capture's map is only the fallback."""
+    from ..espn.parsing import state_from_espn
+
+    league_id = sess.league_id or lb.league.league_id or ""
+    async with espn_client(sess.espn_auth) as client:
+        try:
+            draft_json = await client.get_draft_detail(league_id, lb.season)
+        except Exception as e:  # noqa: BLE001
+            raise espn_http_error(e, league_id, lb.season, sess.espn_auth)
+    return state_from_espn(lb.league_raw or {}, draft_json, id_map if id_map is not None else lb.id_map,
+                           names=lb.espn_names, **sess.espn_identity())
+
+
+async def live_state(lb: LeagueBundle, sess: Session, id_map: Any = None) -> DraftState:
+    """Fetch the draft + picks right now and build the DraftState (2 Sleeper GETs, 1 ESPN GET)."""
     from ..sleeper.client import SleeperAPIError, SleeperNotFound
     from ..sleeper.parsing import state_from_sleeper
 
+    if lb.platform == "espn":
+        return await espn_live_state(lb, sess, id_map)
     draft_id = sess.draft_id or (lb.draft.draft_id if lb.draft else None)
     if not draft_id:
         raise HTTPException(400, "no draft id")
@@ -434,13 +850,17 @@ def card_from_value(v: PlayerValue, notes: Mapping[str, ResearchNote] | None = N
     return c
 
 
-def snapshot_payload(lb: LeagueBundle, st: DraftState | None) -> dict | None:
+def snapshot_payload(lb: LeagueBundle, st: DraftState | None, *, my_user_id: str | None = None,
+                     my_slot: int | None = None) -> dict | None:
+    """The League tab's snapshot; "me" comes from the live state, else from the given ids (the capture
+    itself is identity-free)."""
     from ..capture import scoring_diff, strategy_flags
 
     snap = lb.snapshot
     league = lb.league
     draft = st.draft if st is not None else lb.draft
-    my_slot = st.my_slot if st is not None else (snap.my_slot if snap else None)
+    my_slot = st.my_slot if st is not None else my_slot
+    my_user_id = st.my_user_id if st is not None else my_user_id
     order = []
     if draft is not None:
         for slot in range(1, draft.teams + 1):
@@ -450,10 +870,13 @@ def snapshot_payload(lb: LeagueBundle, st: DraftState | None) -> dict | None:
                           "picks": draft.picks_for_slot(slot)[:6], "is_me": slot == my_slot})
     diff = snap.diff if (snap and snap.diff) else scoring_diff(league.scoring_settings)
     flags = snap.flags if (snap and snap.flags) else strategy_flags(league, draft)
+    unmapped = [{"label": u.get("label"), "points": u.get("points"), "stat_id": u.get("statId")}
+                for u in (league.settings.get("unmapped_scoring") or []) if isinstance(u, Mapping)]
     return {
+        "platform": lb.platform, "unmapped_scoring": unmapped,
         "flags": list(flags), "diff": diff.to_dict() if diff else None, "draft_order": order,
         "my_picks": draft.picks_for_slot(my_slot) if (draft and my_slot) else [],
-        "my_user_id": st.my_user_id if st is not None else (snap.my_user_id if snap else None),
+        "my_user_id": my_user_id,
         "captured_at": snap.captured_at if snap else lb.built_at,
         "league": {"name": league.name, "league_id": league.league_id, "season": league.season,
                    "teams": league.total_rosters, "total_rosters": league.total_rosters,
@@ -486,7 +909,9 @@ def build_payload(lb: LeagueBundle, ctx: Any, st: DraftState, rec: Recommendatio
     league = ctx.league
     now = time.time()
     otc = st.on_the_clock_slot
-    start = clock_start(st, now) if (st.is_my_turn and st.draft.pick_timer) else None
+    # ESPN picks carry no timestamps: pick_timer is reported (re-read each poll) but no countdown is claimed
+    timed = lb.platform != "espn" and st.is_my_turn and st.draft.pick_timer
+    start = clock_start(st, now) if timed else None
     seconds_left = None
     if start is not None and st.draft.status != "paused":
         seconds_left = max(0, int(round(st.draft.pick_timer - (now - start))))
@@ -542,7 +967,8 @@ def build_payload(lb: LeagueBundle, ctx: Any, st: DraftState, rec: Recommendatio
             opponents.append({"slot": rs.slot, "label": rs.label, "needs": rs.needs(), "next_pick": fut[0] if fut else None,
                               "position_counts": dict(rs.position_counts),
                               "players": [{"name": pl.name, "position": pl.position} for pl in rs.players]})
-    status = {"compute_ms": _f(rec.compute_ms) if rec else None, "ts": now, "sources": dict(ctx.sources)}
+    status = {"compute_ms": _f(rec.compute_ms) if rec else None, "ts": now, "sources": dict(ctx.sources),
+              "platform": lb.platform}
     if extra_status:
         status.update(extra_status)
     return {"mode": mode, "version": st.version, "ts": now, "draft": draft, "league": league_d, "me": me,
@@ -604,18 +1030,21 @@ async def resolve(sess: Session, *, mock_action: str = "sync", player_id: str | 
         r = Resolved(lb, ctx, st, rec, mock=md, last_picks=last)
         r.state.metadata = {"picks": picks_all}  # type: ignore[attr-defined]
         return r
-    if not (sess.draft_id or sess.league_id):
+    if sess.platform not in PLATFORMS:
+        raise HTTPException(400, f"platform must be one of {', '.join(PLATFORMS)}")
+    if sess.platform == "espn":
+        if not sess.league_id:
+            raise HTTPException(400, "league_id required for an ESPN league (the leagueId= number in the league URL)")
+    elif not (sess.draft_id or sess.league_id):
         raise HTTPException(400, "draft_id or league_id required")
     lb = await resolve_league(sess)
+    resolve_me(lb, sess)                        # 400 for an unknown team / manager / slot, before any poll
     ctx = await league_context(lb, sess)
-    st = await live_state(lb, sess)
+    st = await live_state(lb, sess, ctx.id_map)
+    if lb.platform == "espn":
+        ensure_pick_players(ctx.players, st)
     rec = recommend(ctx, st)
     return Resolved(lb, ctx, st, rec)
-
-
-def state_key(sess: Session, st: DraftState) -> str:
-    last = max((p.pick_no for p in st.picks), default=0)
-    return f"{sess.mode}:{sess.draft_id or _mock_key(sess.mock or MockConfig())}:{len(st.picks)}:{last}:{st.my_slot}"
 
 
 # ---------------------------------------------------------------------------
@@ -624,7 +1053,10 @@ def state_key(sess: Session, st: DraftState) -> str:
 
 
 class LookupReq(BaseModel):
-    username: str
+    platform: str = "sleeper"
+    username: str | None = None             # sleeper
+    league_id: str | None = None            # espn
+    season: int | None = None               # espn (default DEFAULT_SEASON)
 
 
 class SessionReq(BaseModel):
@@ -641,17 +1073,6 @@ class ChatReq(BaseModel):
     session: Session | None = None
     messages: list[dict]
     model: str | None = None
-
-
-class ResearchPlayerReq(BaseModel):
-    session: Session | None = None
-    player_id: str
-    force: bool = False
-
-
-class ResearchNextReq(BaseModel):
-    session: Session | None = None
-    top: int = 150
 
 
 # ---------------------------------------------------------------------------
@@ -688,20 +1109,30 @@ def create_app() -> FastAPI:
                       "seasons": b.meta.get("seasons"), "players": len(b.players), "ml_rows": len(b.ml)}
         except Exception as e:  # noqa: BLE001
             bundle["error"] = str(e)
+        from ..research.claude import MODEL_PRICES_USD_PER_MTOK
+
         st_ = store()
         return {"ok": True, "version": VERSION, "season": DEFAULT_SEASON, "bundle": bundle,
-                "claude": {"server_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
-                           "chat_model": os.environ.get("DRAFTADVISOR_CHAT_MODEL", "claude-opus-5"),
-                           "research_model": os.environ.get("DRAFTADVISOR_CLAUDE_MODEL", "claude-sonnet-5")},
+                "claude": {"server_key": bool(os.environ.get("ANTHROPIC_API_KEY")), "chat_model": chat_model(),
+                           "prices": {k: list(v) for k, v in MODEL_PRICES_USD_PER_MTOK.items()}},
                 "notes": {"count": st_.count(), "store": st_.backend},
                 "access_code_required": access_code_required(), "sleeper": CACHE.get("sleeper_ok", 3600),
+                "platforms": list(PLATFORMS), "espn": {"server_cookies": EspnAuth.from_request(None).present},
                 "home": str(home_dir())}
 
     @app.post("/api/lookup", dependencies=guarded)
-    async def lookup(req: LookupReq) -> dict:
+    async def lookup(req: LookupReq, request: Request) -> dict:
         from ..sleeper.client import SleeperNotFound
 
-        name = req.username.strip()
+        platform = (req.platform or "sleeper").lower()
+        if platform not in PLATFORMS:
+            raise HTTPException(400, f"platform must be one of {', '.join(PLATFORMS)}")
+        if platform == "espn":
+            league_id = (req.league_id or "").strip()
+            if not league_id:
+                raise HTTPException(400, "league_id required (the leagueId= number in the ESPN league URL)")
+            return await espn_lookup(league_id, int(req.season or DEFAULT_SEASON), EspnAuth.from_request(request))
+        name = (req.username or "").strip()
         if not name:
             raise HTTPException(400, "username required")
         try:
@@ -730,8 +1161,8 @@ def create_app() -> FastAPI:
                             "name": (d.get("metadata") or {}).get("name")} for d in drafts or []]}
 
     @app.post("/api/session/start", dependencies=guarded)
-    async def session_start(req: SessionReq) -> dict:
-        sess = req.session
+    async def session_start(req: SessionReq, request: Request) -> dict:
+        sess = req.session.with_auth(request)
         if sess.mode == "mock":
             r = await resolve(sess, mock_action="sync")
             cfg = sess.mock or MockConfig()
@@ -739,16 +1170,26 @@ def create_app() -> FastAPI:
             out["slot"] = cfg.slot
             return {"session": out, "snapshot": snapshot_payload(r.lb, r.state), "league": {
                 "name": r.lb.league.name, "scoring_type": r.lb.league.scoring_type, "teams": r.lb.league.total_rosters}}
+        if sess.platform == "espn" and not sess.league_id:
+            raise HTTPException(400, "league_id required for an ESPN league (the leagueId= number in the league URL)")
         lb = await resolve_league(sess)
+        my_uid, my_slot = resolve_me(lb, sess)
         snap = lb.snapshot
         out = sess.model_dump()
-        out.update({"draft_id": snap.draft_id, "league_id": snap.league_id, "user_id": snap.my_user_id or sess.user_id,
-                    "slot": snap.my_slot if snap.my_slot is not None else sess.slot})
+        out.update({"platform": lb.platform, "draft_id": snap.draft_id, "league_id": snap.league_id,
+                    "user_id": my_uid or sess.user_id, "slot": my_slot if my_slot is not None else sess.slot})
+        if lb.platform == "espn":
+            tid = int(my_uid) if my_uid and str(my_uid).isdigit() else sess.espn_team_id
+            out.update({"season": lb.season, "team_id": tid, "user_id": str(tid) if tid is not None else None})
+            message = (None if my_slot is not None
+                       else "draft order not set yet; your slot resolves when the commissioner publishes it" if tid is not None
+                       else "no team selected: spectating (pick your team under Setup for on-the-clock advice)")
+        else:
+            message = "draft order not published yet; your slot resolves when the draft starts" if my_slot is None else None
         await league_context(lb, sess)
-        return {"session": out, "snapshot": snapshot_payload(lb, None),
+        return {"session": out, "snapshot": snapshot_payload(lb, None, my_user_id=my_uid, my_slot=my_slot),
                 "league": {"name": lb.league.name, "scoring_type": lb.league.scoring_type, "teams": lb.league.total_rosters},
-                "draft_order_known": bool(lb.draft and lb.draft.draft_order),
-                "message": "draft order not published yet; your slot resolves when the draft starts" if snap.my_slot is None else None}
+                "draft_order_known": bool(lb.draft and lb.draft.draft_order), "message": message}
 
     @app.get("/api/state", dependencies=guarded)
     async def state(request: Request) -> dict:
@@ -764,8 +1205,8 @@ def create_app() -> FastAPI:
         return build_payload(r.lb, r.ctx, r.state, r.rec, "live", {"latency_ms": _f((time.perf_counter() - t0) * 1000)})
 
     @app.post("/api/mock/state", dependencies=guarded)
-    async def mock_state(req: MockStateReq) -> dict:
-        sess = req.session
+    async def mock_state(req: MockStateReq, request: Request) -> dict:
+        sess = req.session.with_auth(request)
         sess.mode = "mock"
         r = await resolve(sess, mock_action=req.action, player_id=req.player_id)
         payload = build_payload(r.lb, r.ctx, r.state, r.rec, "mock")
@@ -775,52 +1216,37 @@ def create_app() -> FastAPI:
                                   "is_me": p.draft_slot == r.state.my_slot} for p in r.last_picks]
         return payload
 
-    @app.get("/api/advice", dependencies=guarded)
-    async def advice(request: Request) -> dict:
-        sess = Session.from_query(request)
-        rs = researcher_for(api_key_from(request))
-        if not rs.enabled or not sess.use_claude:
-            return {"advice": None, "status": "off", "model": None}
-        r = await resolve(sess)
-        if r.rec is None or r.state.is_complete:
-            return {"advice": None, "status": "idle", "model": rs.model}
-        key = "advice:" + state_key(sess, r.state)
-        hit = CACHE.get(key, 3600)
-        if hit is not None:
-            return {"advice": hit, "status": "ready", "model": rs.model, "cached": True}
-        async with lock_for(key):
-            hit = CACHE.get(key, 3600)
-            if hit is not None:
-                return {"advice": hit, "status": "ready", "model": rs.model, "cached": True}
-            try:
-                text = await rs.on_the_clock_advice(r.state, r.rec, r.ctx.players, r.ctx.notes, timeout=ADVICE_TIMEOUT_S)
-            except Exception as e:  # noqa: BLE001
-                log.warning("advice failed: %s", e)
-                return {"advice": None, "status": "error", "model": rs.model, "error": str(e)}
-        if text:
-            CACHE.set(key, text)
-            return {"advice": text, "status": "ready", "model": rs.model}
-        return {"advice": None, "status": "no answer", "model": rs.model, "error": getattr(rs, "last_error", None)}
-
     @app.post("/api/chat", dependencies=guarded)
     async def chat(req: ChatReq, request: Request) -> StreamingResponse:
-        from ..research.claude import build_context_text
+        """The one paid endpoint: one Anthropic request per user message. The SSE stream ends with
+        ``{"done": true, "model", "usage", "cost_usd"}`` so the page can show what it cost.
 
-        rs = researcher_for(api_key_from(request))
+        Only a priced model (``/api/status`` -> ``claude.prices``) may be billed: anything else is 400.
+        The transcript is trimmed to the newest ``CHAT_MAX_TURNS`` / ``CHAT_MAX_CHARS`` before it goes out
+        (a single message over the limit is 413), so one request never carries an unbounded history.
+        """
+        from ..research.claude import CHAT_MAX_CHARS, MODEL_PRICES_USD_PER_MTOK, build_context_text, model_prices, trim_transcript
+
+        model = req.model or chat_model()
+        if model_prices(model) is None:
+            raise HTTPException(400, f"unknown chat model {model!r}; choose one of {', '.join(MODEL_PRICES_USD_PER_MTOK)}")
+        if req.messages and len(str(req.messages[-1].get("content") or "")) > CHAT_MAX_CHARS:
+            raise HTTPException(413, f"message too long (over {CHAT_MAX_CHARS} characters)")
+        messages = trim_transcript(req.messages)
+        rs = claude_for(api_key_from(request))
         if not rs.enabled:
             raise HTTPException(503, "Claude is off: add an Anthropic API key under Settings")
         context = ""
         if req.session is not None and (req.session.draft_id or req.session.league_id or req.session.mode == "mock"):
             try:
-                r = await resolve(req.session)
+                r = await resolve(req.session.with_auth(request))
                 context = build_context_text(r.state, r.rec, r.ctx.players, r.ctx.notes)
             except HTTPException as e:
                 context = f"(draft context unavailable: {e.detail})"
-        model = req.model or os.environ.get("DRAFTADVISOR_CHAT_MODEL") or "claude-opus-5"
 
         async def gen() -> AsyncIterator[bytes]:
             try:
-                async for chunk in rs.chat_stream(req.messages, context, model=model):
+                async for chunk in rs.chat_stream(messages, context, model=model):
                     if isinstance(chunk, dict):
                         yield f"data: {json.dumps(chunk)}\n\n".encode()
                     else:
@@ -838,68 +1264,9 @@ def create_app() -> FastAPI:
             return r.ctx, r.state, r.rec
         return await default_context(), None, None
 
-    @app.post("/api/research/player", dependencies=guarded)
-    async def research_player(req: ResearchPlayerReq, request: Request) -> dict:
-        rs = researcher_for(api_key_from(request))
-        if not rs.enabled:
-            raise HTTPException(503, "Claude is off: add an Anthropic API key under Settings")
-        ctx, _, _ = await _ctx_for(req.session)
-        pl = ctx.players.get(req.player_id)
-        if pl is None:
-            raise HTTPException(404, "unknown player")
-        cached = store().get(pl.player_id)
-        note = await _research_one(rs, pl, ctx.projections.get(pl.player_id), req.force,
-                                   ResearchNote.from_dict(cached) if cached else None)
-        return {"note": _note_dict(note), "player_id": pl.player_id, "name": pl.name, "error": getattr(rs, "last_error", None)}
-
-    @app.post("/api/research/next", dependencies=guarded)
-    async def research_next(req: ResearchNextReq, request: Request) -> dict:
-        rs = researcher_for(api_key_from(request))
-        if not rs.enabled:
-            raise HTTPException(503, "Claude is off: add an Anthropic API key under Settings")
-        ctx, st, rec = await _ctx_for(req.session)
-        top = max(1, min(int(req.top), 400))
-        targets: list[Player] = []
-        seen: set[str] = set()
-        if rec is not None:
-            for v in rec.best_overall[:BEST_N]:
-                targets.append(v.player); seen.add(v.player_id)
-        for pl in sorted((p for p in ctx.players.values() if p.adp is not None), key=lambda p: p.adp)[:top]:
-            if pl.player_id not in seen:
-                targets.append(pl); seen.add(pl.player_id)
-        notes = store().get_all()
-        fresh_cut = time.time() - 3 * 86400
-
-        def is_fresh(pid: str) -> bool:
-            d = notes.get(pid)
-            return bool(d) and float(d.get("generated_at", 0)) > fresh_cut and not str(d.get("summary", "")).startswith("(research unavailable)")
-
-        pending = [pl for pl in targets if not is_fresh(pl.player_id)]
-        total = len(targets)
-        if not pending:
-            return {"done": total, "total": total, "remaining": 0, "note": None}
-        pl = pending[0]
-        note = await _research_one(rs, pl, ctx.projections.get(pl.player_id), False, None)
-        remaining = len(pending) - (1 if note is not None else 0)
-        return {"done": total - remaining, "total": total, "remaining": remaining,
-                "note": _note_dict(note), "player_id": pl.player_id, "name": pl.name,
-                "error": getattr(rs, "last_error", None)}
-
-    async def _research_one(rs: Any, pl: Player, proj: Projection | None, force: bool, cached: ResearchNote | None) -> ResearchNote | None:
-        from ..research.claude import ResearchAborted
-
-        try:
-            note = await asyncio.wait_for(rs.research_player(pl, proj, force=force, cached=cached), timeout=RESEARCH_TIMEOUT_S)
-        except asyncio.TimeoutError:
-            raise HTTPException(504, f"research for {pl.name} timed out")
-        except ResearchAborted as e:
-            raise HTTPException(502, f"Claude request rejected: {e}")
-        if note is not None:
-            store().put(pl.player_id, note.to_dict())
-        return note
-
     @app.get("/api/notes", dependencies=guarded)
     async def notes() -> dict:
+        """Legacy research notes (read-only; nothing writes new ones)."""
         return store().get_all()
 
     @app.get("/api/player/{player_id}", dependencies=guarded)
@@ -965,6 +1332,57 @@ def create_app() -> FastAPI:
         return rows[: max(1, min(int(top), 600))]
 
     return app
+
+
+def _espn_owner_names(team: Mapping[str, Any], members: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    """Display names of a team's owners (``members[]`` by SWID, else the owner dicts of newer payloads)."""
+    from ..espn.parsing import normalize_swid, team_owner_ids
+
+    owner_dicts = {normalize_swid(o.get("id")): o for o in (team.get("owners") or []) if isinstance(o, Mapping)}
+    names: list[str] = []
+    for sid in team_owner_ids(team):
+        m = members.get(sid) or owner_dicts.get(sid) or {}
+        name = m.get("displayName") or " ".join(str(x) for x in (m.get("firstName"), m.get("lastName")) if x)
+        if name and name not in names:
+            names.append(str(name))
+    return names
+
+
+async def espn_lookup(league_id: str, season: int, auth: EspnAuth) -> dict:
+    """``POST /api/lookup`` for ESPN: the league, its draft and teams (2 GETs); ``me`` = the team the SWID owns."""
+    from ..espn.parsing import normalize_swid, parse_espn_draft, parse_espn_league, parse_espn_managers, resolve_my_team
+
+    async with espn_client(auth) as client:
+        try:
+            league_json = await client.get_settings_and_teams(league_id, season)
+            draft_json = await client.get_draft_detail(league_id, season)
+        except Exception as e:  # noqa: BLE001
+            raise espn_http_error(e, league_id, season, auth)
+    league = parse_espn_league(league_json, draft_json)
+    draft = parse_espn_draft(league_json, draft_json)
+    managers = parse_espn_managers(league_json, draft)
+    my_tid, my_slot = resolve_my_team(draft, managers, league_json, swid=auth.swid)
+    members = {normalize_swid(m.get("id")): m for m in (league_json.get("members") or []) if isinstance(m, Mapping)}
+    teams = []
+    for t in league_json.get("teams") or []:
+        if not isinstance(t, Mapping) or t.get("id") is None:
+            continue
+        m = managers.get(str(t["id"]))
+        teams.append({"team_id": int(t["id"]), "name": (m.team_name or m.display_name) if m else f"Team {t['id']}",
+                      "abbrev": t.get("abbrev"), "owners": _espn_owner_names(t, members),
+                      "slot": m.slot if m else draft.draft_order.get(str(t["id"])), "is_me": str(t["id"]) == my_tid})
+    teams.sort(key=lambda d: (d["slot"] is None, d["slot"] or 0, d["team_id"]))
+    return {"platform": "espn",
+            "league": {"league_id": league.league_id or league_id, "name": league.name, "season": league.season,
+                       "teams": league.total_rosters, "scoring_type": league.scoring_type,
+                       "is_public": bool(league.settings.get("is_public")),
+                       "draft": {"type": draft.type, "status": draft.status, "pick_timer": draft.pick_timer,
+                                 "start_time": draft.start_time, "rounds": draft.rounds,
+                                 "order_known": bool(draft.draft_order)}},
+            "teams": teams,
+            "me": {"team_id": int(my_tid), "slot": my_slot} if my_tid and my_tid.isdigit() else None,
+            "unmapped_scoring": [{"label": u.get("label"), "points": u.get("points")}
+                                 for u in (league.settings.get("unmapped_scoring") or []) if isinstance(u, Mapping)]}
 
 
 async def default_context() -> Any:

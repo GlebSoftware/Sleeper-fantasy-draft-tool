@@ -7,18 +7,27 @@ updates without blocking. Nothing here does I/O other than writing to the consol
 Layout at 160x45 (columns are proportional; the opponent-needs panel is dropped
 below 130 columns):
 
-    ┌ header: league • scoring • round/pick • on the clock • your next picks • latency • Claude ┐
+    ┌ header: league • scoring • round/pick • on the clock • your next picks • latency ────────┐
     │ My roster (left) │ Best picks now (center top)             │ Recent picks (right) │
     │                  │ By position: 6 mini tables (center bot) │ Opponent needs       │
-    └ footer: Claude advice / notes / key hint ─────────────────────────────────────────────┘
+    └ footer: engine notes / message / key hint ────────────────────────────────────────────┘
+
+Nothing here talks to Claude: the dashboard renders the engine's recommendation only (ask
+Claude yourself with ``draftadvisor ask``).
 
 ``status`` is a free-form dict the caller fills in; recognised keys:
-``latency_ms``, ``compute_ms``, ``claude`` ("off" | "thinking" | "ready" | "error" | text),
+``latency_ms``, ``compute_ms``,
 ``turn_started_at`` (epoch seconds when we noticed it became my turn), ``poll_count``,
 ``last_error``, ``stale_since`` (epoch seconds since the poller last succeeded, set on poll errors),
 ``last_poll_at`` (epoch seconds of the last successful poll), ``mode`` ("live" | "mock"),
+``platform`` ("sleeper" | "espn" | "mock"; else derived from the draft metadata), ``last_pick_seen_at`` (epoch
+seconds when this process observed the pick number advance; feeds the approximate ESPN clock),
 ``hint`` (key hint text), ``message``, ``projections`` (``dict[player_id, Projection]`` used to show
 my roster's projected points).
+
+Pick clock: Sleeper stamps ``draft.last_picked`` so the countdown is real (:func:`clock_start`); ESPN
+gives no pick timestamps, so an ESPN draft shows "ESPN clock: N s per pick" and, only once a pick
+change was observed, an approximate remaining time labelled as such (:func:`espn_clock_text`).
 """
 from __future__ import annotations
 
@@ -35,11 +44,12 @@ from rich.table import Table
 from rich.text import Text
 
 from ..config import NON_STARTING_SLOTS, SKILL_POSITIONS, SLOT_ELIGIBILITY
-from ..models import DraftState, Pick, Player, PlayerValue, Projection, Recommendation, RosterSummary
+from ..models import DraftState, Pick, Player, Projection, Recommendation, RosterSummary
 
 log = logging.getLogger(__name__)
 
-__all__ = ["Dashboard", "render_text", "scoring_description", "action_style", "clock_start", "staleness"]
+__all__ = ["Dashboard", "render_text", "scoring_description", "action_style", "clock_start", "staleness",
+           "platform_of", "platform_label", "espn_clock_text"]
 
 #: Below this many columns the opponent-needs panel is dropped.
 COMPACT_WIDTH = 150
@@ -50,6 +60,8 @@ STALE_AFTER_S = 15.0
 
 _ACTION_STYLE = {"TAKE NOW": "bold white on red", "SOON": "bold black on yellow", "WAIT": "bold black on green",
                  "SKIP": "dim"}
+_PLATFORM_LABEL = {"sleeper": "Sleeper", "espn": "ESPN", "mock": "Mock"}
+_PLATFORM_STYLE = {"sleeper": "bold white on dark_green", "espn": "bold white on dark_blue", "mock": "bold black on grey70"}
 _SLOT_ORDER = ("QB", "RB", "WR", "TE", "FLEX", "WRRB_FLEX", "REC_FLEX", "SUPER_FLEX", "K", "DEF")
 
 
@@ -141,11 +153,48 @@ def clock_start(state: DraftState, noticed_at: float | None) -> float | None:
     return min(float(noticed_at), real) if real is not None else float(noticed_at)
 
 
+def platform_of(state: DraftState, status: Mapping | None = None) -> str:
+    """``"espn"``, ``"sleeper"`` (or ``"mock"`` for an offline mock draft) for the draft on screen:
+    ``status["platform"]``, else the draft / league metadata."""
+    p = (status or {}).get("platform")
+    if p:
+        return str(p).strip().lower()
+    if state.draft.metadata.get("platform") == "espn":
+        return "espn"
+    if state.league is not None and (state.league.settings or {}).get("platform") == "espn":
+        return "espn"
+    return "sleeper"
+
+
+def platform_label(platform: str) -> str:
+    """Display name of a platform id (``"espn"`` -> ``"ESPN"``)."""
+    return _PLATFORM_LABEL.get(platform, platform.title() if platform else "?")
+
+
+def espn_clock_text(state: DraftState, status: Mapping, now: float | None = None) -> str:
+    """The ESPN pick-clock line: ``"ESPN clock: 90 s per pick"`` (the live ``timePerSelection``) plus, only
+    once this process saw the pick number advance (``status["last_pick_seen_at"]``), an *approximate*
+    remaining time labelled as such. ESPN publishes no pick timestamps, so nothing here is authoritative."""
+    timer = int(state.draft.pick_timer or 0)
+    if timer <= 0:
+        return "ESPN clock: no pick timer"
+    text = f"ESPN clock: {timer} s per pick"
+    seen = status.get("last_pick_seen_at")
+    if seen is not None and state.draft.status == "drafting" and not state.is_complete:
+        now = time.time() if now is None else now
+        left = max(0, int(round(timer - (now - float(seen)))))
+        text += f" • ≈ {left} s left (since last pick seen)"
+    return text
+
+
 def _countdown(state: DraftState, status: Mapping) -> int | None:
-    """Seconds left on my pick clock (None when no timer / not my turn / the draft is paused)."""
+    """Seconds left on my pick clock (None when no timer / not my turn / the draft is paused / ESPN,
+    whose clock has no timestamp to count from - see :func:`espn_clock_text`)."""
     timer = int(state.draft.pick_timer or 0)
     noticed = status.get("turn_started_at")
     if timer <= 0 or noticed is None or state.draft.status == "paused":
+        return None
+    if platform_of(state, status) == "espn":
         return None
     started = clock_start(state, noticed)
     if started is None:
@@ -269,7 +318,7 @@ class Dashboard:
             self.console.print(renderable)
 
     def refresh(self, status_updates: Mapping | None = None) -> None:
-        """Re-render the last update (countdown / Claude status ticks)."""
+        """Re-render the last update (countdown / poll-health ticks)."""
         if self._last is None:
             return
         state, rec, players, status = self._last
@@ -314,10 +363,13 @@ class Dashboard:
 
     # -- header / footer --------------------------------------------------------------
     def header(self, state: DraftState, status: Mapping) -> RenderableType:
-        """League • scoring • round/pick • on the clock • my next picks • latency • Claude."""
+        """League • scoring • round/pick • on the clock • my next picks • latency."""
         d = state.draft
         name = state.league.name if state.league else (d.metadata.get("name") or f"Draft {d.draft_id}")
+        platform = platform_of(state, status)
         parts = Text()
+        parts.append(f" {platform_label(platform)} ", style=_PLATFORM_STYLE.get(platform, "bold reverse"))
+        parts.append(" ")
         parts.append(_trunc(name, 28), style="bold")
         parts.append(" • ")
         parts.append(scoring_description(state))
@@ -353,16 +405,15 @@ class Dashboard:
                 after = state.my_pick_after_next
                 if after is not None:
                     parts.append(f", then #{after}")
+        if platform == "espn" and not state.is_complete:
+            parts.append("  • ")
+            parts.append(espn_clock_text(state, status), style="bold yellow" if state.is_my_turn else "dim")
         lat = status.get("latency_ms")
         if lat is not None:
             parts.append(f"  • poll {float(lat):.0f} ms", style="dim")
         cm = status.get("compute_ms")
         if cm is not None:
             parts.append(f" • calc {float(cm):.0f} ms", style="dim")
-        claude = status.get("claude")
-        if claude:
-            style = {"thinking": "yellow", "ready": "green", "error": "red", "off": "dim"}.get(str(claude), "")
-            parts.append(f" • Claude: {claude}", style=style)
         stale = staleness(state, status)
         if stale is not None:
             parts.append(f" • stale {stale:.0f}s", style="bold white on red")
@@ -372,21 +423,12 @@ class Dashboard:
         return Panel(parts, box=box.ROUNDED, padding=(0, 1), style="on red" if (state.is_my_turn and int(time.time() * 2) % 2 == 0 and False) else "")
 
     def footer(self, rec: Recommendation | None, status: Mapping) -> RenderableType:
+        """Engine notes (position runs, next pick), an optional message and the key hint."""
         lines = Text()
-        advice = rec.claude_advice if rec is not None else None
-        claude = status.get("claude")
-        if advice:
-            lines.append("Claude: ", style="bold magenta")
-            lines.append(advice.strip())
-        elif claude == "thinking":
-            lines.append("Claude: thinking…", style="yellow")
-        elif claude in (None, "off"):
-            lines.append("Claude: off — set ANTHROPIC_API_KEY for on-the-clock advice", style="dim")
-        else:
-            lines.append(f"Claude: {claude}", style="dim")
         if rec is not None and rec.notes:
-            lines.append("\n")
             lines.append(" • ".join(rec.notes), style="cyan")
+        else:
+            lines.append("Notes: none yet", style="dim")
         msg = status.get("message")
         if msg:
             lines.append("\n")
@@ -625,17 +667,23 @@ def _label_needs(rows: Sequence[tuple[str, Player | None, float | None]], needs:
 # Plain-text rendering
 # ---------------------------------------------------------------------------
 
-def render_text(rec: Recommendation | None, state: DraftState, players: dict[str, Player]) -> str:
-    """Plain-text summary used by ``--no-tui`` and mock logs."""
+def render_text(rec: Recommendation | None, state: DraftState, players: dict[str, Player],
+                status: Mapping | None = None) -> str:
+    """Plain-text summary used by ``--no-tui`` and mock logs (``status`` adds the platform / ESPN clock)."""
     lines: list[str] = []
     d = state.draft
+    status = status or {}
+    platform = platform_of(state, status)
     name = state.league.name if state.league else (d.metadata.get("name") or f"Draft {d.draft_id}")
     if state.is_complete:
-        lines.append(f"== {name} • draft complete ({len(state.picks)} picks)")
+        lines.append(f"== [{platform_label(platform)}] {name} • draft complete ({len(state.picks)} picks)")
     else:
         slot = state.on_the_clock_slot
         who = state.slot_label(slot) if slot is not None else "?"
-        lines.append(f"== {name} • {scoring_description(state)} • Round {state.current_round} • Pick {state.next_pick_no} • On the clock: {who}")
+        lines.append(f"== [{platform_label(platform)}] {name} • {scoring_description(state)} • Round {state.current_round} "
+                     f"• Pick {state.next_pick_no} • On the clock: {who}")
+        if platform == "espn":
+            lines.append(espn_clock_text(state, status))
         if state.is_my_turn:
             fut = state.my_future_picks()
             then = f" (then #{fut[1]})" if len(fut) > 1 else ""
@@ -674,6 +722,4 @@ def render_text(rec: Recommendation | None, state: DraftState, players: dict[str
                      + f" • lineup {rec.my_roster.lineup_points:.0f} pts")
     if rec.notes:
         lines.append("Notes: " + " • ".join(rec.notes))
-    if rec.claude_advice:
-        lines.append("Claude: " + rec.claude_advice.strip())
     return "\n".join(lines)

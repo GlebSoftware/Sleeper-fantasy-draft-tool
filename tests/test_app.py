@@ -81,7 +81,7 @@ def test_build_context_offline_ecr_only(patched_loaders, players_json, league_js
     josh = ctx.players["4984"]
     assert josh.ecr is not None and josh.bye_week is not None and josh.adp is not None
     assert ctx.engine.rec_points == league.rec_points
-    assert not ctx.researcher.enabled and ctx.notes == {}
+    assert not ctx.claude.enabled and ctx.notes == {}
     # the advisor works on the fixture draft state
     state = DraftState(draft, parse_picks(picks_json), league, my_user_id="111111111111111111", my_slot=1)
     rec = ctx.advisor.recommend(state)
@@ -158,7 +158,7 @@ import copy  # noqa: E402
 import gzip  # noqa: E402
 import json  # noqa: E402
 
-from draftadvisor.app import prep, projection_fingerprint, rebuild_projections  # noqa: E402
+from draftadvisor.app import prep, projection_fingerprint  # noqa: E402
 from draftadvisor.models import ResearchNote  # noqa: E402
 
 
@@ -222,52 +222,44 @@ def test_load_cached_projections_checks_fingerprint(tmp_path, players_json, leag
     assert fp != projection_fingerprint(league, players, **base)
 
 
-class _StubResearcher(app._DisabledResearcher):
-    """Offline researcher: ``load_notes`` returns fixed notes; ``research_players`` writes one."""
+class _StubClaude(app._DisabledClaude):
+    """Offline chat client: ``load_notes`` returns fixed (legacy) notes; ``ask`` records that it was called."""
 
-    def __init__(self, notes=None, enabled=False, injury_risk=1.0):
+    def __init__(self, notes=None, enabled=False):
         self.notes = dict(notes or {})
         self.enabled = enabled
-        self.injury_risk = injury_risk
-        self.calls: list[dict] = []
-        self.seen_projections: dict = {}
+        self.ask_calls = 0
 
     def load_notes(self):
         return dict(self.notes)
 
-    async def research_players(self, players, projections=None, **kw):
-        self.calls.append(kw)
-        self.seen_projections = dict(projections or {})
-        if kw.get("progress") is not None:
-            kw["progress"](1, len(players), players[0].name)
-        pl = players[0]
-        note = ResearchNote(pl.player_id, "hurt", injury_risk=self.injury_risk, role_certainty=1.0, upside="", downside="")
-        self.notes[pl.player_id] = note
-        return {pl.player_id: note}
+    async def ask(self, *a, **k):
+        self.ask_calls += 1
+        return ""
 
 
-def test_rebuild_projections_applies_notes_and_recaches(patched_loaders, players_json, projections_json, league_json,
-                                                       monkeypatch):
+def test_legacy_notes_on_disk_reach_projections_and_the_cache_key(patched_loaders, players_json, projections_json,
+                                                                   league_json, monkeypatch):
     league = parse_league(league_json)
     settings = Settings(league_id=league.league_id)
-    ctx = _live(settings, league, players_json, projections_json)
+    ctx = _live(settings, league, players_json, projections_json)                     # no notes on disk
     before = ctx.projections["7564"]
-    old_advisor, old_proj = ctx.advisor, ctx.projections
     note = ResearchNote("7564", "torn ACL", injury_risk=1.0, role_certainty=1.0, upside="", downside="")
-    assert rebuild_projections(ctx, {"7564": note}) is ctx
-    after = ctx.projections["7564"]
-    assert after.games == pytest.approx(before.games * 0.75) and after.points < before.points
-    assert ctx.notes["7564"] is note and ctx.sources["notes"] == 1
-    assert ctx.advisor is not old_advisor and ctx.projections is not old_proj
-    assert old_proj["7564"].points == pytest.approx(before.points)   # the old snapshot is untouched
-    # the draft command (refresh=False) finds the re-blended numbers in the cache when the note is on disk
-    monkeypatch.setattr(app, "_make_researcher", lambda s: _StubResearcher({"7564": note}))
+    stub = _StubClaude({"7564": note})
+    monkeypatch.setattr(app, "_make_claude", lambda s: stub)
     ctx2 = _live(settings, league, players_json, projections_json)
-    assert ctx2.sources["projections"] == "cache" and ctx2.projections["7564"].points == pytest.approx(after.points)
-    # ... and never a stale one when the notes differ
-    monkeypatch.setattr(app, "_make_researcher", lambda s: _StubResearcher())
+    after = ctx2.projections["7564"]
+    assert ctx2.sources["projections"] != "cache" and ctx2.notes["7564"] is note and ctx2.sources["notes"] == 1
+    assert after.games == pytest.approx(before.games * 0.75) and after.points < before.points   # the note reached points
+    assert ctx.projections["7564"].points == pytest.approx(before.points)                     # the old snapshot is untouched
+    assert stub.ask_calls == 0                                                                # building never calls Claude
+    # the draft command (refresh=False) finds those numbers in the cache while the note is on disk ...
     ctx3 = _live(settings, league, players_json, projections_json)
-    assert ctx3.sources["projections"] != "cache" and ctx3.projections["7564"].points == pytest.approx(before.points)
+    assert ctx3.sources["projections"] == "cache" and ctx3.projections["7564"].points == pytest.approx(after.points)
+    # ... and never a stale one when the notes differ
+    monkeypatch.setattr(app, "_make_claude", lambda s: _StubClaude())
+    ctx4 = _live(settings, league, players_json, projections_json)
+    assert ctx4.sources["projections"] != "cache" and ctx4.projections["7564"].points == pytest.approx(before.points)
 
 
 @pytest.fixture
@@ -299,22 +291,243 @@ def test_prep_offline_never_contacts_sleeper(prep_env):
     assert prep_env == ["SleeperClient"] and ctx2.projections
 
 
-def test_prep_research_reblends_and_reports_progress(prep_env, monkeypatch):
-    stub = _StubResearcher(enabled=True, injury_risk=1.0)
-    monkeypatch.setattr(app, "_make_researcher", lambda s: stub)
+def test_prep_never_calls_claude_and_has_no_research_option(prep_env, monkeypatch):
+    stub = _StubClaude(enabled=True)
+    monkeypatch.setattr(app, "_make_claude", lambda s: stub)
     msgs: list[str] = []
-    ctx = asyncio.run(prep(Settings(), research=True, train=False, top=5, progress=msgs.append, offline=True))
-    assert stub.calls and stub.calls[0].get("progress") is not None                 # R7
-    assert any(m.startswith("research 1/5") for m in msgs)
-    (pid, note), = stub.notes.items()
-    assert ctx.sources["research"] == 1 and ctx.notes[pid] is note
-    pre = stub.seen_projections[pid]                                                 # projections before research
-    assert ctx.projections[pid].games == pytest.approx(pre.games * 0.75)             # R1: the note reached points
-    assert ctx.projections[pid].points < pre.points
+    ctx = asyncio.run(prep(Settings(), train=False, progress=msgs.append, offline=True))
+    assert ctx.claude is stub and stub.ask_calls == 0
+    assert "research" not in ctx.sources and not any("research" in m.lower() for m in msgs)
+    assert ctx.sources["notes"] == 0 and ctx.projections
     with gzip.open(projections_cache_path("default"), "rt", encoding="utf-8") as fh:
         payload = json.load(fh)
-    assert payload["meta"]["notes"] == 1
-    assert payload["projections"][pid]["games"] == pytest.approx(ctx.projections[pid].games)
-    # a later build with the same notes on disk is served from that cache
-    ctx2 = build_context(Settings(), None, None, offline=True, use_model=True)
-    assert ctx2.sources["projections"] == "cache" and ctx2.projections[pid].games == pytest.approx(ctx.projections[pid].games)
+    assert payload["meta"]["notes"] == 0
+    with pytest.raises(TypeError):                   # the research knobs are gone from the signature
+        prep(Settings(), research=True, train=False, offline=True)
+    with pytest.raises(TypeError):
+        prep(Settings(), top=5, train=False, offline=True)
+
+
+# ---------------------------------------------------------------------------
+# ESPN leagues: ESPN ADP override, projected-stat fallback, placeholder players, snapshots, prep
+# ---------------------------------------------------------------------------
+
+import os  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from draftadvisor.app import (  # noqa: E402
+    espn_overrides,
+    espn_snapshot_from_dict,
+    fetch_espn_league,
+    load_snapshot,
+    load_snapshot_league,
+)
+from tests.espn_stub import LEAGUE_ID, SEASON, EspnStub  # noqa: E402
+from tests.espn_stub import load_fixture as load_espn_fixture  # noqa: E402
+
+
+@pytest.fixture
+def kona():
+    return load_espn_fixture("players_kona.json")["players"]
+
+
+@pytest.fixture
+def espn_league():
+    from draftadvisor.espn.parsing import parse_espn_draft, parse_espn_league
+
+    lj, dj = load_espn_fixture("league_settings_teams.json"), load_espn_fixture("draft_in_progress.json")
+    return parse_espn_league(lj, dj), parse_espn_draft(lj, dj)
+
+
+def test_espn_overrides_map_the_pool_onto_the_universe(fixture_players, kona):
+    placeholders, adp, proj = espn_overrides(fixture_players, kona, SEASON)
+    matched = [pid for pid in adp if pid in fixture_players]
+    # McCaffrey / Evans / Kelce are in the Sleeper fixture (no espn_id): matched by name + position
+    assert {"4034", "2216", "1466"} <= set(matched)
+    assert len(adp) == 40 and len(proj) == 40 and len(placeholders) == 40 - len(matched)
+    assert not any(p.name in ("Christian McCaffrey", "Mike Evans", "Travis Kelce") for p in placeholders.values())
+    gurley = next(p for p in placeholders.values() if p.name == "Todd Gurley II")
+    assert gurley.player_id == "espn:2977644" and gurley.position == "RB" and gurley.team == "LAR"
+    assert gurley.espn_id == "2977644" and gurley.metadata.get("placeholder") is True
+    assert adp[gurley.player_id] == pytest.approx(1.4) and proj[gurley.player_id]["rush_yd"] > 1000
+    assert proj["1466"]["rec"] > 0 and proj["1466"]["gp"] > 0
+    assert espn_overrides(fixture_players, None, SEASON) == ({}, {}, {})
+    assert espn_overrides(fixture_players, ["junk", 3], SEASON) == ({}, {}, {})
+
+
+def test_build_context_espn_league(patched_loaders, players_json, projections_json, espn_league, kona):
+    league, draft = espn_league
+    settings = Settings(platform="espn", league_id=league.league_id, season=SEASON)
+    espn_adp = {str(e["player"]["id"]): e["player"]["ownership"]["averageDraftPosition"] for e in kona}
+    ctx = build_context(settings, league, draft, sleeper_players=players_json, sleeper_proj=projections_json,
+                        espn_players=kona, use_model=False)
+    assert ctx.platform == "espn" and ctx.sources["platform"] == "espn" and ctx.sources["adp"] == "espn"
+    espn = ctx.sources["espn"]
+    assert espn["players"] == 40 and espn["adp"] == 40 and espn["projections"] == 40 and espn["placeholders"] == 37
+    # ESPN ADP for every player ESPN lists (source "espn"), ECR for the rest
+    assert ctx.players["4034"].adp == pytest.approx(espn_adp["3117251"]) and ctx.players["4034"].adp_source == "espn"
+    assert ctx.players["4984"].adp is not None and ctx.players["4984"].adp_source == "ecr"
+    # ESPN-only players joined the universe as placeholders with ESPN ADP and an ESPN projection
+    gurley = ctx.players["espn:2977644"]
+    assert gurley.name == "Todd Gurley II" and gurley.adp == pytest.approx(1.4) and gurley.metadata["placeholder"]
+    pr = ctx.projections["espn:2977644"]
+    assert pr.points > 100 and "espn" in pr.weights and "sleeper" not in pr.weights and "espn_proj" in pr.flags
+    assert "espn" in pr.components
+    # Sleeper's own line wins where it exists (Kelce is in both payloads)
+    kelce = ctx.projections["1466"]
+    assert "sleeper" in kelce.weights and "espn" not in kelce.weights and "espn_proj" not in kelce.flags
+    assert ctx.sources["proj_fallback"] == 37 and "1466" in ctx.sleeper_proj and "espn:2977644" in ctx.sleeper_proj
+    # cached (labels included) for the same inputs; a Sleeper build of the same league id is never served it
+    ctx2 = build_context(settings, league, draft, sleeper_players=players_json, sleeper_proj=projections_json,
+                         espn_players=kona, use_model=False)
+    assert ctx2.sources["projections"] == "cache" and "espn" in ctx2.projections["espn:2977644"].weights
+    ctx3 = build_context(Settings(league_id=league.league_id, season=SEASON), league, draft,
+                         sleeper_players=players_json, sleeper_proj=projections_json, use_model=False)
+    assert ctx3.sources["projections"] != "cache" and ctx3.sources["adp"].startswith("sleeper")
+    assert ctx3.platform == "espn" and "espn" not in ctx3.sources     # an ESPN league without a player pool
+    # explicit overrides win over the derived ones
+    ctx4 = build_context(settings, league, draft, sleeper_players=players_json, sleeper_proj=projections_json,
+                         espn_players=kona, adp_override={"espn:2977644": 99.0}, adp_source="custom", use_model=False)
+    assert ctx4.players["espn:2977644"].adp == 99.0 and ctx4.players["espn:2977644"].adp_source == "custom"
+    assert ctx4.players["4034"].adp == pytest.approx(espn_adp["3117251"]) and ctx4.sources["adp"] == "custom"
+    # the advisor recommends over the merged universe
+    from draftadvisor.espn.ids import EspnIdMap
+    from draftadvisor.espn.parsing import state_from_espn
+
+    state = state_from_espn(load_espn_fixture("league_settings_teams.json"), load_espn_fixture("draft_in_progress.json"),
+                            EspnIdMap.from_players(ctx.players), team_id=1)
+    rec = ctx.advisor.recommend(state)
+    assert state.my_slot == 3 and rec.best_overall and all(v.player_id not in state.drafted_ids for v in rec.best_overall)
+
+
+def test_build_context_generic_fallback_and_extra_players(patched_loaders, players_json, league_json):
+    from draftadvisor.models import Player
+
+    league = parse_league(league_json)
+    extra = {"x1": Player("x1", "Extra Guy", "RB", "KC")}
+    fallback = {"x1": {"gp": 17, "rush_att": 250, "rush_yd": 1200, "rush_td": 10, "rec": 40, "rec_yd": 300},
+                "missing": {"rush_yd": 5}}
+    ctx = build_context(Settings(league_id=league.league_id), league, None, sleeper_players=players_json,
+                        use_model=False, extra_players=extra, proj_fallback=fallback,
+                        adp_override={"x1": 12.0}, adp_source="custom")
+    assert ctx.platform == "sleeper" and ctx.players["x1"] is extra["x1"] and ctx.players["x1"].adp == 12.0
+    assert ctx.sources["adp"] == "custom" and ctx.sources["proj_fallback"] == 1
+    pr = ctx.projections["x1"]
+    assert pr.points > 100 and "fallback" in pr.weights and "fallback_proj" in pr.flags
+
+
+def test_load_snapshot_is_platform_aware(espn_league, kona, league_json, draft_json, users_json, rosters_json, picks_json):
+    from draftadvisor.capture import LeagueSnapshot, scoring_diff
+
+    league, draft = espn_league
+    lj, dj = load_espn_fixture("league_settings_teams.json"), load_espn_fixture("draft_in_progress.json")
+    LeagueSnapshot(captured_at=1.0, season=SEASON, league=league, draft=draft, managers={}, my_user_id="1", my_slot=3,
+                   my_roster_id=1, my_picks=[3, 18], diff=scoring_diff(league.scoring_settings), flags=["ESPN league"],
+                   raw={"platform": "espn", "league": lj, "draft": dj, "players": kona, "rosters": []}).save()
+    back = load_snapshot(LEAGUE_ID, "espn")
+    assert back is not None and back.league.name == "FXBG League" and back.my_slot == 3 and back.my_user_id == "1"
+    assert back.draft.draft_id == f"espn-{LEAGUE_ID}-{SEASON}" and back.draft.status == "drafting" and back.draft.teams == 10
+    assert len(back.managers) == 10 and [p.pick_no for p in back.keepers] == [3, 14] and back.picks_made == 17
+    assert back.flags == ["ESPN league"] and back.diff.scoring_type == "ppr" and "FXBG League" in back.to_text()
+    assert load_snapshot(f"espn-{LEAGUE_ID}-{SEASON}", "espn") is not None       # saved under the draft id too
+    assert load_snapshot(LEAGUE_ID, "sleeper") is None                          # never served across platforms
+    assert load_snapshot(LEAGUE_ID) is not None and load_snapshot("nope", "espn") is None
+    assert espn_snapshot_from_dict({"raw": {"league": lj, "draft": dj}}).league.name == "FXBG League"
+    s = Settings(platform="espn", league_id=LEAGUE_ID, season=SEASON)
+    lg, dr = load_snapshot_league(s)
+    assert lg is not None and lg.league_id == LEAGUE_ID and dr is not None and dr.rounds == 15
+    assert load_snapshot_league(Settings(league_id=LEAGUE_ID)) == (None, None)
+    # a Sleeper capture keeps loading through LeagueSnapshot.from_dict and is refused to an ESPN session
+    sleeper = LeagueSnapshot.from_dict({"captured_at": 2.0, "season": 2026, "raw": {
+        "league": league_json, "draft": draft_json, "users": users_json, "rosters": rosters_json, "picks": picks_json}})
+    sleeper.save()
+    sid = sleeper.league_id
+    assert load_snapshot(sid, "sleeper").league.name == sleeper.league.name and load_snapshot(sid, "espn") is None
+    assert load_snapshot_league(Settings(league_id=sid))[0].name == sleeper.league.name
+    assert load_snapshot_league(Settings(platform="espn", league_id=sid)) == (None, None)
+
+
+async def test_fetch_espn_league_and_degradation():
+    from draftadvisor.espn.client import EspnClient
+    from tests.test_espn_capture_poller import FakeEspnClient
+
+    with EspnStub(draft="in_progress") as s:
+        async with EspnClient(base_url=s.base_url, retries=0) as c:
+            league, draft, league_json, players = await fetch_espn_league(c, LEAGUE_ID, SEASON)
+    assert league.name == "FXBG League" and league.settings["platform"] == "espn" and draft.status == "drafting"
+    assert league_json["id"] == 368876 and len(players) == 40 and draft.pick_timer == 90
+    fc = FakeEspnClient(n=17)
+    fc.fail_players = True
+    league, draft, league_json, players = await fetch_espn_league(fc, LEAGUE_ID, SEASON)
+    assert players == [] and league.name == "FXBG League" and fc.calls == ["settings", "draft", "players"]
+
+
+def test_prep_espn_captures_and_uses_the_sleeper_universe(prep_env, monkeypatch):
+    import draftadvisor.espn.client as espn_client
+    from tests.test_espn_capture_poller import FakeEspnClient
+
+    class _Client(FakeEspnClient):
+        def __init__(self, *a, **k):
+            super().__init__(n=17)
+            prep_env.append("EspnClient")
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return None
+
+    monkeypatch.setattr(espn_client, "EspnClient", _Client)
+    msgs: list[str] = []
+    settings = Settings(platform="espn", league_id=LEAGUE_ID, season=SEASON, team_id=1)
+    ctx = asyncio.run(prep(settings, train=False, progress=msgs.append, offline=False))
+    assert prep_env == ["EspnClient", "SleeperClient"]            # ESPN league, then Sleeper for the universe
+    assert any("contacting ESPN" in m for m in msgs)
+    assert ctx.platform == "espn" and ctx.league.name == "FXBG League" and ctx.sources["adp"] == "espn"
+    assert ctx.sources["espn"]["players"] == 40 and ctx.sources["snapshot"].my_slot == 3
+    assert "espn:2977644" in ctx.players and ctx.projections
+    assert (Path(os.environ["DRAFTADVISOR_HOME"]) / "leagues" / f"{LEAGUE_ID}.json").exists()
+    # offline: neither API is contacted; the saved capture supplies the league and its player pool
+    prep_env.clear()
+    ctx2 = asyncio.run(prep(settings, train=False, offline=True))
+    assert prep_env == [] and ctx2.league.name == "FXBG League"
+    assert ctx2.sources["adp"] == "espn" and "espn:2977644" in ctx2.players
+
+
+@pytest.mark.parametrize("knob,exc,needle", [
+    ("private", "EspnAccessDenied", "private"),
+    ("missing", "EspnNotFound", "not found"),
+    ("team_id", "ValueError", "could not find 99"),
+])
+def test_prep_espn_does_not_swallow_access_denied_not_found_or_unknown_team(prep_env, monkeypatch, knob, exc, needle):
+    """A private league, an unknown league id or an unknown --team-id must surface (the CLI maps them to
+    exit 2 with the how-to) instead of quietly building a cache for the default league; only transport /
+    5xx errors keep prep working offline."""
+    import draftadvisor.espn.client as espn_client
+    from tests.test_espn_capture_poller import FakeEspnClient
+
+    class _Client(FakeEspnClient):
+        def __init__(self, *a, **k):
+            super().__init__(n=17, private=knob == "private", missing=knob == "missing")
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return None
+
+    monkeypatch.setattr(espn_client, "EspnClient", _Client)
+    settings = Settings(platform="espn", league_id=LEAGUE_ID, season=SEASON, team_id=99 if knob == "team_id" else 1)
+    with pytest.raises(getattr(espn_client, exc, ValueError), match=needle):
+        asyncio.run(prep(settings, train=False, offline=False))
+    assert not (Path(os.environ["DRAFTADVISOR_HOME"]) / "leagues" / f"{LEAGUE_ID}.json").exists()
+    # a transport failure on the draft payload still degrades: prep finishes on the default league
+
+    class _Flaky(_Client):
+        def __init__(self, *a, **k):
+            FakeEspnClient.__init__(self, n=17)
+            self.fail_draft_times = 5
+
+    monkeypatch.setattr(espn_client, "EspnClient", _Flaky)
+    ctx = asyncio.run(prep(Settings(platform="espn", league_id=LEAGUE_ID, season=SEASON), train=False, offline=False))
+    assert ctx.league.name != "FXBG League" and ctx.projections

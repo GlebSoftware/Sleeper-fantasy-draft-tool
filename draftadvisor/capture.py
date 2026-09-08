@@ -524,6 +524,35 @@ def _pick_draft(drafts: list[dict], draft_id: str | None, season: int) -> dict |
     return same_season[0]
 
 
+def resolve_identity(draft: DraftSettings, managers: dict[str, Manager], users_raw: list[dict] | None = None, *,
+                     username: str | None = None, user_id: str | None = None,
+                     slot: int | None = None) -> tuple[str | None, int | None]:
+    """``(my_user_id, my_slot)`` for one manager of a captured Sleeper draft (pure; shared by the capture and
+    the web server, which resolves "me" per request on an identity-free capture).
+
+    Raises :class:`ValueError` (naming the managers) when ``username`` / ``user_id`` matches nobody in a
+    published draft order, or nobody among the league's managers when the order is not set yet. An
+    identity that matches a manager whose slot is unknown keeps the id and leaves the slot ``None``.
+    """
+    from .sleeper.parsing import resolve_my_slot
+
+    # ``users`` lets a Sleeper *username* that differs from the display name resolve too
+    my_uid, my_slot = resolve_my_slot(draft, managers, username=username, user_id=user_id, slot=slot, users=users_raw)
+    if (username or user_id) and my_slot is None:
+        names = ", ".join(sorted(f"{m.display_name}" + (f" ({m.team_name})" if m.team_name else "")
+                                 for m in managers.values()))
+        if draft.draft_order:
+            # the order is published and the user is not in it: a typo or the wrong league
+            raise ValueError(f"could not find {username or user_id!r} in the draft order. Managers: {names}")
+        if my_uid is None and managers:
+            # no order yet, but the league's members are known and the user is not one of them
+            raise ValueError(f"could not find {username or user_id!r} among the league's managers: {names}")
+        # order not set yet (typical before the draft starts): keep the identity, resolve the slot later
+        log.info("draft order not set yet for draft %s; slot for %r resolves when the draft starts",
+                 draft.draft_id, username or user_id)
+    return my_uid, my_slot
+
+
 async def capture_league(client, league_id: str | None = None, draft_id: str | None = None, *,
                          username: str | None = None, user_id: str | None = None, slot: int | None = None,
                          season: int | None = None, save: bool = True) -> LeagueSnapshot:
@@ -533,7 +562,7 @@ async def capture_league(client, league_id: str | None = None, draft_id: str | N
     async ``get_*`` methods). Either ``league_id`` or ``draft_id`` is required.
     """
     from .sleeper.client import SleeperAPIError
-    from .sleeper.parsing import parse_draft, parse_league, parse_managers, parse_picks, resolve_my_slot
+    from .sleeper.parsing import parse_draft, parse_league, parse_managers, parse_picks
 
     if not league_id and not draft_id:
         raise ValueError("capture_league needs a league_id or a draft_id")
@@ -589,21 +618,7 @@ async def capture_league(client, league_id: str | None = None, draft_id: str | N
     picks = parse_picks(picks_raw)
     my_uid, my_slot = (None, None)
     if draft:
-        # ``users`` lets a Sleeper *username* that differs from the display name resolve too
-        my_uid, my_slot = resolve_my_slot(draft, managers, username=username, user_id=user_id, slot=slot,
-                                          users=users_raw)
-        if (username or user_id) and my_slot is None:
-            names = ", ".join(sorted(f"{m.display_name}" + (f" ({m.team_name})" if m.team_name else "")
-                                     for m in managers.values()))
-            if draft.draft_order:
-                # the order is published and the user is not in it: a typo or the wrong league
-                raise ValueError(f"could not find {username or user_id!r} in the draft order. Managers: {names}")
-            if my_uid is None and managers:
-                # no order yet, but the league's members are known and the user is not one of them
-                raise ValueError(f"could not find {username or user_id!r} among the league's managers: {names}")
-            # order not set yet (typical before the draft starts): keep the identity, resolve the slot later
-            log.info("draft order not set yet for draft %s; slot for %r resolves when the draft starts",
-                     draft.draft_id, username or user_id)
+        my_uid, my_slot = resolve_identity(draft, managers, users_raw, username=username, user_id=user_id, slot=slot)
     my_roster = draft.original_roster_for_slot(my_slot) if (draft and my_slot is not None) else None
     my_picks = draft.picks_for_slot(my_slot) if (draft and my_slot is not None) else []
     snap = LeagueSnapshot(

@@ -6,10 +6,16 @@ this module fetches the small live inputs (Sleeper players/projections/ADP,
 FantasyPros ECR), rebuilds the league-specific projections with the
 ScoringEngine + market rank curves, and hands an Advisor back. Only numpy,
 httpx and the pure-Python parts of the package are imported.
+
+Other platforms (ESPN) reuse the same universe and blend: :func:`build_lean_context`
+takes an ADP override (the platform's own ADP wins, ECR fills the rest), projected
+stat lines for players Sleeper has no projection for, and placeholder players for
+ids the universe does not know.
 """
 from __future__ import annotations
 
 import csv
+import dataclasses
 import io
 import json
 import logging
@@ -329,6 +335,14 @@ class LeanContext:
     sources: dict = field(default_factory=dict)
     built_at: float = field(default_factory=time.time)
     fingerprint: str = ""
+    id_map: Any = None          # platform id map (ESPN) indexed over ``players``: picks resolve into this universe
+
+
+def lean_universe(bundle: Bundle, sleeper_players: Mapping | None) -> tuple[dict[str, Player], str]:
+    """The player universe of a context and its source: Sleeper's live payload when given, else the bundle."""
+    if sleeper_players:
+        return players_from_sleeper_payload(sleeper_players, bundle.players), "sleeper"
+    return {pid: _player_from_dict(player_to_dict(pl)) for pid, pl in bundle.players.items()}, "bundle"
 
 
 def default_league(scoring: str = "half_ppr", teams: int = 12) -> LeagueSettings:
@@ -346,10 +360,48 @@ def context_fingerprint(league: LeagueSettings, has_sleeper_proj: bool, has_slee
     return hashlib.sha1(blob.encode()).hexdigest()[:16]
 
 
+def merge_projection_lines(primary: Mapping[str, Mapping] | None, fallback: Mapping[str, Mapping] | None) -> dict[str, Mapping]:
+    """``primary`` (Sleeper's season projections) completed with ``fallback`` lines for the players it lacks."""
+    out: dict[str, Mapping] = {str(k): v for k, v in (fallback or {}).items() if v}
+    out.update({str(k): v for k, v in (primary or {}).items() if v})
+    return out
+
+
+def relabel_projection_source(projections: Mapping[str, Projection], player_ids: Iterable[str], source: str) -> int:
+    """Rename the ``sleeper`` blend component to ``source`` (and flag it) for projections whose stat line
+    came from a fallback provider; returns how many were relabelled."""
+    n = 0
+    for pid in player_ids:
+        pr = projections.get(pid)
+        if pr is None or "sleeper" not in pr.components:
+            continue
+        pr.components[source] = pr.components.pop("sleeper")
+        if "sleeper" in pr.weights:
+            pr.weights[source] = pr.weights.pop("sleeper")
+        if f"{source}_proj" not in pr.flags:
+            pr.flags.append(f"{source}_proj")
+        n += 1
+    return n
+
+
 def build_lean_context(bundle: Bundle, league: LeagueSettings | None, draft: DraftSettings | None, *,
                        sleeper_players: Mapping | None, sleeper_proj: Mapping | None, ecr_rows: Iterable[dict],
-                       notes: Mapping[str, ResearchNote], settings: Settings | None = None) -> LeanContext:
-    """Build players + projections + advisor for one league from the bundle and live inputs."""
+                       notes: Mapping[str, ResearchNote], settings: Settings | None = None,
+                       adp_override: Mapping[str, float] | None = None, adp_source: str | None = None,
+                       proj_fallback: Mapping[str, Mapping] | None = None, proj_fallback_source: str = "fallback",
+                       extra_players: Mapping[str, Player] | None = None,
+                       players: Mapping[str, Player] | None = None, players_source: str | None = None,
+                       id_map: Any = None) -> LeanContext:
+    """Build players + projections + advisor for one league from the bundle and live inputs.
+
+    ``adp_override`` (``{player_id: adp}``, labelled ``adp_source``) replaces Sleeper's ADP when given -
+    players without an entry fall back to ECR. ``proj_fallback`` (``{player_id: Sleeper-key season stats}``)
+    supplies stat lines for players missing from ``sleeper_proj``; their projections are labelled
+    ``proj_fallback_source``. ``extra_players`` are added to the universe when their id is unknown
+    (placeholders for platform-only players, so picks and rosters always resolve to a name).
+    ``players`` (with ``players_source``) is a universe already built by :func:`lean_universe` - the caller
+    passes it when something else (an ``id_map`` over the same objects) must agree with the context.
+    """
     from .projections.blend import Projector
     from .strategy.recommend import Advisor
 
@@ -357,15 +409,22 @@ def build_lean_context(bundle: Bundle, league: LeagueSettings | None, draft: Dra
     settings = settings or Settings.from_env()
     league = league or default_league()
     engine = ScoringEngine(league.scoring_settings)
-    if sleeper_players:
-        players = players_from_sleeper_payload(sleeper_players, bundle.players)
-        src_players = "sleeper"
+    if players is not None:
+        players = dict(players)
+        src_players = players_source or ("sleeper" if sleeper_players else "bundle")
     else:
-        players = {pid: _player_from_dict(player_to_dict(pl)) for pid, pl in bundle.players.items()}
-        src_players = "bundle"
+        players, src_players = lean_universe(bundle, sleeper_players)
+    n_extra = 0
+    for pid, pl in (extra_players or {}).items():
+        if pid not in players:
+            players[pid] = dataclasses.replace(pl)
+            n_extra += 1
     enrich_with_ecr(players, ecr_rows, bundle.byes, superflex=league.is_superflex)
     adp_src = "ecr"
-    if sleeper_proj:
+    if adp_override:
+        label = adp_source or "override"
+        adp_src = label if assign_adp(players, adp_override, label) else "ecr"
+    elif sleeper_proj:
         from .sleeper.parsing import adp_key_for, adp_map
 
         key = adp_key_for(league, draft)
@@ -373,6 +432,8 @@ def build_lean_context(bundle: Bundle, league: LeagueSettings | None, draft: Dra
         adp_src = f"sleeper_{key[4:]}" if n else "ecr"
     else:
         assign_adp(players, None, "ecr")
+    fallback_ids = [pid for pid in (proj_fallback or {}) if not (sleeper_proj or {}).get(pid)]
+    proj_lines = merge_projection_lines(sleeper_proj, proj_fallback) if proj_fallback else sleeper_proj
     # ML rows keyed by Sleeper id (bundle) or via gsis for live payload ids not in the bundle
     ml_pred: dict[str, dict] = {}
     for pid, pl in players.items():
@@ -383,15 +444,18 @@ def build_lean_context(bundle: Bundle, league: LeagueSettings | None, draft: Dra
             ml_pred[pid] = row
     curves = rank_curves_from_totals(bundle.season_totals, engine, league)
     projector = Projector(engine, league, settings, rank_curves=curves)
-    projections = projector.project(players, ml_pred=ml_pred, sleeper_proj=sleeper_proj, notes=notes or None,
+    projections = projector.project(players, ml_pred=ml_pred, sleeper_proj=proj_lines, notes=notes or None,
                                     byes=bundle.byes)
+    n_fallback = relabel_projection_source(projections, fallback_ids, proj_fallback_source) if fallback_ids else 0
     advisor = Advisor(league, players, projections, settings)
     ctx = LeanContext(settings=settings, engine=engine, league=league, draft=draft, players=players,
                       projections=projections, advisor=advisor, notes=dict(notes or {}), byes=dict(bundle.byes),
                       sources={"players": src_players, "adp": adp_src, "sleeper_proj": bool(sleeper_proj),
+                               "proj_fallback": n_fallback, "extra_players": n_extra,
                                "ml": len(ml_pred), "ecr": sum(1 for p in players.values() if p.ecr is not None),
                                "rank_curves": sorted(curves), "build_ms": round((time.perf_counter() - t0) * 1000)},
-                      fingerprint=context_fingerprint(league, bool(sleeper_proj), bool(sleeper_players), len(notes or {})))
+                      fingerprint=context_fingerprint(league, bool(sleeper_proj), bool(sleeper_players), len(notes or {})),
+                      id_map=id_map)
     log.info("lean context %s: %d players, %d projections in %d ms", league.league_id, len(players), len(projections),
              ctx.sources["build_ms"])
     return ctx

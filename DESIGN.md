@@ -1,9 +1,9 @@
 # draftadvisor — design & module contracts
 
-Live Sleeper draft advisor. Polls the draft every ~2 s, recomputes recommendations in
+Live draft advisor for Sleeper or ESPN leagues. Polls the draft every ~2 s, recomputes recommendations in
 milliseconds, shows the best 3 players per position (and overall) with reasons, tells you
-when you can wait on a position, models opponents' needs, and optionally asks Claude
-(Sonnet) for research and on-the-clock advice. Also: mock drafts, trade/pick evaluation.
+when you can wait on a position, models opponents' needs, and has an optional Claude chat
+(user-initiated only: nothing calls Claude automatically). Also: mock drafts, trade/pick evaluation.
 
 Target: runs on a laptop (4 cores, no GPU), Python 3.10+, install with `pip install -e .`.
 
@@ -22,14 +22,17 @@ Target: runs on a laptop (4 cores, no GPU), Python 3.10+, install with `pip inst
                                             scoring/engine.py ◄── projections/blend.py ──► dict[player_id, Projection]
                                                                                             (league points, std, weekly)
                  ┌──────────── every 2 s during the draft (`draftadvisor draft`) ────────────┐
- Sleeper picks ──► sleeper/poller.py ──► DraftState ──► strategy/recommend.py (Advisor) ──► Recommendation
+ Sleeper picks ──► sleeper/poller.py ──┐
+ ESPN draftDetail ► espn/poller.py ─────┴► DraftState ──► strategy/recommend.py (Advisor) ──► Recommendation
+ (espn/: ids -> universe, scoringItems -> scoring_settings, kona ADP / projections -> overrides; §3.10)
                                                           │  VORP, lineup marginal value,          │
                                                           │  availability @ my next pick,           ▼
                                                           │  opponent needs / position runs    ui/dashboard.py (rich Live)
-                                                          └─► research/claude.py (async, optional) ─┘
+                                                          └─► research/claude.py (chat / ask: user-initiated only) ─┘
 ```
 
-Identity everywhere: **Sleeper player_id** (string). DEF ids are team abbreviations ("SF").
+Identity everywhere: **Sleeper player_id** (string). DEF ids are team abbreviations ("SF"). ESPN ids are
+mapped onto these (`espn/ids.py`); an ESPN player the universe does not know gets a synthetic `espn:<id>`.
 
 ## 2. Contracts (already implemented — do not change signatures without updating DESIGN.md)
 
@@ -54,9 +57,10 @@ Identity everywhere: **Sleeper player_id** (string). DEF ids are team abbreviati
 
 Raw data for the sandbox is already in `data/raw/` (2019-2025 weekly stats, team stats, rosters 2019-2026,
 snap counts, injuries, schedule, `db_playerids.csv`, `db_fpecr_latest.csv`). Loaders use it without
-downloading. **The Sleeper API and Anthropic API are NOT reachable from the sandbox** — everything that
-touches them must be testable with fixtures / mocks (see `tests/fixtures/*.json`, faithful to the
-Sleeper API docs shapes) and must degrade gracefully offline.
+downloading. **The Sleeper API, the ESPN API and the Anthropic API are NOT reachable from the sandbox** —
+everything that touches them must be testable with fixtures / mocks (see `tests/fixtures/*.json`, faithful to
+the Sleeper API docs shapes, and `tests/fixtures/espn/*.json` + `tests/espn_stub.py`, a local HTTP stub of the
+ESPN endpoints) and must degrade gracefully offline.
 
 Canonical per-game frame columns: `player_id` (gsis id, or team abbr for DEF), `player_name`, `position`
 (QB/RB/WR/TE/K/DEF), `team`, `opponent`, `season`, `week`, every derivable Sleeper stat key
@@ -302,37 +306,49 @@ SUPER_FLEX; marginal value of a K before/after having one; availability monotone
 (20 picks made) returns 3 per position, best_overall sorted by score, no drafted players, and runs < 30 ms
 on a synthetic 400-player universe; trade evaluation symmetric sanity.
 
-### 3.5 `research/claude.py` — optional Claude layer  (owner: agent "research")
+### 3.5 `research/claude.py` — Claude chat layer, user-initiated only  (owner: agent "research")
 
-Model `claude-sonnet-5` (constant `CLAUDE_MODEL`, user asked for Sonnet). Use the official `anthropic` SDK
-(1.x): `anthropic.AsyncAnthropic()`; never raw HTTP. Fully optional: if no API key (`Settings.anthropic_api_key`
-or `ANTHROPIC_API_KEY`) the class reports `enabled == False` and every method returns `None`/`{}` instantly.
-* `class ClaudeResearcher(api_key=None, model=CLAUDE_MODEL, cache_dir=None, client=None)`
-  * `load_notes() -> dict[id, ResearchNote]` from `research_dir()/notes/<player_id>.json`.
-  * `await research_players(players: list[Player], projections=None, max_age_days=3, concurrency=4,
-    progress=None) -> dict[id, ResearchNote]`: one request per player (skip fresh cached notes), using the
-    `web_search_20260209` server tool (`max_uses` 3) plus structured output (`output_config.format` JSON schema:
-    summary (<= 60 words), injury_risk 0-1, role_certainty 0-1, upside (<= 25 words), downside (<= 25 words),
-    sources (urls)). System prompt: fantasy-football analyst for the 2026 season; today's date passed in the
-    user turn. `output_config={"effort": "medium"}`. Handle `stop_reason == "refusal"` and errors by caching a
-    minimal note with `summary="(research unavailable)"`, `injury_risk=0`, `role_certainty=0.5` so the draft
-    loop never blocks; semaphore for concurrency; write each note to disk as it completes.
-  * `await on_the_clock_advice(state, rec, players, notes, timeout=CLAUDE_ON_CLOCK_TIMEOUT_S) -> str | None`:
-    a single streaming request (no tools), `output_config={"effort": "low"}`, `max_tokens=400`, with a
-    **stable cached system prompt** (`cache_control` ephemeral: league scoring description, roster slots,
-    strategy guidance) and a compact user message (round/pick, my roster by slot, open needs, next picks,
-    top 8 candidates with points/VORP/availability/tier/reasons, research notes for them, last 6 picks,
-    position pressure). Return 2-4 sentences: the pick, why, the fallback. Enforce `asyncio.wait_for(timeout)`;
-    return None on timeout/error. Cache by `(state.version, top candidate ids)` so repeated ticks reuse.
-  * `await ask(question, context_text) -> str` free-form Q&A (effort medium, max_tokens 1500).
-  * `build_context_text(state, rec, players, notes) -> str` helper used by both.
-* Provide `FakeAnthropic` in tests via monkeypatching `client.messages.create/stream`; assert prompt content
-  includes roster + candidates, timeout returns None, cache hit avoids second call, disabled mode.
+The only code that calls the Anthropic API, through the official `anthropic` SDK (1.x, `AsyncAnthropic`;
+never raw HTTP). Exactly two entry points, both triggered by a person: the web chat (`POST /api/chat`) and
+the CLI `ask` command. **Nothing calls Claude on a timer, on a poll, on a state change or in a loop** — the
+former per-player research loop (web search + structured notes) and the automatic on-the-clock advice were
+removed because they ran up a large bill. Fully optional: without a key (`Settings.anthropic_api_key`,
+`ANTHROPIC_API_KEY` or the `X-Anthropic-Key` header) the class reports `enabled == False`, `chat_stream`
+raises `RuntimeError` and `ask` returns `""`.
+* `class ClaudeChat(api_key=None, model=CLAUDE_MODEL, cache_dir=None, client=None)` (`ClaudeResearcher` is a
+  backwards-compatible alias of the same class).
+  * `async chat_stream(messages, context_text, *, model=None, max_tokens=2000, system=None)`: one streaming
+    request (`output_config={"effort": "medium"}`, no tools) with the browser-held transcript and the live
+    draft context (`build_context_text`) injected into the last user turn; yields text deltas, then a final
+    dict `{"done": True, "stop_reason", "model", "usage": {input_tokens, output_tokens,
+    cache_read_input_tokens, cache_creation_input_tokens}, "cost_usd": float|None}`. Model:
+    `DRAFTADVISOR_CHAT_MODEL`, default `CHAT_MODEL = "claude-opus-5"`.
+  * `trim_transcript(messages, *, max_turns=CHAT_MAX_TURNS, max_chars=CHAT_MAX_CHARS) -> list` (40 turns /
+    60 000 characters): the newest turns that fit, user-first, the last turn always kept; `POST /api/chat`
+    applies it before every request so the history a client sends is never forwarded unbounded.
+  * `async ask(question, context_text) -> str`: one request (effort medium, `max_tokens` 1500); `""` on
+    error / refusal with `last_error` set; `last_usage` / `last_cost_usd` describe the request.
+  * `load_notes() -> dict[id, ResearchNote]`: reads the notes an earlier version wrote under
+    `research_dir()/notes/<player_id>.json`. Read-only legacy data: nothing writes notes any more and
+    nothing depends on them existing.
+* Cost: `MODEL_PRICES_USD_PER_MTOK = {"claude-opus-5": (5.0, 25.0), "claude-sonnet-5": (2.0, 10.0)}` (input,
+  output per million tokens); `estimate_cost_usd(model, usage) -> float | None` bills `input_tokens` and
+  `output_tokens` at list price, cache reads at 10 % and cache writes at 125 % of the input price, and
+  returns `None` for a model outside the table. The web page shows the tokens and the estimate under every
+  answer plus a running total per transcript; the CLI prints one line after `ask`.
+* `build_context_text(state, rec, players, notes) -> str` (roster, needs, next picks, top-8 candidates with
+  points/VORP/availability/tier/reasons and any legacy note, position outlook, last 6 picks, position
+  pressure) is shared by both entry points; `describe_scoring` / `describe_roster_slots` are helpers.
+* Prompt caching: no `cache_control` markers (both system prompts are far below the minimum cacheable prefix).
+* Tests (`tests/test_research.py`, fake client): context text; `chat_stream` (context injection, merged
+  turns, usage + cost in the done event, an assistant-last transcript is rejected before anything is sent);
+  `ask`; `estimate_cost_usd`; disabled mode never sends; a guard that no research / advice code path exists.
 
 ### 3.6 `ui/dashboard.py`, `cli.py`, `app.py`  (owner: agent "ui")
 
 `app.py` — orchestration shared by commands:
-* `@dataclass AppContext(settings, engine, league, draft, players, projections, advisor, researcher, notes, byes, crosswalk, sources: dict)`
+* `@dataclass AppContext(settings, engine, league, draft, players, projections, advisor, claude, notes, byes, crosswalk, sources: dict)`
+  (`claude`: the `ClaudeChat` used by `ask` only; `notes`: legacy research notes read from disk, never written).
 * `build_context(settings, league=None, draft=None, *, offline=False, sleeper_players=None, sleeper_proj=None,
   refresh=False, use_model=True, quiet=False) -> AppContext`:
   crosswalk -> players (Sleeper payload if given else offline roster universe) -> enrich (ECR, byes) -> ADP
@@ -340,13 +356,13 @@ or `ANTHROPIC_API_KEY`) the class reports `enabled == False` and every method re
   exists and `use_model`; else `project_offline`) -> `Projector.project` -> `Advisor`. Log timings. Cache the
   projections table to `cache_dir()/projections_<league_id or 'default'>.json.gz` so the draft command starts
   in < 3 s.
-* `async prep(settings, research=False, refresh=False, train=True)`: download data (`load_canonical`),
-  build crosswalk, train model (`projections.model.train_and_save`), fetch Sleeper players/projections if
-  reachable (swallow network errors), build context, optionally run research for the top 200 by ADP.
+* `async prep(settings, refresh=False, train=True, progress=None, offline=False)`: download data
+  (`load_canonical`), build crosswalk, train model (`projections.model.train_and_save`), fetch Sleeper
+  players/projections if reachable (swallow network errors), build context. Never calls Claude.
 
 `ui/dashboard.py` — `rich` `Live` layout (refresh 4/s):
 * header: league name • scoring description • "Round 3 • Pick 31 • On the clock: Team X" • "You pick in 4
-  (#35), then #46" • poll latency • Claude status.
+  (#35), then #46" • poll latency.
 * left column: **My roster** table by slot label (starter slots then bench) with player, pos, team, bye,
   projected points; needs line "Need: RB2, TE, K, DEF"; bye clash warning.
 * center top: **Best picks now** (top 6): #, player, pos/team, bye, proj, VORP, tier, ADP, avail@next %, score,
@@ -355,18 +371,21 @@ or `ANTHROPIC_API_KEY`) the class reports `enabled == False` and every method re
   (TAKE NOW = red, SOON = yellow, WAIT = green, SKIP = dim) + rationale + 3 candidates (name, proj, avail %, tier).
 * right column: **Recent picks** (last 10: pick#, team label, player, pos) and **Opponent needs** (slot label,
   open starters string like "RB WR TE", next pick #).
-* footer: Claude advice text (or "Claude: off — set ANTHROPIC_API_KEY"), notes, key hint.
+* footer: engine notes (position runs, next pick), optional message, key hint. The dashboard never shows or
+  requests Claude output; the draft loop (`cli.DraftLoop`) is recommend + render only.
 * When it is my turn the header flashes "YOUR PICK" and the pick timer countdown (from `draft.pick_timer` and
   the time we noticed the turn).
 * Also `render_text(rec, state, players) -> str` plain text (used by `--no-tui` and `mock --auto` logs).
 
 `cli.py` (argparse, entry `main(argv=None)`): subcommands
-* `prep [--league ID | --draft ID] [--refresh] [--no-train] [--research] [--top N]` — downloads, trains, caches;
+* `prep [--league ID | --draft ID] [--refresh] [--no-train]` — downloads, trains, caches;
   prints backtest metrics and a top-30 projection table.
 * `train [--seasons 2019-2025] [--refresh]`.
-* `draft --draft ID [--league ID] [--username U | --user-id ID | --slot N] [--poll 2] [--no-claude] [--no-tui]`
+* `draft --draft ID [--league ID] [--username U | --user-id ID | --slot N] [--poll 2] [--no-tui]`
   — live advisor; if `--draft` missing but `--league` given, resolve via `get_league_drafts`; if neither given
-  but `--username` and season given, list the user's drafts and ask.
+  but `--username` and season given, list the user's drafts and ask. With `--platform espn --league ID
+  [--season YYYY] [--team-id N | --slot N | --username "team or owner"] [--espn-s2 C --swid C]` the same loop
+  (`DraftLoop`) consumes an `EspnDraftPoller` (§3.10); `--draft` is ignored, poll default 3 s.
 * `mock [--teams 12] [--rounds 15] [--slot 5] [--scoring half_ppr] [--superflex] [--auto] [--seed 1] [--speed 0.5]`
   — offline simulator with the same dashboard; in interactive mode when it's my turn read a line from stdin:
   empty = take the top recommendation, otherwise player name (fuzzy) or player_id; `--auto` always takes
@@ -375,9 +394,12 @@ or `ANTHROPIC_API_KEY`) the class reports `enabled == False` and every method re
 * `trade --league ID --me U --them V --give "Name, Name" --get "Name"` — evaluate.
 * `analyze --league ID [--username U]` — post-draft roster strengths/weaknesses for every team, playoff-week
   byes, best waiver targets (best available by VORP).
-* `research --top 200 [--league ID]` — run Claude research and print a summary.
-* `ask "question" [--draft ID]` — free-form Claude question with context.
-* `ids --username U [--season 2026]` — list the user's leagues and drafts with ids.
+* `ask "question" [--draft ID]` — free-form Claude question with context: the only CLI command that calls
+  Claude (one request); prints the answer, then one line with tokens and estimated cost.
+* `ids --username U [--season 2026]` — list the user's leagues and drafts with ids; `ids --platform espn --swid
+  {...}` asks ESPN's fan API (best effort) and otherwise prints where the id sits in the league URL.
+* Every command naming a league takes `--platform sleeper|espn` (env `DRAFTADVISOR_PLATFORM`) plus
+  `--espn-s2` / `--swid` (env `ESPN_S2` / `ESPN_SWID`); `app.build_context` / `capture` are platform-aware.
 * Global: `--home DIR` (sets DRAFTADVISOR_HOME), `--offline`, `-v`.
 Every command must work offline for the sandbox where sensible (`mock`, `projections`, `train`, `prep --offline`).
 
@@ -394,7 +416,8 @@ the fixture players with `use_model=False`).
 * No new third-party dependencies beyond `pyproject.toml` (httpx, numpy, pandas, scikit-learn, rich, anthropic).
 * Performance budgets: `Advisor.recommend` < 30 ms; dashboard render < 20 ms; poller tick overhead negligible;
   `build_context` from caches < 3 s; model training < 3 min.
-* Never block the event loop on network I/O in the draft loop; Claude calls run as background tasks.
+* Never block the event loop on network I/O in the draft loop. Nothing may call Claude automatically: the
+  only Anthropic calls are `POST /api/chat` and `draftadvisor ask`, both user-initiated.
 * Log with `logging.getLogger(__name__)`; no prints inside library code (CLI prints are fine).
 * Tests must pass offline: `python -m pytest tests -q`. Use the fixtures in `tests/fixtures/`.
 * Type hints everywhere; docstrings on public functions; keep functions small.
@@ -417,44 +440,26 @@ draft and persists it under `home_dir()/leagues/<league_id>.json` (raw payloads 
 API: `capture_league(client, league_id=None, draft_id=None, *, username=None, user_id=None, slot=None)
 -> LeagueSnapshot` (async), `LeagueSnapshot.save()/load(league_id_or_draft_id)`, `LeagueSnapshot.report()`
 (rich renderable) and `.to_text()`. `scoring_diff(scoring_settings) -> ScoringDiff`.
+`resolve_identity(draft, managers, users_raw, *, username, user_id, slot) -> (my_user_id, my_slot)` is the pure
+"who am I" step of the capture (raises `ValueError` naming the managers when nobody matches); the web server
+calls it per request on its identity-free capture.
 CLI: `draftadvisor capture --league ID [--draft ID] [--username U]`; `prep` and `draft` run the capture
 automatically (draft refreshes it at bootstrap because the draft order can change until the draft starts)
 and print the report once.
 
-### 3.8 `web/` — local web app  (owner: integrator + "frontend" agent)
+### 3.8 Render payload  (owner: integrator + "frontend" agent)
 
-`python run.py` (or `draftadvisor web`) starts a FastAPI/uvicorn server on http://127.0.0.1:8787 and opens
-the browser. The page is a single file `draftadvisor/web/static/index.html` (vanilla HTML/CSS/JS, no build
-step) that polls `GET /api/state` every 2 s (1 s when it is my turn) and renders everything. The server
-(`draftadvisor/web/server.py`) holds one `Session` (live or mock) and wraps the existing engine; all heavy
-work runs in background tasks so the API always answers immediately.
+> The v1 stateful server this section once described (`/api/prep`, `/api/live/start`, `/api/ask`,
+> `/api/research`, the "Ask" tab, a `claude` advice field) is gone; §3.9 is the API. Only the payload shape
+> below is still shared.
 
-Tabs: **Setup** (readiness, prepare data/model, live-draft form, mock-draft form), **Draft** (the advisor
-dashboard), **Board** (projection table with search/filter/sort), **League** (capture report: scoring diff,
-flags, draft order), **Ask** (Claude Q&A, only when a key is set).
-
-API (all JSON; errors are `{"detail": "..."}` with 4xx/5xx):
-
-* `GET /api/status` → `{"mode": "idle|prepping|starting|live|mock", "busy": bool, "message": str,
-  "ready": {"data": bool, "model": bool, "claude": bool, "sleeper": bool|null}, "log": [str], "season": int,
-  "home": str, "session": null | {"mode", "league_name", "draft_id", "my_slot", "started_at"}}`
-* `POST /api/prep` `{"refresh": bool, "research": bool, "top": int}` → `{"ok": true}`; progress in `status.log`.
-* `POST /api/lookup` `{"username": str}` → `{"user": {"user_id","display_name","username"},
-  "leagues": [{"league_id","name","season","total_rosters","status","draft_id","scoring_type","roster_positions"}],
-  "drafts": [{"draft_id","league_id","status","type","season","start_time","teams","rounds","name"}]}`
-* `POST /api/live/start` `{"league_id"?, "draft_id"?, "username"?, "user_id"?, "slot"?, "use_claude"?: bool}`
-  → `{"ok": true}` (background: capture → build_context → poller; `mode` becomes `live`).
-* `POST /api/mock/start` `{"teams": 12, "rounds": 15, "slot": 5, "scoring": "half_ppr|ppr|std",
-  "superflex": false, "seed": int|null, "bot_delay": 1.0, "autopilot": false}` → `{"ok": true}` (`mode` → `mock`).
-  Bots pick automatically every `bot_delay` seconds until it is my turn; `POST /api/mock/pick {"player_id"}`
-  makes my pick, `POST /api/mock/auto` takes the top recommendation, `POST /api/mock/autopilot {"enabled"}`.
-* `POST /api/stop` → `{"ok": true}` (mode → `idle`).
-* `GET /api/state` → the render payload:
+The **render payload** returned by `GET /api/state` / `POST /api/mock/state` (§3.9):
   ```
   {"mode", "version", "ts",
    "draft": {"type","status","teams","rounds","pick_timer","current_round","next_pick_no","total_picks",
              "on_the_clock": {"slot", "label"}|null, "is_my_turn", "my_slot", "my_next_pick_no",
-             "my_pick_after_next", "picks_until_my_turn", "is_complete", "turn_started_at", "seconds_left"},
+             "my_pick_after_next", "picks_until_my_turn", "is_complete", "turn_started_at", "seconds_left",
+             "last_picked"},        // seconds_left is null for ESPN (no pick timestamps)
    "league": {"name","scoring_type","scoring_description","roster_positions","teams","season"},
    "me": {"slots": [{"slot": "RB", "player": card|null}], "needs": [str], "bye_clashes": {"11": 2},
           "lineup_points", "bench_points", "position_counts": {pos: n}},
@@ -464,74 +469,184 @@ API (all JSON; errors are `{"detail": "..."}` with 4xx/5xx):
    "recent": [{"pick_no","round","slot","label","player_id","name","position","team","is_me"}],  // newest first, 12
    "opponents": [{"slot","label","needs": [str],"next_pick","position_counts": {}, "players": [{"name","position"}]}],
    "pressure": {pos: float}, "notes": [str],
-   "claude": {"status": "off|idle|thinking|ready|error|no answer", "advice": str|null},
-   "snapshot": null | {"flags": [str], "diff": {"scoring_type","rec_points","deltas": [{"key","label","base","league","kind"}]},
+   "snapshot": null | {"platform": "sleeper"|"espn", "flags": [str],
+                       "diff": {"scoring_type","rec_points","deltas": [{"key","label","base","league","kind"}]},
+                       "unmapped_scoring": [{"label","points","stat_id"}],   // ESPN rules not modelled; [] for Sleeper
                        "draft_order": [{"slot","display_name","team_name","roster_id","picks": [int],"is_me"}],
                        "my_picks": [int], "captured_at": float, "league": {...}, "draft": {...}},
-   "status": {"latency_ms","compute_ms","poll_count","last_error","sources": {}}}
+   "status": {"latency_ms","compute_ms","ts","sources": {},"platform": "sleeper"|"espn"}}
   ```
   A **card** is `{"player_id","name","position","team","bye","age","years_exp","injury_status","depth_chart_order",
   "points","floor","ceiling","std","ppg","games","vorp","vona","marginal","score","tier","pos_rank","overall_rank",
   "adp","ecr","availability_next","availability_after_next","reasons": [str],"warnings": [str],
   "note": null|{"summary","injury_risk","role_certainty","upside","downside"}, "drafted_by": null|label}`.
 * `GET /api/player/{player_id}` → card + `{"projection": {"components","weights","flags","stat_line"}, "explain": str}`.
-* `GET /api/projections?position=RB&top=80&q=text` → `[card]` from the session's (or a default offline)
-  context sorted by points; `POST /api/board/load` builds the default context when there is no session.
-* `POST /api/ask` `{"question"}` → `{"answer"}` (503 when Claude is disabled).
-* `POST /api/research` `{"top": 150}` → `{"ok": true}` (background, progress in `status.log`).
 
 ### 3.9 Stateless web API v2 (local + Vercel)  (owner: integrator + "frontend-v2" agent)
 
 The web app runs on Vercel (serverless: no background tasks, no persistent disk, no pandas/scikit-learn in the
 function bundle) and locally with the same code. Therefore **the server is stateless**: the browser owns the
 session config and, for mock drafts, the pick list; every request carries what the server needs; the server
-keeps only warm-memory caches (bundle, Sleeper players/projections, ECR, per-league context) and persists
-research notes in Vercel Blob (`BLOB_READ_WRITE_TOKEN`) or the local data dir.
+keeps only warm-memory caches (bundle, Sleeper players/projections, ECR, per-league capture and context, one
+`EspnClient` per cookie pair) and reads the legacy research notes (read-only) from Vercel Blob
+(`BLOB_READ_WRITE_TOKEN`) or the local data dir.
 
 Model outputs are precomputed into `web_bundle/` (`draftadvisor bundle`, committed): `players.json` (offline
 universe), `ml.json` (per player predicted per-game rates, games, std, rookie flag), `season_totals.json`
 (player-season stat totals 2019-2025 for the rank curves under any scoring), `byes.json`, `meta.json`.
 
-Access control (optional): env `DRAFTADVISOR_ACCESS_CODE`; when set every `/api/*` call must carry header
-`X-Access-Code`. Anthropic key: env `ANTHROPIC_API_KEY` **or** header `X-Anthropic-Key` (stored in the browser's
-localStorage, never logged). Models: research `claude-sonnet-5` (web search), chat `claude-opus-5`
-(env `DRAFTADVISOR_CHAT_MODEL`).
+Headers (all optional, all stored only in the browser's localStorage, never logged): `X-Access-Code` (required
+for every `/api/*` call when env `DRAFTADVISOR_ACCESS_CODE` is set), `X-Anthropic-Key` (else env
+`ANTHROPIC_API_KEY`), `X-ESPN-S2` / `X-ESPN-SWID` (ESPN cookies for private leagues; else env `ESPN_S2` /
+`ESPN_SWID`). Claude is called by `POST /api/chat` only (chat model `claude-opus-5`, env
+`DRAFTADVISOR_CHAT_MODEL`; `claude-sonnet-5` selectable in the page); nothing polls or researches.
 
 **Session object** (sent by the browser as JSON body field `session`, or as query params for GET):
-`{"mode": "live"|"mock", "draft_id", "league_id", "username", "user_id", "slot", "use_claude": bool,
+`{"mode": "live"|"mock", "platform": "sleeper"|"espn" (default sleeper),
+  "draft_id", "league_id" (ESPN: the leagueId= number as a string), "season": int|null (ESPN; default
+  DEFAULT_SEASON), "username", "user_id" (ESPN: str(team id) once resolved), "slot", "team_id": int|null (ESPN),
+  "use_claude": bool,   // accepted for compatibility, ignored (chat is user-initiated)
   "mock": {"teams","rounds","slot","scoring","superflex","seed"}, "picks": [player_id,...]  // mock only }`
+`Session.from_query` reads the same fields from GET query params (`/api/state`, `/api/player/{id}`,
+`/api/projections`): the `session` JSON parameter when the page sends one (authoritative), else the flat
+fields with the mock settings as `mock_<key>` (what the page sends) or bare `<key>`; malformed values are 400.
+For ESPN the team id is the identity; `slot` / `username` only count when no team id is known
+(`Session.espn_identity`).
 
 Endpoints (JSON; errors `{"detail"}`):
-* `GET /api/status` → `{"ok", "version", "bundle": {"built_at","players","seasons"}, "claude": {"server_key": bool},
-  "notes": {"count", "store": "blob"|"local"|"memory"}, "access_code_required": bool}`
-* `POST /api/lookup {"username"}` → user + leagues + drafts (as v1).
-* `POST /api/session/start {session}` → validates, captures the league (snapshot: scoring diff, flags, draft
-  order, my picks), warms the league context; returns `{"session": {...resolved ids/slot...}, "snapshot": {...},
-  "league": {...}}`. For mock: builds the league/draft and returns the same shape (snapshot synthesised).
+* `GET /api/status` → `{"ok", "version", "season", "bundle": {"built_at","players","seasons"},
+  "claude": {"server_key": bool, "chat_model": str, "prices": {model: [usd_per_M_input, usd_per_M_output]}},
+  "notes": {"count", "store": "blob"|"local"|"memory"}, "access_code_required": bool,
+  "platforms": ["sleeper", "espn"], "espn": {"server_cookies": bool}}`
+* `POST /api/lookup {"username"}` (Sleeper) → `{"user", "leagues", "drafts"}`.
+  `POST /api/lookup {"platform": "espn", "league_id", "season"}` → `{"platform": "espn", "league": {"league_id",
+  "name", "season", "teams", "scoring_type", "is_public", "draft": {"type", "status", "pick_timer", "start_time",
+  "rounds", "order_known"}}, "teams": [{"team_id", "name", "abbrev", "owners": [names], "slot": int|null,
+  "is_me"}], "me": {"team_id", "slot"}|null (the team the SWID owns), "unmapped_scoring": [{"label", "points"}]}`.
+  ESPN errors: 401/403 → HTTP 401 "ESPN says this league is private - add your espn_s2 and SWID cookies under
+  Settings", 404 → 404 "ESPN has no league <id> for season <season>", anything else → 502.
+* `POST /api/session/start {session}` → validates, captures the league (identity-free and shared by every
+  session of the league: scoring diff, flags, draft order; "me" — user / team id, slot, picks — is resolved per
+  request from that capture by `resolve_me`, 400 for an unknown team / manager or a slot outside the draft),
+  warms the league context; returns `{"session": {...resolved ids/slot; for ESPN also
+  platform, season, team_id, user_id = str(team id)...}, "snapshot": {...}, "league": {"name", "scoring_type",
+  "teams"}, "draft_order_known": bool, "message": str|null}` (the message says "spectating" or "draft order not
+  set yet"). For mock: builds the league/draft and returns the same shape (snapshot synthesised).
 * `GET /api/state?...session params...` (live) / `POST /api/mock/state {session, action, player_id?}` (mock)
   → the render payload of §3.8 (draft, league, me, best, by_position, available, recent, opponents, pressure,
-  notes, snapshot, status) **without** `claude` advice (see /api/advice). Mock `action` ∈ `"sync"` (just
+  notes, snapshot, status); there is no Claude field (nothing is generated automatically). For ESPN
+  `draft.pick_timer` is `timePerSelection` re-read every poll, `draft.seconds_left` is null and
+  `status.platform` is `"espn"`. Mock `action` ∈ `"sync"` (just
   render), `"advance"` (bots pick until my turn or the end), `"pick"` (my pick then advance), `"auto"` (take
   the top recommendation then advance); the response includes `"picks"` (the full list the browser must keep)
   and `"last_picks"` (picks made in this call, for the feed).
-* `GET /api/advice?...session params...` → `{"advice": str|null, "status": "ready|thinking|off|error", "model"}`
-  (Sonnet, cached per state version; the browser calls it when `is_my_turn` or `picks_until_my_turn <= 1`).
 * `POST /api/chat {session, messages: [{"role","content"}], model?}` → **SSE stream** (`text/event-stream`,
-  events `data: {"delta": "..."}` … `data: {"done": true, "usage": {...}}`) — chat with full live context
-  (the current recommendation, roster, needs, candidates, notes) injected server-side; the browser keeps the
-  transcript (localStorage) and sends the whole history each time.
-* `POST /api/research/player {session, player_id, force?}` → `{"note": {...}}` (web search; up to ~60 s).
-* `POST /api/research/next {session, top}` → researches ONE player lacking a fresh note among the top
-  `top` by ADP (or among my current top-8 candidates first when a draft is running) → `{"done", "total",
-  "note"|null, "remaining"}`; the browser loops until `remaining == 0`.
-* `GET /api/notes` → `{player_id: note}`; `GET /api/player/{id}?...` → card + projection detail + note.
-* `GET /api/projections?league_id=&position=&top=&q=` → board (league scoring when known, else half-PPR).
+  events `data: {"delta": "..."}` … `data: {"done": true, "stop_reason", "model", "usage": {"input_tokens",
+  "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"}, "cost_usd": float|null}`) — the
+  **only endpoint that calls the Anthropic API**: one request per user message, with the live context (the
+  current recommendation, roster, needs, candidates, notes) injected server-side; the browser keeps the
+  transcript (localStorage), sends the whole history each time and shows the tokens / estimated cost of every
+  answer plus a running total. 503 without a key. There is no advice endpoint and no research endpoint.
+  `model` must be a priced model (`claude.prices` of `/api/status`): anything else is 400 before a request goes
+  out, and an unpriced `DRAFTADVISOR_CHAT_MODEL` falls back to the default. The transcript is trimmed
+  server-side to the newest `CHAT_MAX_TURNS` = 40 turns / `CHAT_MAX_CHARS` = 60 000 characters
+  (`research.claude.trim_transcript`; a single message above the cap is 413), so one request never carries an
+  unbounded history.
+* `GET /api/notes` → `{player_id: note}` (legacy research notes, read-only); `GET /api/player/{id}?...` → card +
+  projection detail + note.
+* `GET /api/projections?...session params...&position=&top=&q=` → board (the league's scoring when a session is
+  given — Sleeper or ESPN — else half-PPR).
 
-Research note fields (v2): `summary, injury_risk (0-1), role_certainty (0-1), offfield_risk (0-1), red_flags
-[str] (legal / suspension / holdout / contract / injury-report / benching / negative-commentary), upside,
-downside, sources [url], generated_at, model`. The Projector uses `injury_risk` (games), `role_certainty`
-(std) and `offfield_risk` (games and std), and the cards show `red_flags`.
+Legacy research notes (written by earlier versions; read-only, nothing writes new ones): `summary,
+injury_risk (0-1), role_certainty (0-1), offfield_risk (0-1), red_flags [str], upside, downside, sources [url],
+generated_at, model`. Where a note exists the Projector still uses `injury_risk` (games), `role_certainty`
+(std) and `offfield_risk` (games and std), and the cards still show `red_flags`.
 
-Timer: the countdown shows only what Sleeper reports **right now** (`draft.pick_timer` re-read every poll and
-`last_picked`); if the commissioner changes the clock mid-draft the display follows; nothing in the advice logic
-depends on the timer.
+Timer: for Sleeper the countdown shows only what Sleeper reports **right now** (`draft.pick_timer` re-read every
+poll and `last_picked`); if the commissioner changes the clock mid-draft the display follows. For ESPN the server
+reports `pick_timer` and no `seconds_left`; the page derives an approximate countdown from the moment it saw
+`next_pick_no` change and labels it as such. Nothing in the advice logic depends on the timer.
+
+Caching (`web/server.py`): `CACHE` entries `league:sleeper:<draft_id>::` / `league:sleeper::<league_id>:` (a
+capture is stored under both once it knows both ids) and `league:espn::<league_id>:<season>:<credential hash>`
+hold the identity-free `LeagueBundle` (capture) for `LEAGUE_TTL` = 600 s — nobody is "me" in a capture;
+`resolve_me` resolves the asking manager per request, so the resolved session the browser sends back after
+`/api/session/start` hits the same entry and the first poll costs one GET, never a second capture. `ctx:...`
+holds the `LeanContext` for `CONTEXT_TTL` = 600 s or until its fingerprint changes; for ESPN it carries
+`ctx.id_map`, the ESPN id map indexed over the very universe the context was built from (Sleeper payload or
+bundle), which every poll resolves picks / rosters through — so a drafted player can never stay "available"
+under another id when the universe source changes between capture and poll. `espn_idmap:sleeper|bundle` is
+only the map the capture's snapshot used. `_ESPN_CLIENTS` keeps one `EspnClient` per sha1 of the cookie pair
+(max 16; the least recently used is evicted first and closed only once its in-flight requests finish, never
+underneath one). Cookie values never appear in keys, logs or responses.
+
+### 3.10 ESPN provider  (owner: agent "espn")
+
+`draftadvisor/espn/` mirrors `sleeper/` and is pandas-free (it runs in the Vercel function). Modules:
+
+| module | contract |
+|---|---|
+| `constants.py` | `espn_base_url()` (`DRAFTADVISOR_ESPN_BASE`, default `https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl`), `fan_api_url()` (`DRAFTADVISOR_ESPN_FAN_BASE`), `POSITION_SLOT_MAP` (lineup slot id → our roster label), `PRO_TEAM_MAP` / `TEAM_TO_PRO_ID`, `DST_ID_BASE` (−16000), `DEFAULT_POSITION_MAP`, `ELIGIBLE_SLOT_POSITION`, `INJURY_STATUS_MAP`, `ESPN_STAT_TO_SLEEPER` (statId → Sleeper keys + divisor), `SCORING_LABELS` / `label_for_stat` (espn-api's labels for the "not modelled" list). |
+| `client.py` | `EspnClient(espn_s2, swid, timeout, retries, base_url, transport, http)`: `get_league(id, season, views)` (`view=` repeated; on 401/403 retries `/leagueHistory/{id}?seasonId=`), `get_settings_and_teams` (mSettings + mTeam + mRoster), `get_draft_detail` (mDraftDetail + mSettings: the per-poll call), `get_players` (kona_player_info with the `x-fantasy-filter` header from `player_filter(season, limit=600, "PPR")`), `get_fan_leagues(swid)` (best effort, `[]` on any failure). Retries with backoff on timeouts / 5xx / 429, never on 4xx. `EspnAPIError(status_code, url)`, `EspnNotFound` (404), `EspnAccessDenied` (401/403; the message never contains cookie values). `format_swid` adds the braces. |
+| `ids.py` | `EspnIdMap.from_players(universe)`: `resolve(espn_id, name=, position=, pro_team_id=)` → canonical id by (1) `Player.espn_id`, (2) D/ST id `-16000 - proTeamId` → team abbreviation (WSH → WAS), (3) normalised name + position (+ team for ambiguous names; learned for next time), (4) synthetic `espn:<id>`. `espn_player_fields(json)` normalises a kona / roster / player dict; `placeholder_player(json)` builds a `Player` (metadata `platform: espn, placeholder: true`) so an unknown pick is never blank. |
+| `scoring.py` | `espn_scoring_to_sleeper(scoringItems) -> (scoring_settings, unmapped)`, `espn_stats_to_sleeper(stats, position)` (projected line keyed by statId strings → Sleeper keys, incl. `gp`), `projected_season_stats(player_json, season)` (the `10<season>` / `statSourceId 1` / `statSplitTypeId 0` entry), `projected_points`. |
+| `parsing.py` | `parse_espn_league(league_json, draft_json) -> LeagueSettings` (`settings`: `platform`, `keeper_count`, `is_public`, `draft_type`, `unmapped_scoring`, `scoring_type_espn`, `num_teams`), `parse_espn_draft -> DraftSettings`, `parse_espn_managers -> dict[team id str, Manager]`, `parse_espn_picks(draft_json, id_map, draft, names) -> list[Pick]`, `resolve_my_team(draft, managers, league_json, swid=, team_id=, slot=, username=) -> (team id str|None, slot|None)` (precedence slot > team_id > swid > username; `(None, None)` = spectator), `roster_names`, `rostered_ids`, `rounds_from_counts`, `roster_positions_from_counts`, `draft_status`, `state_from_espn(league_json, draft_json, id_map, *, names, swid, team_id, slot, username) -> DraftState`. |
+| `capture.py` | `capture_espn_league(client, league_id, season, *, swid, team_id, slot, username, id_map, players_limit, save) -> LeagueSnapshot` (3 GETs; the player pool is optional — a failure only drops ADP / projections); `espn_names`, `espn_adp` (canonical id → `ownership.averageDraftPosition`, else the PPR / STANDARD draft rank), `espn_projections` (canonical id → Sleeper-key season line), `espn_rosters` (`[{"roster_id": team id, "players": [ids]}]` so `LeagueSnapshot.roster_players` works), `unmapped_flags`. |
+| `poller.py` | `EspnDraftPoller(client, league_id, season, *, id_map, names, swid, team_id, slot, username, poll_seconds=3, league_json, settings)` with the `DraftPoller` interface (`bootstrap`, `poll_once`, `run(on_update, stop, on_error)`, `interval`, `state`, `last_error`, `poll_count`, `last_latency_ms`, `last_poll_at`). One GET per poll; a new state only when the pick signature or the order signature (`pickOrder`, `timePerSelection`, `type`, `date`, rounds) changed — an order change re-parses the whole state including "my" slot. Cadence 3 s / 1 s near my turn / 10 s pre-draft; exponential backoff to 30 s on errors; `EspnNotFound` / `EspnAccessDenied` during bootstrap are re-raised. |
+
+**Sources per field** (ESPN v3 league payload; views in brackets):
+
+| ours | ESPN |
+|---|---|
+| `LeagueSettings.league_id / season / name / total_rosters` | `id`, `seasonId`, `settings.name`, `settings.size` [mSettings] |
+| `roster_positions` | `settings.rosterSettings.lineupSlotCounts` via `POSITION_SLOT_MAP` (0 QB, 1 TQB → QB, 2 RB, 3 → WRRB_FLEX, 4 WR, 5 → REC_FLEX, 6 TE, 7 OP → SUPER_FLEX, 8/9/11 → DL, 10 LB, 12/13/14 → DB, 15 → IDP_FLEX, 16 → DEF, 17 K, 20 → BN, 21 → IR, 23 → FLEX, 24/25 → BN; 18 P and 19 HC skipped) |
+| `scoring_settings` + `settings.unmapped_scoring` | `settings.scoringSettings.scoringItems[]` (`statId`, `points`, `pointsOverrides`) |
+| `DraftSettings.type / status / teams / rounds` | `draftSettings.type` (AUCTION → auction, else snake; `reversal_round` 0), `draftDetail.drafted` → complete / `inProgress` → drafting / else pre_draft, `len(pickOrder)` or `settings.size`, sum of `lineupSlotCounts` except slot 21 |
+| `pick_timer / start_time / draft_order / slot_to_roster_id` | `draftSettings.timePerSelection` (s), `draftSettings.date` (ms), `pickOrder` (team ids; slot 1 = first; empty until set) |
+| `Manager` | `teams[]` (`id`, `abbrev`, `name` or `location`+`nickname`, `owners`, `primaryOwner`) + `members[]` (`id` = SWID, `displayName`, first/last name); `user_id` = team id as str, `roster_id` = team id |
+| `Pick` | `draftDetail.picks[]` (`overallPickNumber`, `roundId`, `teamId`, `playerId`, `keeper`); names from the rosters / player pool; used whatever `drafted` says |
+| players / ADP / projections | `kona_player_info` `players[]` (`player.id`, `fullName`, `defaultPositionId`, `eligibleSlots`, `proTeamId`, `injuryStatus`, `ownership.averageDraftPosition`, `draftRanksByRankType`, `stats[]` with `id == "10<season>"`) |
+
+**Scoring conversion** (`ESPN_STAT_TO_SLEEPER`; points per unit keep their semantics): 3 pass_yd, 4 pass_td,
+20 pass_int, 19 pass_2pt, 17/18 bonus_pass_yd_300/400, 64 pass_sack, 211 pass_fd; 23 rush_att, 24 rush_yd,
+25 rush_td, 26 rush_2pt, 37/38 bonus_rush_yd_100/200, 212 rush_fd; 53 (else 41) rec, 42 rec_yd, 43 rec_td,
+44 rec_2pt, 58 rec_tgt, 56/57 bonus_rec_yd_100/200, 213 rec_fd; 68 fum, 72 fum_lost, 63 fum_rec_td; kicking
+83 fgm, 84 fga, 85 fgmiss, 80 → fgm_0_19/20_29/30_39, 77 fgm_40_49, 74 fgm_50p (+ 50_59 / 60p unless 198 / 201
+present), 82/79/76 fgmiss brackets, 86 xpm, 87 xpa, 88 xpmiss, 214 fgm_yds; defense 94 (+93/103/104) def_td,
+101/102 st_td, 99 sack, 95 int, 96 fum_rec, 106 ff, 98 safe, 97 blk_kick, 113 def_pass_def, 205/206 def_2pt,
+120 pts_allow, 89/90/91 pts_allow_0/1_6/7_13, 92+121 pts_allow_14_20, 122 pts_allow_21_27, 123 pts_allow_28_34,
+124/125 pts_allow_35p, 127 yds_allow and 128–136 the yds_allow brackets. Rules: "every N yards / receptions"
+items (5–14, 27–34, 47–52, 54–55, 116–119, 217–222) add `points / N` to the per-unit key; D/ST items (89–136,
+187–197) take `pointsOverrides["16"]` when present; `pointsOverrides` for slot 2 / 4 / 6 on the reception item
+become `bonus_rec_rb / wr / te` = override − base; statId 62 feeds `*_2pt` only where 19 / 26 / 44 are absent;
+several items feeding one key take their mean; anything else with non-zero points (15/16 long-TD bonuses,
+175–186 per-distance TD bonuses, 210 games played, 73 turnovers, ...) lands in `unmapped` as `{statId, label,
+points}`, is surfaced as `settings.unmapped_scoring`, one strategy flag each ("ESPN rule not modelled: ..."),
+`snapshot.unmapped_scoring` in the API and the League tab's list. `scoring_diff` still compares against
+Sleeper's base scoring after the translation.
+
+**Web integration** (`web/server.py`): `Session.platform == "espn"` → `resolve_league` runs `_capture_espn`
+(identity-free; cache key `league:espn::<league_id>:<season>:<credential hash>`) → `LeagueBundle(platform="espn",
+season, id_map, espn_players, espn_names, snapshot)`; `resolve_me` → `resolve_my_team` gives "me" per request;
+`league_context` builds the universe (`lean.lean_universe`) and `EspnIdMap.from_players` over it, passes
+`espn_context_inputs(lb, id_map)` = `adp_override` (source `"espn"`), `proj_fallback` (source `"espn"`) and
+`extra_players` (placeholders for pool / roster players that resolved to `espn:<id>`) plus that universe and map
+to `lean.build_lean_context` (stored as `ctx.id_map`); `live_state` → `espn_live_state` = one `get_draft_detail`
++ `state_from_espn` with the cached league JSON and `ctx.id_map`; `build_payload` adds placeholder players for
+unknown picked ids and reports no countdown. The CLI path is `app.fetch_espn_league` / `app.espn_overrides` /
+`app.build_context(espn_players=...)` and `cli.DraftLoop` over `EspnDraftPoller`; the TUI shows "ESPN clock:
+N s per pick" plus an approximate countdown from the moment the process saw the pick number move.
+
+**Caveats.** ESPN picks carry no timestamps (no authoritative clock). Whether `draftDetail.picks` updates while
+a draft is in progress could not be verified from the sandbox: the code renders whatever ESPN returns each poll
+and the docs say so. ESPN has no linear order and no "paused" status; auction drafts parse as `type
+"auction"` and are not advised. The fan API used by `ids` is undocumented (parsed defensively, `[]` when the
+shape is unknown). Cookie values never reach logs, cache keys, error messages or responses.
+
+Tests: `tests/test_espn_client.py` (`httpx.MockTransport` + the stub: views, cookies, `x-fantasy-filter`, retries,
+401 → history fallback → `EspnAccessDenied`, 404, base URL override), `tests/test_espn_parsing.py` (fixtures in `tests/fixtures/espn/`: league / draft in
+each status, managers, picks, `resolve_my_team` precedence, id mapping), `tests/test_espn_scoring.py`
+(conversion table, overrides, premiums, unmapped list, projected line scoring), `tests/test_espn_capture_poller.py`
+(capture shape, poller change detection and cadence), `tests/test_web_espn.py` (the server against
+`tests/espn_stub.py`, a local HTTP stub selected through `DRAFTADVISOR_ESPN_BASE`: lookup, session start, state,
+header / env cookies, error mapping).

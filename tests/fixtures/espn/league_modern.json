@@ -1,0 +1,1609 @@
+{
+ "draftDetail": {
+  "drafted": false,
+  "inProgress": false,
+  "picks": []
+ },
+ "gameId": 1,
+ "id": 368876,
+ "members": [
+  {
+   "displayName": "fergheg",
+   "firstName": "hrthr",
+   "id": "{1234-5678-9101}",
+   "lastName": "nvbn",
+   "notificationSettings": []
+  },
+  {
+   "displayName": "rhr",
+   "firstName": "gfhfgh",
+   "id": "{3456-789-1112}",
+   "lastName": "werw",
+   "notificationSettings": []
+  },
+  {
+   "displayName": "reghnn",
+   "firstName": "ghfnfg",
+   "id": "{79345-777-333}",
+   "lastName": "fghdfh",
+   "notificationSettings": []
+  },
+  {
+   "displayName": "ykuy",
+   "firstName": "jkhk",
+   "id": "{0009-3468-72}",
+   "lastName": "jhkkhj",
+   "notificationSettings": []
+  },
+  {
+   "displayName": "jhkghkg",
+   "firstName": "hfgjfghj",
+   "id": "{45668099-ABCHJJGH-6668}",
+   "lastName": "jghjfg",
+   "notificationSettings": []
+  },
+  {
+   "displayName": "dfhhfgj",
+   "firstName": "fdsgdh",
+   "id": "{rehertjhrhj-32415346}",
+   "lastName": "hjhfgeas",
+   "notificationSettings": []
+  },
+  {
+   "displayName": "hrfghr",
+   "firstName": "sdgfdfghdfh",
+   "id": "{rewylkjgherhgjkwerhjgferjklhg}",
+   "lastName": "gehgfh",
+   "notificationSettings": []
+  },
+  {
+   "displayName": "gerhfdhfg",
+   "firstName": "Andrew",
+   "id": "{55791-3368-10456}",
+   "lastName": "uktyht",
+   "notificationSettings": []
+  },
+  {
+   "displayName": "ijgdgvhhj",
+   "firstName": "T",
+   "id": "{6863-6934-3455}",
+   "lastName": "M",
+   "notificationSettings": []
+  },
+  {
+   "displayName": "dfhfgnb",
+   "firstName": "C",
+   "id": "{4899-74322-677}",
+   "lastName": "D",
+   "notificationSettings": []
+  }
+ ],
+ "scoringPeriodId": 18,
+ "seasonId": 2026,
+ "segmentId": 0,
+ "settings": {
+  "acquisitionSettings": {
+   "acquisitionBudget": 100,
+   "acquisitionLimit": -1,
+   "acquisitionType": "WAIVERS_TRADITIONAL",
+   "isUsingAcquisitionBudget": false,
+   "isUsingVickeryRules": false,
+   "matchupAcquisitionLimit": 0.0,
+   "matchupLimitPerScoringPeriod": false,
+   "minimumBid": 1,
+   "waiverHours": 24,
+   "waiverOrderReset": true,
+   "waiverProcessDays": [
+    "MONDAY",
+    "WEDNESDAY",
+    "THURSDAY",
+    "FRIDAY",
+    "SATURDAY",
+    "SUNDAY"
+   ],
+   "waiverProcessHour": 11
+  },
+  "draftSettings": {
+   "auctionBudget": 200,
+   "date": 1756500000000,
+   "isTradingEnabled": false,
+   "keeperCount": 2,
+   "keeperCountFuture": 0,
+   "keeperOrderType": "TRADITIONAL",
+   "leagueSubType": "KEEPER",
+   "orderType": "MANUAL",
+   "pickOrder": [
+    2,
+    8,
+    1,
+    9,
+    4,
+    3,
+    10,
+    5,
+    7,
+    11
+   ],
+   "timePerSelection": 60,
+   "type": "SNAKE"
+  },
+  "financeSettings": {
+   "entryFee": 0.0,
+   "miscFee": 0.0,
+   "perLoss": 0.0,
+   "perTrade": 0.0,
+   "playerAcquisition": 0.0,
+   "playerDrop": 0.0,
+   "playerMoveToActive": 0.0,
+   "playerMoveToIR": 0.0
+  },
+  "isCustomizable": true,
+  "isPublic": false,
+  "name": "FXBG League",
+  "restrictionType": "NONE",
+  "rosterSettings": {
+   "isBenchUnlimited": true,
+   "isUsingUndroppableList": true,
+   "lineupLocktimeType": "INDIVIDUAL_GAME",
+   "lineupSlotCounts": {
+    "0": 1,
+    "1": 0,
+    "10": 0,
+    "11": 0,
+    "12": 0,
+    "13": 0,
+    "14": 0,
+    "15": 0,
+    "16": 1,
+    "17": 1,
+    "18": 0,
+    "19": 0,
+    "2": 2,
+    "20": 5,
+    "21": 0,
+    "22": 0,
+    "23": 1,
+    "24": 0,
+    "3": 0,
+    "4": 2,
+    "5": 0,
+    "6": 1,
+    "7": 1,
+    "8": 0,
+    "9": 0
+   },
+   "moveLimit": -1,
+   "positionLimits": {
+    "0": 0,
+    "1": 4,
+    "10": 0,
+    "11": 0,
+    "12": 0,
+    "13": 0,
+    "14": 0,
+    "15": 0,
+    "16": 3,
+    "17": -1,
+    "2": 8,
+    "3": 8,
+    "4": 3,
+    "5": 3,
+    "6": 0,
+    "7": 0,
+    "8": 0,
+    "9": 0
+   },
+   "rosterLocktimeType": "INDIVIDUAL_GAME",
+   "universeIds": [
+    0
+   ]
+  },
+  "scheduleSettings": {
+   "divisions": [
+    {
+     "id": 0,
+     "name": "The League",
+     "size": 10
+    }
+   ],
+   "matchupPeriodCount": 13,
+   "matchupPeriodLength": 1,
+   "matchupPeriods": {
+    "1": [
+     1
+    ],
+    "10": [
+     10
+    ],
+    "11": [
+     11
+    ],
+    "12": [
+     12
+    ],
+    "13": [
+     13
+    ],
+    "14": [
+     14
+    ],
+    "15": [
+     15
+    ],
+    "16": [
+     16
+    ],
+    "2": [
+     2
+    ],
+    "3": [
+     3
+    ],
+    "4": [
+     4
+    ],
+    "5": [
+     5
+    ],
+    "6": [
+     6
+    ],
+    "7": [
+     7
+    ],
+    "8": [
+     8
+    ],
+    "9": [
+     9
+    ]
+   },
+   "periodTypeId": 1,
+   "playoffMatchupPeriodLength": 1,
+   "playoffSeedingRule": "TOTAL_POINTS_SCORED",
+   "playoffSeedingRuleBy": 0,
+   "playoffTeamCount": 6
+  },
+  "scoringSettings": {
+   "allowOutOfPositionScoring": false,
+   "homeTeamBonus": 0,
+   "matchupTieRule": "NONE",
+   "matchupTieRuleBy": -1,
+   "playerRankType": "STANDARD",
+   "playoffHomeTeamBonus": 0,
+   "playoffMatchupTieRule": "NONE",
+   "playoffMatchupTieRuleBy": 0,
+   "scoringItems": [
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "pointsOverrides": {
+      "16": 6.0
+     },
+     "statId": 93
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 4.0
+     },
+     "statId": 121
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 2.0
+     },
+     "statId": 122
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 1.0
+     },
+     "statId": 123
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": -2.0
+     },
+     "statId": 125
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 5.0
+     },
+     "statId": 128
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "statId": 25
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 1.0,
+     "pointsOverrides": {
+      "16": 1.0
+     },
+     "statId": 209
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 4.0
+     },
+     "statId": 129
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 3.0
+     },
+     "statId": 130
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 2.0
+     },
+     "statId": 131
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 1.0
+     },
+     "statId": 132
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 1.0,
+     "pointsOverrides": {
+      "6": 1.5
+     },
+     "statId": 53
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": -2.0
+     },
+     "statId": 133
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": -4.0
+     },
+     "statId": 134
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": -6.0
+     },
+     "statId": 135
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": -2.0,
+     "statId": 72
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": -8.0
+     },
+     "statId": 136
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "pointsOverrides": {
+      "16": 6.0
+     },
+     "statId": 101
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "pointsOverrides": {
+      "16": 6.0
+     },
+     "statId": 102
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 2.0,
+     "pointsOverrides": {
+      "16": 2.0
+     },
+     "statId": 206
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "pointsOverrides": {
+      "16": 6.0
+     },
+     "statId": 103
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "pointsOverrides": {
+      "16": 6.0
+     },
+     "statId": 104
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 2.0,
+     "statId": 19
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "statId": 43
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": -2.0,
+     "statId": 20
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.1,
+     "statId": 24
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "statId": 63
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 3.0,
+     "statId": 80
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 10.0
+     },
+     "statId": 89
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 2.0,
+     "statId": 26
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 9.0
+     },
+     "statId": 90
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 8.0
+     },
+     "statId": 91
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 6.0
+     },
+     "statId": 92
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 4.0,
+     "statId": 77
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 2.0
+     },
+     "statId": 95
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 2.0
+     },
+     "statId": 96
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 2.0
+     },
+     "statId": 97
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 2.0
+     },
+     "statId": 98
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 1.0
+     },
+     "statId": 99
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.04,
+     "statId": 3
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": -1.0,
+     "statId": 85
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 1.0,
+     "statId": 86
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.1,
+     "statId": 42
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": -1.0,
+     "statId": 88
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "statId": 4
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 2.0,
+     "statId": 44
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 5.0,
+     "statId": 74
+    },
+    {
+     "isReverseItem": false,
+     "points": 2.0,
+     "statId": 15
+    },
+    {
+     "isReverseItem": false,
+     "points": 0.2,
+     "statId": 5
+    }
+   ],
+   "scoringType": "H2H_POINTS"
+  },
+  "size": 10,
+  "tradeSettings": {
+   "allowOutOfUniverse": false,
+   "deadlineDate": 1543395600000,
+   "max": -1,
+   "revisionHours": 24,
+   "vetoVotesRequired": 5
+  }
+ },
+ "status": {
+  "activatedDate": 1526023857070,
+  "createdAsLeagueType": 0,
+  "currentLeagueType": 0,
+  "currentMatchupPeriod": 16,
+  "finalScoringPeriod": 16,
+  "firstScoringPeriod": 1,
+  "isActive": true,
+  "isExpired": false,
+  "isFull": true,
+  "isViewable": false,
+  "latestScoringPeriod": 18,
+  "previousSeasons": [
+   2015,
+   2016,
+   2017
+  ],
+  "teamsJoined": 10
+ },
+ "teams": [
+  {
+   "abbrev": "GHN",
+   "divisionId": 0,
+   "id": 1,
+   "isActive": false,
+   "logo": "https://media.tenor.com/images/77f95390793163ddbfb2258d81b95b97/tenor.gif",
+   "logoType": "CUSTOM_VALID",
+   "name": "Goin' HAM Newton",
+   "owners": [
+    {
+     "displayName": "ijgdgvhhj",
+     "firstName": "T",
+     "id": "{6863-6934-3455}",
+     "lastName": "M"
+    }
+   ],
+   "playoffSeed": 2,
+   "primaryOwner": "{6863-6934-3455}",
+   "roster": {
+    "entries": [
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 13934,
+      "playerPoolEntry": {
+       "id": 13934,
+       "onTeamId": 1,
+       "player": {
+        "active": true,
+        "defaultPositionId": 3,
+        "droppable": true,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "firstName": "Antonio",
+        "fullName": "Antonio Brown",
+        "id": 13934,
+        "injured": false,
+        "injuryStatus": "ACTIVE",
+        "lastName": "Brown",
+        "proTeamId": 23
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 15818,
+      "playerPoolEntry": {
+       "id": 15818,
+       "onTeamId": 1,
+       "player": {
+        "active": true,
+        "defaultPositionId": 3,
+        "droppable": true,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "firstName": "Keenan",
+        "fullName": "Keenan Allen",
+        "id": 15818,
+        "injured": false,
+        "injuryStatus": "ACTIVE",
+        "lastName": "Allen",
+        "proTeamId": 24
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 9
+  },
+  {
+   "abbrev": "RWM",
+   "divisionId": 0,
+   "id": 2,
+   "isActive": false,
+   "logo": "https://i.etsystatic.com/13817491/c/500/397/266/233/il/04d655/1674551237/il_340x270.1674551237_d8w2.jpg",
+   "logoType": "CUSTOM_VALID",
+   "name": "Rollin' With Mahomies",
+   "owners": [
+    {
+     "displayName": "gerhfdhfg",
+     "firstName": "Andrew",
+     "id": "{55791-3368-10456}",
+     "lastName": "uktyht"
+    }
+   ],
+   "playoffSeed": 6,
+   "primaryOwner": "{55791-3368-10456}",
+   "roster": {
+    "entries": [
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 2976316,
+      "playerPoolEntry": {
+       "id": 2976316,
+       "onTeamId": 2,
+       "player": {
+        "active": true,
+        "defaultPositionId": 3,
+        "droppable": true,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "firstName": "Michael",
+        "fullName": "Michael Thomas",
+        "id": 2976316,
+        "injured": false,
+        "injuryStatus": "ACTIVE",
+        "lastName": "Thomas",
+        "proTeamId": 18
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 3117251,
+      "playerPoolEntry": {
+       "id": 3117251,
+       "onTeamId": 2,
+       "player": {
+        "active": true,
+        "defaultPositionId": 2,
+        "droppable": true,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "firstName": "Christian",
+        "fullName": "Christian McCaffrey",
+        "id": 3117251,
+        "injured": false,
+        "injuryStatus": "ACTIVE",
+        "lastName": "McCaffrey",
+        "proTeamId": 29
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 5
+  },
+  {
+   "abbrev": "FtB",
+   "divisionId": 0,
+   "id": 3,
+   "isActive": false,
+   "logo": "https://i.imgur.com/cWNHf_d.jpg?maxwidth=640&shape=thumb&fidelity=medium",
+   "logoType": "CUSTOM_VALID",
+   "name": "Feel the Brees",
+   "owners": [
+    {
+     "displayName": "reghnn",
+     "firstName": "ghfnfg",
+     "id": "{79345-777-333}",
+     "lastName": "fghdfh"
+    }
+   ],
+   "playoffSeed": 9,
+   "primaryOwner": "{79345-777-333}",
+   "roster": {
+    "entries": [
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 0,
+      "playerId": 2580,
+      "playerPoolEntry": {
+       "id": 2580,
+       "onTeamId": 3,
+       "player": {
+        "active": true,
+        "defaultPositionId": 1,
+        "droppable": true,
+        "eligibleSlots": [
+         0,
+         7,
+         20,
+         21
+        ],
+        "firstName": "Drew",
+        "fullName": "Drew Brees",
+        "id": 2580,
+        "injured": false,
+        "injuryStatus": "ACTIVE",
+        "lastName": "Brees",
+        "proTeamId": 18
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 16,
+      "playerId": -16016,
+      "playerPoolEntry": {
+       "id": -16016,
+       "onTeamId": 3,
+       "player": {
+        "active": true,
+        "defaultPositionId": 16,
+        "droppable": true,
+        "eligibleSlots": [
+         16,
+         20,
+         21
+        ],
+        "firstName": "Vikings",
+        "fullName": "Vikings D/ST",
+        "id": -16016,
+        "injured": false,
+        "lastName": "D/ST",
+        "proTeamId": 16
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 10
+  },
+  {
+   "abbrev": "SINE",
+   "divisionId": 0,
+   "id": 4,
+   "isActive": false,
+   "logo": "https://i.imgur.com/8KpTRB0.png",
+   "logoType": "CUSTOM_VALID",
+   "name": "Its always Sony in NE",
+   "owners": [
+    {
+     "displayName": "dfhfgnb",
+     "firstName": "C",
+     "id": "{4899-74322-677}",
+     "lastName": "D"
+    }
+   ],
+   "playoffSeed": 4,
+   "primaryOwner": "{4899-74322-677}",
+   "roster": {
+    "entries": [
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 3051392,
+      "playerPoolEntry": {
+       "id": 3051392,
+       "onTeamId": 4,
+       "player": {
+        "active": true,
+        "defaultPositionId": 2,
+        "droppable": true,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "firstName": "Ezekiel",
+        "fullName": "Ezekiel Elliott",
+        "id": 3051392,
+        "injured": false,
+        "injuryStatus": "ACTIVE",
+        "lastName": "Elliott",
+        "proTeamId": 6
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 16460,
+      "playerPoolEntry": {
+       "id": 16460,
+       "onTeamId": 4,
+       "player": {
+        "active": true,
+        "defaultPositionId": 3,
+        "droppable": true,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "firstName": "Adam",
+        "fullName": "Adam Thielen",
+        "id": 16460,
+        "injured": false,
+        "injuryStatus": "ACTIVE",
+        "lastName": "Thielen",
+        "proTeamId": 16
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 2
+  },
+  {
+   "abbrev": "SAQU",
+   "divisionId": 0,
+   "id": 5,
+   "isActive": false,
+   "logo": "http://g.espncdn.com/s/ffllm/logos/AtTheStadium-RobbHarskamp/At_The_Stadium_01.svg",
+   "logoType": "VECTOR",
+   "name": "Watch What You Saquon",
+   "owners": [
+    {
+     "displayName": "fergheg",
+     "firstName": "hrthr",
+     "id": "{1234-5678-9101}",
+     "lastName": "nvbn"
+    }
+   ],
+   "playoffSeed": 5,
+   "primaryOwner": "{1234-5678-9101}",
+   "roster": {
+    "entries": [
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 3929630,
+      "playerPoolEntry": {
+       "id": 3929630,
+       "onTeamId": 5,
+       "player": {
+        "active": true,
+        "defaultPositionId": 2,
+        "droppable": true,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "firstName": "Saquon",
+        "fullName": "Saquon Barkley",
+        "id": 3929630,
+        "injured": false,
+        "injuryStatus": "ACTIVE",
+        "lastName": "Barkley",
+        "proTeamId": 19
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 16737,
+      "playerPoolEntry": {
+       "id": 16737,
+       "onTeamId": 5,
+       "player": {
+        "active": true,
+        "defaultPositionId": 3,
+        "droppable": true,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "firstName": "Mike",
+        "fullName": "Mike Evans",
+        "id": 16737,
+        "injured": false,
+        "injuryStatus": "ACTIVE",
+        "lastName": "Evans",
+        "proTeamId": 27
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 4
+  },
+  {
+   "abbrev": "TWH",
+   "divisionId": 0,
+   "id": 7,
+   "isActive": false,
+   "logo": "http://g.espncdn.com/lm-static/logo-packs/ffl/SmackTalk-LeoEspinosa/the_damn_ball-11.svg",
+   "logoType": "VECTOR",
+   "name": "THE White House",
+   "owners": [
+    {
+     "displayName": "rhr",
+     "firstName": "gfhfgh",
+     "id": "{3456-789-1112}",
+     "lastName": "werw"
+    }
+   ],
+   "playoffSeed": 7,
+   "primaryOwner": "{3456-789-1112}",
+   "roster": {
+    "entries": [
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 15795,
+      "playerPoolEntry": {
+       "id": 15795,
+       "onTeamId": 7,
+       "player": {
+        "active": true,
+        "defaultPositionId": 3,
+        "droppable": true,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "firstName": "DeAndre",
+        "fullName": "DeAndre Hopkins",
+        "id": 15795,
+        "injured": false,
+        "injuryStatus": "QUESTIONABLE",
+        "lastName": "Hopkins",
+        "proTeamId": 34
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 23,
+      "playerId": 2979843,
+      "playerPoolEntry": {
+       "id": 2979843,
+       "onTeamId": 7,
+       "player": {
+        "active": true,
+        "defaultPositionId": 2,
+        "droppable": true,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "firstName": "Kenyan",
+        "fullName": "Kenyan Drake",
+        "id": 2979843,
+        "injured": false,
+        "injuryStatus": "ACTIVE",
+        "lastName": "Drake",
+        "proTeamId": 15
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 1
+  },
+  {
+   "abbrev": "LUTZ",
+   "divisionId": 0,
+   "id": 8,
+   "isActive": false,
+   "logo": "https://pbs.twimg.com/profile_images/874438262055718912/BWj7M6_4.jpg",
+   "logoType": "CUSTOM_VALID",
+   "name": "Lutz Get Weird",
+   "owners": [
+    {
+     "displayName": "ykuy",
+     "firstName": "jkhk",
+     "id": "{0009-3468-72}",
+     "lastName": "jhkkhj"
+    }
+   ],
+   "playoffSeed": 8,
+   "primaryOwner": "{0009-3468-72}",
+   "roster": {
+    "entries": [
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 2977644,
+      "playerPoolEntry": {
+       "id": 2977644,
+       "onTeamId": 8,
+       "player": {
+        "active": true,
+        "defaultPositionId": 2,
+        "droppable": true,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "firstName": "Todd",
+        "fullName": "Todd Gurley II",
+        "id": 2977644,
+        "injured": false,
+        "injuryStatus": "ACTIVE",
+        "lastName": "Gurley II",
+        "proTeamId": 14
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 6,
+      "playerId": 13229,
+      "playerPoolEntry": {
+       "id": 13229,
+       "onTeamId": 8,
+       "player": {
+        "active": true,
+        "defaultPositionId": 4,
+        "droppable": true,
+        "eligibleSlots": [
+         5,
+         6,
+         7,
+         20,
+         21,
+         23
+        ],
+        "firstName": "Rob",
+        "fullName": "Rob Gronkowski",
+        "id": 13229,
+        "injured": false,
+        "injuryStatus": "ACTIVE",
+        "lastName": "Gronkowski",
+        "proTeamId": 17
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 8
+  },
+  {
+   "abbrev": "LEAG",
+   "divisionId": 0,
+   "id": 9,
+   "isActive": false,
+   "logo": "http://g.espncdn.com/lm-static/logo-packs/ffl/MickeyAndDonald-Disney/Disney-08.svg",
+   "logoType": "VECTOR",
+   "name": "Misunderstood Mistfits",
+   "owners": [
+    {
+     "displayName": "",
+     "firstName": "",
+     "id": "{4C6935DA-0CBA-4AF9-BB08-06E583265D96}",
+     "lastName": ""
+    }
+   ],
+   "playoffSeed": 3,
+   "primaryOwner": "{4C6935DA-0CBA-4AF9-BB08-06E583265D96}",
+   "roster": {
+    "entries": [
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 3115364,
+      "playerPoolEntry": {
+       "id": 3115364,
+       "onTeamId": 9,
+       "player": {
+        "active": true,
+        "defaultPositionId": 2,
+        "droppable": true,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "firstName": "Leonard",
+        "fullName": "Leonard Fournette",
+        "id": 3115364,
+        "injured": false,
+        "injuryStatus": "QUESTIONABLE",
+        "lastName": "Fournette",
+        "proTeamId": 30
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 16800,
+      "playerPoolEntry": {
+       "id": 16800,
+       "onTeamId": 9,
+       "player": {
+        "active": true,
+        "defaultPositionId": 3,
+        "droppable": true,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "firstName": "Davante",
+        "fullName": "Davante Adams",
+        "id": 16800,
+        "injured": false,
+        "injuryStatus": "QUESTIONABLE",
+        "lastName": "Adams",
+        "proTeamId": 9
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 3
+  },
+  {
+   "abbrev": "TheD",
+   "divisionId": 0,
+   "id": 10,
+   "isActive": false,
+   "logo": "http://g.espncdn.com/s/ffllm/logos/SmackTalk-LeoEspinosa/u_mad_bro-09.svg",
+   "logoType": "VECTOR",
+   "name": "Jacking Goff On Sundays",
+   "owners": [
+    {
+     "displayName": "",
+     "firstName": "",
+     "id": "{3FAC78F0-4AA2-4982-AC78-F04AA2798222}",
+     "lastName": ""
+    }
+   ],
+   "playoffSeed": 10,
+   "primaryOwner": "{3FAC78F0-4AA2-4982-AC78-F04AA2798222}",
+   "roster": {
+    "entries": [
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 3116593,
+      "playerPoolEntry": {
+       "id": 3116593,
+       "onTeamId": 10,
+       "player": {
+        "active": true,
+        "defaultPositionId": 2,
+        "droppable": true,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "firstName": "Dalvin",
+        "fullName": "Dalvin Cook",
+        "id": 3116593,
+        "injured": false,
+        "injuryStatus": "ACTIVE",
+        "lastName": "Cook",
+        "proTeamId": 16
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 13216,
+      "playerPoolEntry": {
+       "id": 13216,
+       "onTeamId": 10,
+       "player": {
+        "active": true,
+        "defaultPositionId": 3,
+        "droppable": true,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "firstName": "Demaryius",
+        "fullName": "Demaryius Thomas",
+        "id": 13216,
+        "injured": true,
+        "injuryStatus": "INJURY_RESERVE",
+        "lastName": "Thomas",
+        "proTeamId": 34
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 6
+  },
+  {
+   "abbrev": "HARR",
+   "divisionId": 0,
+   "id": 11,
+   "isActive": false,
+   "logo": "https://images.livemixtapes.com/artists/nodj/gucci_mane_zaytoven-lean/cover.jpg",
+   "logoType": "CUSTOM_VALID",
+   "name": "Perscription Mixon",
+   "owners": [
+    {
+     "displayName": "",
+     "firstName": "",
+     "id": "{61E5E7DB-8FF9-413B-BC45-10AB6DDA15D6}",
+     "lastName": ""
+    }
+   ],
+   "playoffSeed": 1,
+   "primaryOwner": "{61E5E7DB-8FF9-413B-BC45-10AB6DDA15D6}",
+   "roster": {
+    "entries": [
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 2576434,
+      "playerPoolEntry": {
+       "id": 2576434,
+       "onTeamId": 11,
+       "player": {
+        "active": true,
+        "defaultPositionId": 2,
+        "droppable": true,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "firstName": "Melvin",
+        "fullName": "Melvin Gordon",
+        "id": 2576434,
+        "injured": false,
+        "injuryStatus": "ACTIVE",
+        "lastName": "Gordon",
+        "proTeamId": 24
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 13982,
+      "playerPoolEntry": {
+       "id": 13982,
+       "onTeamId": 11,
+       "player": {
+        "active": true,
+        "defaultPositionId": 3,
+        "droppable": true,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "firstName": "Julio",
+        "fullName": "Julio Jones",
+        "id": 13982,
+        "injured": false,
+        "injuryStatus": "ACTIVE",
+        "lastName": "Jones",
+        "proTeamId": 1
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 7
+  }
+ ]
+}

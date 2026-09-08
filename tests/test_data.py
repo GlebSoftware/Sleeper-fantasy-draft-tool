@@ -4,7 +4,8 @@ from __future__ import annotations
 import pandas as pd
 
 from draftadvisor.data.canonical import player_weekly_to_canonical, team_weekly_to_canonical, to_sleeper_team
-from draftadvisor.data.crosswalk import Crosswalk, normalize_name
+from draftadvisor.data import crosswalk as cwmod
+from draftadvisor.data.crosswalk import ESPN_PRO_TEAM_IDS, NFL_TEAMS, Crosswalk, espn_dst_id, normalize_name
 from draftadvisor.data.universe import (assign_adp, enrich_players, filter_relevant, players_from_crosswalk,
                                         players_from_sleeper)
 from draftadvisor.models import Player
@@ -207,3 +208,102 @@ def test_players_from_crosswalk_synthetic_ids_for_unlinked_roster_players():
     assert cw.attrs["nfl:00-0002"]["position"] == "K"
     # idempotent: a second call with the same crosswalk yields the same universe
     assert set(players_from_crosswalk(cw, roster, season=2026)) == {"1234", "nfl:00-0002"}
+
+
+def test_crosswalk_espn_maps():
+    """ESPN ids are kept as digit strings in both maps and in attrs; junk values are ignored."""
+    cw = Crosswalk()
+    cw.add("7564", gsis_id="00-0036900", name="Ja'Marr Chase", position="WR", espn_id=4362628.0)   # float from the CSVs
+    cw.add("7564", gsis_id="00-0036900", name="Ja'Marr Chase", position="WR", espn_id="4362628")   # duplicate row merges
+    cw.add("4046", name="Patrick Mahomes", position="QB", espn_id=3139477)                          # int from Sleeper
+    cw.add("1", name="Nobody", position="RB", espn_id="NA")
+    cw.add("2", name="Nobody Else", position="RB", espn_id=float("nan"))
+    cw.add("3", name="Bad Id", position="RB", espn_id="abc")
+    assert cw.espn_for("7564") == "4362628" and cw.sleeper_for_espn("4362628") == "7564"
+    assert cw.sleeper_for_espn(4362628) == "7564" and cw.sleeper_for_espn("4362628.0") == "7564"
+    assert cw.espn_for(4046) == "3139477" and cw.sleeper_for_espn(3139477) == "4046"
+    assert cw.attrs["7564"]["espn_id"] == "4362628" and cw.attrs["4046"]["espn_id"] == "3139477"
+    for sid in ("1", "2", "3"):
+        assert cw.espn_for(sid) is None and "espn_id" not in cw.attrs[sid]
+    assert cw.sleeper_for_espn(None) is None and cw.sleeper_for_espn("") is None
+    # first source wins conflicts (dynastyprocess is loaded before the rosters)
+    cw.add("7564", espn_id="999")
+    assert cw.espn_for("7564") == "4362628" and cw.sleeper_for_espn("999") is None
+    assert cw.sleeper_to_espn == {"7564": "4362628", "4046": "3139477"}
+
+
+def test_espn_dst_id_formula():
+    """Team defenses: ESPN player id = -16000 - proTeamId, keyed by the Sleeper abbreviation."""
+    assert espn_dst_id("PIT") == "-16023" and espn_dst_id("WAS") == "-16028" and espn_dst_id("BAL") == "-16033"
+    assert espn_dst_id("HOU") == "-16034" and espn_dst_id("ATL") == "-16001"
+    assert espn_dst_id("WSH") == "-16028" and espn_dst_id("LA") == "-16014" and espn_dst_id("JAC") == "-16030"  # aliases
+    assert espn_dst_id(None) is None and espn_dst_id("XXX") is None
+    assert len(ESPN_PRO_TEAM_IDS) == 32 and len(NFL_TEAMS) == 32 and len(set(ESPN_PRO_TEAM_IDS.values())) == 32
+    assert "WSH" not in ESPN_PRO_TEAM_IDS and "WAS" in ESPN_PRO_TEAM_IDS
+    ids = {espn_dst_id(t) for t in NFL_TEAMS}
+    assert len(ids) == 32 and all(i.startswith("-160") for i in ids)
+
+
+def test_build_crosswalk_offline_carries_espn_ids(monkeypatch):
+    """build_crosswalk keeps espn_id from db_playerids and the rosters and derives the D/ST ids (no network)."""
+    ids = pd.DataFrame([
+        {"sleeper_id": "7564", "gsis_id": "00-0036900", "fantasypros_id": "19788", "pfr_id": "ChasJa00", "espn_id": "4362628",
+         "name": "Ja'Marr Chase", "position": "WR", "team": "CIN", "age": 26.5, "draft_year": 2021, "draft_round": 1,
+         "draft_ovr": 5, "birthdate": "2000-03-01"},
+        {"sleeper_id": "4046", "gsis_id": "00-0033873", "fantasypros_id": "11687", "pfr_id": "MahoPa00", "espn_id": None,
+         "name": "Patrick Mahomes", "position": "QB", "team": "KC", "age": 30.9, "draft_year": 2017, "draft_round": 1,
+         "draft_ovr": 10, "birthdate": "1995-09-17"},
+    ])
+    roster = pd.DataFrame([
+        {"gsis_id": "00-0033873", "sleeper_id": 4046.0, "espn_id": 3139477.0, "full_name": "Patrick Mahomes", "position": "QB",
+         "team": "KC", "status": "ACT", "years_exp": 9, "pfr_id": "MahoPa00", "birth_date": "1995-09-17", "draft_number": 10,
+         "entry_year": 2017},
+        {"gsis_id": "00-0036900", "sleeper_id": 7564.0, "espn_id": 111.0, "full_name": "Ja'Marr Chase", "position": "WR",
+         "team": "CIN", "status": "ACT", "years_exp": 5, "pfr_id": "ChasJa00", "birth_date": "2000-03-01", "draft_number": 5,
+         "entry_year": 2021},
+    ])
+    monkeypatch.setattr(cwmod, "load_playerids_raw", lambda *a, **k: ids)
+    from draftadvisor.data import nflverse
+    monkeypatch.setattr(nflverse, "load_roster", lambda season: roster)
+    cw = cwmod.build_crosswalk(2026, roster_seasons=1)
+    assert cw.espn_for("7564") == "4362628"                      # db_playerids wins over the roster's 111
+    assert cw.espn_for("4046") == "3139477"                      # roster fills the gap
+    assert cw.sleeper_for_espn("3139477") == "4046" and cw.sleeper_for_espn(111) is None
+    assert cw.espn_for("PIT") == "-16023" and cw.sleeper_for_espn("-16023") == "PIT" and cw.attrs["PIT"]["espn_id"] == "-16023"
+    assert all(cw.espn_for(t) == espn_dst_id(t) for t in NFL_TEAMS)
+    assert cw.attrs["WAS"]["position"] == "DEF" and cw.gsis_for("WAS") == "WAS"
+
+
+def test_players_from_crosswalk_and_enrich_keep_espn_id():
+    cw = Crosswalk()
+    cw.add("1234", gsis_id="00-0001", name="Known Back", position="RB", team="LV", espn_id="55555")
+    cw.add("5678", gsis_id="00-0005", name="No Espn Guy", position="WR", team="LV")
+    cw.add("PIT", gsis_id="PIT", name="PIT Defense", position="DEF", team="PIT", espn_id=espn_dst_id("PIT"))
+    roster = pd.DataFrame([
+        {"gsis_id": "00-0001", "sleeper_id": "1234", "espn_id": 55555.0, "full_name": "Known Back", "position": "RB", "team": "LV",
+         "status": "ACT", "years_exp": 3, "entry_year": 2023, "birth_date": "2001-01-01", "draft_number": 40, "pfr_id": "KnowBa00"},
+        {"gsis_id": "00-0002", "sleeper_id": None, "espn_id": 4700000.0, "full_name": "Trey Smack", "position": "K", "team": "GB",
+         "status": "ACT", "years_exp": 0, "entry_year": 2026, "birth_date": "2003-05-05", "draft_number": None, "pfr_id": None},
+        {"gsis_id": "00-0005", "sleeper_id": "5678", "espn_id": None, "full_name": "No Espn Guy", "position": "WR", "team": "LV",
+         "status": "ACT", "years_exp": 1, "entry_year": 2025, "birth_date": "2002-01-01", "draft_number": None, "pfr_id": None},
+    ])
+    players = players_from_crosswalk(cw, roster, season=2026)
+    assert players["1234"].espn_id == "55555" and players["PIT"].espn_id == "-16023"
+    assert players["nfl:00-0002"].espn_id == "4700000" and cw.sleeper_for_espn("4700000") == "nfl:00-0002"   # synthetic id
+    assert players["5678"].espn_id is None
+    # enrichment fills espn_id from the crosswalk and never overwrites a value already on the player
+    later = {"1234": Player(player_id="1234", name="Known Back", position="RB", team="LV"),
+             "5678": Player(player_id="5678", name="No Espn Guy", position="WR", team="LV", espn_id="1"),
+             "PIT": Player(player_id="PIT", name="PIT Defense", position="DEF", team="PIT")}
+    enrich_players(later, cw)
+    assert later["1234"].espn_id == "55555" and later["5678"].espn_id == "1" and later["PIT"].espn_id == "-16023"
+
+
+def test_players_from_sleeper_copies_espn_id():
+    payload = {"4046": {"player_id": "4046", "full_name": "Patrick Mahomes", "position": "QB", "team": "KC", "status": "Active",
+                        "fantasy_positions": ["QB"], "espn_id": 3139477},
+               "9999": {"player_id": "9999", "full_name": "No Id", "position": "RB", "team": "KC", "status": "Active",
+                        "fantasy_positions": ["RB"], "espn_id": None}}
+    players = players_from_sleeper(payload)
+    assert players["4046"].espn_id == "3139477" and players["9999"].espn_id is None
+

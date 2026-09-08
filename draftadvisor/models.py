@@ -512,7 +512,7 @@ class Recommendation:
     opponent_rosters: list[RosterSummary]
     position_pressure: dict[str, float]             # position -> expected # of picks at that position before my next pick
     notes: list[str] = field(default_factory=list)  # global notes ("RB run in progress", "K/DEF too early")
-    claude_advice: str | None = None                # filled asynchronously by research layer
+    claude_advice: str | None = None                # legacy: nothing sets or renders it (kept only for old callers)
 
     @property
     def top_pick(self) -> PlayerValue | None:

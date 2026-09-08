@@ -169,9 +169,7 @@ tr.fresh td { animation: slidein 0.5s ease-out both; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
 .hint { font-size: 12px; color: var(--fg3); margin-top: 6px; }
 
-/* ---------- research ---------- */
-.progress { height: 8px; background: var(--bg4); border: 1px solid var(--border); border-radius: 999px; overflow: hidden; margin: 6px 0; }
-.progress > div { height: 100%; background: var(--accent); width: 0; transition: width 0.3s; }
+/* ---------- legacy research notes (read-only; shown when a note exists) ---------- */
 .meter { display: grid; grid-template-columns: 90px 1fr 34px; gap: 6px; align-items: center; font-size: 11px; color: var(--fg2); margin: 2px 0; }
 .meter .bar { height: 6px; background: var(--bg4); border-radius: 999px; overflow: hidden; border: 1px solid var(--border); }
 .meter .bar > div { height: 100%; }
@@ -203,6 +201,10 @@ tr.fresh td { animation: slidein 0.5s ease-out both; }
 .clock { font-family: var(--mono); font-size: 12px; color: var(--fg2); }
 .clock b { font-size: 15px; color: var(--fg); margin-left: 6px; }
 .clock.low b { color: var(--red); }
+.clock .approx { font-family: var(--font); font-size: 11px; color: var(--fg3); margin-left: 6px; white-space: nowrap; }
+#clock-label { white-space: nowrap; }     /* a narrow header wraps before the countdown, never inside the label */
+.pill.plat { vertical-align: 2px; margin-left: 8px; }
+.dh-league .pill.plat { font-size: 10.5px; }
 #mock-controls { display: flex; gap: 10px; align-items: center; }
 .toggle { font-size: 12px; color: var(--fg2); }
 
@@ -230,11 +232,7 @@ tr.fresh td { animation: slidein 0.5s ease-out both; }
 .badge.skip { background: var(--grey-bg); color: var(--fg2); }
 .roster-meta { margin-top: 8px; font-size: 12px; color: var(--fg2); display: grid; gap: 3px; }
 .roster-meta b { color: var(--fg); }
-.foot { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 10px; }
-@media (max-width: 1000px) { .foot { grid-template-columns: 1fr; } }
-.claude-box { font-size: 13px; }
-.claude-box.off { color: var(--fg3); }
-.claude-box .md p { margin: 0 0 6px; }
+.foot { margin-top: 10px; }
 #notes { margin: 0; padding-left: 18px; }
 .avail-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
 .avail-bar input[type="search"] { flex: 1 1 160px; }
@@ -247,6 +245,7 @@ tr.fresh td { animation: slidein 0.5s ease-out both; }
 .drawer-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
 .drawer-head h2 { margin: 0; }
 .drawer-head .muted { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drawer-head .cost { font-size: 11px; color: var(--fg2); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .drawer .chat { flex: 1; min-height: 0; padding: 10px 12px; }
 .drawer .chat .log { flex: 1; min-height: 0; max-height: none; }
 .drawer-bg { position: fixed; inset: 0; z-index: 59; background: rgba(0, 0, 0, 0.35); }
@@ -288,6 +287,8 @@ tr.fresh td { animation: slidein 0.5s ease-out both; }
 .qchips button { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; }
 .chat .row2 { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .chat .row2 .muted { margin-left: auto; }
+.chat .costhint { font-size: 11px; color: var(--fg3); }
+.bubble .usage { font-size: 10.5px; color: var(--fg3); margin-top: 4px; text-align: right; }
 
 /* ---------- popover card ---------- */
 .pop {
@@ -306,12 +307,18 @@ tr.fresh td { animation: slidein 0.5s ease-out both; }
 .pop .explain { margin-top: 6px; white-space: pre-wrap; color: var(--fg2); }
 .pop .srcs a { font-size: 11px; margin-right: 6px; }
 
-/* ---------- board / league ---------- */
+/* ---------- segmented control (Board positions, Setup platform switch) / board / league ---------- */
 .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
-.bar .seg button { border-radius: 0; margin-left: -1px; }
-.bar .seg button:first-child { border-radius: var(--radius) 0 0 var(--radius); margin-left: 0; }
-.bar .seg button:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
-.bar .seg button.active { background: var(--accent-bg); border-color: var(--accent); color: var(--fg); }
+.seg { display: inline-flex; }
+.seg button { border-radius: 0; margin-left: -1px; }
+.seg button:first-child { border-radius: var(--radius) 0 0 var(--radius); margin-left: 0; }
+.seg button:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+.seg button.active { background: var(--accent-bg); border-color: var(--accent); color: var(--fg); }
+.plat-bar { margin-bottom: 8px; }
+.plat-bar .muted { flex: 1 1 120px; min-width: 0; }
+#espn-facts { margin: 0 0 8px; }
+#espn-facts .kv > span:first-child { min-width: 56px; }
+.unmapped-note { color: var(--amber); }
 .league-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
 @media (max-width: 1000px) { .league-grid { grid-template-columns: 1fr; } }
 .flags li { margin: 2px 0; }
@@ -321,12 +328,17 @@ tr.changed td.val { color: var(--amber); }
 .kind { font-size: 10.5px; text-transform: uppercase; }
 
 /* ---------- settings modal ---------- */
-.modal-bg { position: fixed; inset: 0; z-index: 90; background: rgba(0, 0, 0, 0.55); display: flex; align-items: flex-start; justify-content: center; padding-top: 8vh; }
-.modal { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); width: 520px; max-width: 94vw; padding: 14px 16px; }
+.modal-bg { position: fixed; inset: 0; z-index: 90; background: rgba(0, 0, 0, 0.55); display: flex; align-items: flex-start; justify-content: center; padding: 8vh 0 4vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* the sheet scrolls inside the viewport (short phones, landscape): Save must always be reachable */
+.modal { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); width: 520px; max-width: 94vw; max-height: 88vh; overflow-y: auto; padding: 14px 16px; }
 .modal h2 { display: flex; align-items: center; }
 .modal h2 button { margin-left: auto; }
 .modal .fields label { margin-bottom: 8px; }
 .modal .msg { color: var(--amber); font-size: 12px; margin-bottom: 8px; }
+.modal h3 { margin: 12px 0 6px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 6px; }
+.modal h3 .muted { font-weight: 400; }
+.modal .howto { margin: 0 0 8px; }
+.modal .howto ol { margin: 4px 0 0; padding-left: 18px; }
 
 /* ---------- toasts ---------- */
 #toasts { position: fixed; right: 74px; bottom: 14px; z-index: 100; display: flex; flex-direction: column; gap: 6px; max-width: 420px; }
@@ -377,8 +389,8 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
   .pop { left: 0 !important; right: 0; top: auto !important; bottom: 0; width: 100%; max-height: 72vh; border-radius: 10px 10px 0 0; box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45); }
   .pop .grid { grid-template-columns: repeat(3, 1fr); }
   #toasts { left: 8px; right: 8px; bottom: 72px; max-width: none; }
-  .modal-bg { padding-top: 3vh; }
-  .modal { padding: 10px 12px; }
+  .modal-bg { padding: 2vh 0; }
+  .modal { padding: 10px 12px; max-height: 96vh; }
   .drawer { top: 0; width: 100vw; border-left: 0; }
   .drawer .chat { padding: 8px; }
   .chat textarea { min-height: 44px; }
@@ -448,20 +460,42 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
       </div>
 
       <div class="panel" style="margin-top:10px">
-        <h2>Research</h2>
-        <div class="actions" style="margin-top:0">
-          <label class="inline small">top <input type="number" id="research-top" min="10" max="400" value="150" style="width:70px"></label>
-          <button id="research-btn" class="primary">Research top N players</button>
-          <button id="research-stop" class="danger small" hidden>Stop</button>
-        </div>
-        <div id="research-status" class="hint" style="margin:0">Claude (web search) writes a note per player: injury / role / off-field risk, red flags,
-          upside and downside. One player per request; resumable — fresh notes are skipped.</div>
-        <div class="progress" id="research-bar" hidden><div></div></div>
+        <h2>Claude</h2>
+        <div id="claude-hint" class="hint" style="margin:0">Claude is used only when you send a chat message (💬). Nothing runs on a timer or on every pick;
+          each message is one paid request and the chat shows its tokens and estimated cost.</div>
       </div>
     </div>
 
     <div class="panel">
-      <h2>Live draft (Sleeper)</h2>
+      <h2>Live draft</h2>
+      <div class="bar plat-bar">
+        <span class="seg" id="platform-seg" role="group" aria-label="platform">
+          <button type="button" data-platform="sleeper" class="active">Sleeper</button><button type="button" data-platform="espn">ESPN</button>
+        </span>
+        <span class="muted small" id="platform-hint">look up your Sleeper username, then pick the league or draft</span>
+      </div>
+      <form id="espn-form" autocomplete="off" hidden>
+        <div class="row">
+          <label>League ID <input id="espn-league" inputmode="numeric" placeholder="e.g. 368876"></label>
+          <label style="flex:0 1 110px">Season <input type="number" id="espn-season" min="2010" max="2100" placeholder="season"></label>
+        </div>
+        <div class="hint" style="margin:0 0 8px">The League ID is the <span class="mono">leagueId=</span> number in your ESPN league URL
+          (<span class="mono">fantasy.espn.com/football/league?leagueId=<b>12345</b></span>). Private league? Add your
+          <span class="mono">espn_s2</span> and <span class="mono">SWID</span> cookies under Settings — the SWID also picks out your team.</div>
+        <div class="actions" style="margin-top:0">
+          <button type="button" id="espn-load">Load league</button>
+          <span id="espn-info" class="muted small"></span>
+        </div>
+        <div id="espn-facts" hidden></div>
+        <div class="row"><label>Your team <select id="espn-team"><option value="">— load the league to list the teams —</option></select></label></div>
+        <div class="row">
+          <label>Slot override <input type="number" id="espn-slot" min="1" max="20" placeholder="only used when no team is chosen"></label>
+        </div>
+        <div class="actions"><button type="submit" id="espn-start" class="primary">Start live draft</button></div>
+        <div class="hint">The server captures the league (settings, teams, draft, ESPN's ADP and projections), scores everything under your
+          league's rules, then this page follows the draft with one ESPN request every 2 s. ESPN publishes no pick timestamps, so the
+          clock shown is the pick length plus an estimate counted from the moment this page saw the last pick.</div>
+      </form>
       <form id="live-form" autocomplete="off">
         <div class="row">
           <label>Sleeper username
@@ -474,7 +508,6 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
         <div class="row"><label>Draft <select id="live-draft"><option value="">— none —</option></select></label></div>
         <div class="row">
           <label>Slot override <input type="number" id="live-slot" min="1" max="20" placeholder="auto (from username)"></label>
-          <label class="inline" style="align-self:flex-end"><input type="checkbox" id="live-claude" checked> use Claude</label>
         </div>
         <div class="actions"><button type="submit" id="live-start" class="primary">Start live draft</button></div>
         <div class="hint">Needs a league or draft id (pick from the lists after look-up). The server captures the league,
@@ -497,7 +530,6 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
         </div>
         <div class="row">
           <label class="inline"><input type="checkbox" id="mock-superflex"> superflex</label>
-          <label class="inline"><input type="checkbox" id="mock-claude" checked> use Claude</label>
           <label class="inline"><input type="checkbox" id="mock-autopilot"> autopilot (advisor picks for me)</label>
         </div>
         <div class="actions"><button type="submit" id="mock-start" class="primary">Start mock draft</button></div>
@@ -512,13 +544,14 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
 <section id="tab-draft" class="tab">
   <div class="dhead" id="draft-head">
     <div class="dh-left">
-      <div class="dh-league"><span id="dh-name">No draft</span><span class="muted" id="dh-scoring"></span></div>
+      <div class="dh-league"><span id="dh-name">No draft</span><span id="dh-platform" class="pill info plat" hidden title="draft platform"></span><span class="muted" id="dh-scoring"></span></div>
       <div class="dh-pick"><b id="dh-round"></b> <span id="dh-otc" class="muted"></span></div>
       <div class="dh-next small" id="dh-next"></div>
     </div>
     <div class="dh-center">
       <div id="turn-banner" class="banner" hidden>YOUR PICK</div>
-      <div id="clock" class="clock" hidden>Sleeper clock<b id="countdown"></b></div>
+      <div id="clock" class="clock" hidden><span id="clock-label">Sleeper clock</span><b id="countdown"></b><span id="clock-note" class="approx" hidden
+        title="ESPN publishes no pick timestamps: this counts down from the moment this page noticed the last pick, so it is only an estimate">≈ since last pick seen</span></div>
       <div id="mock-controls" hidden>
         <button id="take-btn" class="primary big">Take recommended: <span id="take-name">…</span></button>
         <label class="toggle"><input type="checkbox" id="autopilot"> autopilot</label>
@@ -526,7 +559,7 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
       </div>
     </div>
     <div class="dh-right">
-      <span id="dh-claude" class="pill">Claude: off</span>
+      <span id="dh-chat" class="pill" title="chat model — used only when you send a message">chat: off</span>
       <span id="dh-lat" class="muted small mono"></span>
       <button id="chat-btn2" class="small" title="Chat with Claude (c)">💬 Chat</button>
       <button id="stop-btn2" class="danger small">Stop</button>
@@ -544,16 +577,6 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
           <tbody></tbody>
         </table>
         <div class="roster-meta" id="roster-meta"></div>
-      </div>
-      <div class="panel collapsible closed" id="research-panel2">
-        <h2><span class="tri">▼</span>Research</h2>
-        <div class="actions" style="margin-top:0">
-          <label class="inline small">top <input type="number" id="research-top2" min="10" max="400" value="150" style="width:64px"></label>
-          <button id="research-btn2" class="small">Research top N</button>
-          <button id="research-stop2" class="danger small" hidden>Stop</button>
-        </div>
-        <div id="research-status2" class="hint" style="margin:0"></div>
-        <div class="progress" id="research-bar2" hidden><div></div></div>
       </div>
     </aside>
 
@@ -604,7 +627,6 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
   </div>
 
   <div class="foot" id="draft-foot" hidden>
-    <div class="panel"><h2>Claude</h2><div id="claude-box" class="claude-box off"></div></div>
     <div class="panel"><h2>Notes</h2><ul id="notes"></ul><div id="last-error" class="small" style="color:var(--red)"></div></div>
   </div>
 </section>
@@ -642,6 +664,10 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
       <div class="panel"><h2>Scoring vs Sleeper base</h2><div id="lg-diff-head" class="hint" style="margin:0 0 6px"></div>
         <table id="lg-diff"><thead><tr><th>Rule</th><th class="n">Sleeper base</th><th class="n">This league</th><th>Key</th><th>Kind</th></tr></thead><tbody></tbody></table>
       </div>
+      <div class="panel" id="lg-unmapped-panel" hidden><h2>ESPN rules not modelled</h2>
+        <div class="hint" style="margin:0 0 6px">These ESPN scoring items have no Sleeper equivalent, so projections and the scoring diff ignore them.</div>
+        <table id="lg-unmapped"><thead><tr><th>ESPN rule</th><th class="n">Points</th></tr></thead><tbody></tbody></table>
+      </div>
     </div>
     <div>
       <div class="panel"><h2>Draft order</h2>
@@ -660,6 +686,7 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
   <div class="drawer-head">
     <h2>Chat with Claude</h2>
     <span class="muted small">argue with the pick — Claude sees the live board</span>
+    <span id="chat-total" class="cost" title="answers in this transcript: tokens and estimated cost"></span>
     <button id="chat-close" class="small" title="close (Esc)">✕</button>
   </div>
   <div class="chat" id="chat-main"></div>
@@ -680,12 +707,22 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
         <input type="password" id="set-access" placeholder="only if the server requires one" autocomplete="off">
       </label>
       <div class="row">
-        <label>Chat model <select id="set-model"><option value="claude-opus-5">claude-opus-5 (default)</option><option value="claude-sonnet-5">claude-sonnet-5</option></select></label>
+        <label>Chat model <select id="set-model"><option value="">server default</option><option value="claude-opus-5">claude-opus-5</option><option value="claude-sonnet-5">claude-sonnet-5</option></select></label>
         <label>Theme <select id="set-theme"><option value="dark">dark</option><option value="light">light</option></select></label>
       </div>
+      <h3>ESPN (private leagues) <span class="muted small" id="espn-server"></span></h3>
+      <label>espn_s2 cookie
+        <span class="inrow"><input type="password" id="set-espn-s2" placeholder="long value of the espn_s2 cookie (kept in this browser only)" autocomplete="off">
+          <button type="button" id="espn-eye" class="small" title="show / hide">👁</button></span>
+      </label>
+      <label>SWID cookie <input id="set-espn-swid" placeholder="{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}" autocomplete="off" spellcheck="false"></label>
+      <div class="hint howto">How to find them: on <span class="mono">espn.com</span>, logged in, open the browser dev tools → Application (Chrome / Edge) or Storage (Firefox / Safari) → Cookies →
+        <span class="mono">espn.com</span> and copy the values of <span class="mono">espn_s2</span> and <span class="mono">SWID</span> (braces included).
+        Public leagues need neither; the SWID also tells the page which team is yours. Cookies expire — paste fresh ones when ESPN starts answering 401.</div>
     </div>
     <div class="actions"><button id="settings-save" class="primary">Save</button>
-      <span class="hint" style="margin:0">Sent as <span class="mono">X-Anthropic-Key</span> / <span class="mono">X-Access-Code</span> headers on every request; never logged.</span></div>
+      <span class="hint" style="margin:0">Sent as <span class="mono">X-Anthropic-Key</span> / <span class="mono">X-Access-Code</span> (and <span class="mono">X-ESPN-S2</span> / <span class="mono">X-ESPN-SWID</span>)
+        headers on every request; never logged.</span></div>
   </div>
 </div>
 
@@ -697,10 +734,10 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
    draftadvisor frontend (stateless API v2, DESIGN.md §3.9). Sections:
      1. helpers      — DOM / formatting / safe accessors / markdown-lite
      2. api          — fetch with timeout + auth headers, SSE reader, toasts
-     3. store        — S (status, session, state, advice, chat, research, settings) + localStorage
+     3. store        — S (status, session, state, chat, notes, settings) + localStorage
      4. renderers    — top bar, Setup, Draft, Board, League, chat drawer, popover
-     5. session      — start / resume / stop, live polling, mock actions, autopilot, advice
-     6. chat / research
+     5. session      — start / resume / stop, live polling, mock actions, autopilot
+     6. chat         — the ONLY calls that cost money: one request per message you send (never automatic)
      7. event wiring — tabs, forms, keyboard, hover / click, settings
    The browser owns the session (localStorage `da.session`); the server is stateless.
    The page never rebuilds inputs: only table bodies / text nodes are re-rendered, and only when changed.
@@ -736,6 +773,44 @@ function fmtTime(sec) {
   try { return new Date(ms).toLocaleString(); } catch (e) { return String(sec); }
 }
 function fmtClock(s) { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+/* ---- Claude pricing (USD per 1M tokens, [input, output]); /api/status sends the server's table, this is the fallback. */
+const DEFAULT_PRICES = { 'claude-opus-5': [5, 25], 'claude-sonnet-5': [2, 10] };
+/** Assumed size of one chat turn for the "about $x per message" hint: context block + history in, a short answer out. */
+const EST_TOKENS_PER_MESSAGE = { input: 6000, output: 500 };
+function prices() { const p = get(S.status, 'claude.prices', null); return p && typeof p === 'object' && Object.keys(p).length ? p : DEFAULT_PRICES; }
+function priceOf(model) { const p = prices(); const key = Object.keys(p).find((k) => String(model || '').startsWith(k)); return key && Array.isArray(p[key]) ? p[key] : null; }
+function estimateCostPerMessage(model) { const p = priceOf(model); return p ? (EST_TOKENS_PER_MESSAGE.input * num(p[0]) + EST_TOKENS_PER_MESSAGE.output * num(p[1])) / 1e6 : null; }
+function costFromUsage(model, u) {
+  const p = priceOf(model); if (!p || !u) return null;
+  return ((num(u.input_tokens) || 0) * p[0] + (num(u.output_tokens) || 0) * p[1] + (num(u.cache_read_input_tokens) || 0) * p[0] * 0.1 + (num(u.cache_creation_input_tokens) || 0) * p[0] * 1.25) / 1e6;
+}
+/** The model the next chat message goes to: the pick in Settings, else the server's default (`claude.chat_model` of /api/status). */
+function chatModel() { return S.settings.model || get(S.status, 'claude.chat_model', '') || 'claude-opus-5'; }
+function costLabel(x) { const n = num(x); return n == null ? 'cost unknown' : n < 0.005 ? 'under $0.01' : 'about $' + n.toFixed(2); }
+function fmtK(n) { const v = num(n); return v == null ? '?' : (v / 1000).toFixed(1) + 'k'; }
+/** "12.1k in / 0.4k out — about $0.07" for an assistant message that carries the done-event usage. */
+function usageText(m) {
+  const u = m && m.usage && typeof m.usage === 'object' ? m.usage : null;
+  if (!u) return '';
+  const cost = num(m.cost_usd) != null ? num(m.cost_usd) : costFromUsage(m.model || chatModel(), u);
+  return fmtK(u.input_tokens) + ' in / ' + fmtK(u.output_tokens) + ' out — ' + costLabel(cost) + (m.model ? ' (' + esc(m.model) + ')' : '');
+}
+/** Running totals of the current transcript (answers with usage only); `unpriced` counts answers whose cost is unknown. */
+function chatTotals() {
+  const t = { n: 0, input: 0, output: 0, cost: 0, priced: false, unpriced: 0 };
+  for (const m of S.chat.messages) {
+    const u = m && m.usage && typeof m.usage === 'object' ? m.usage : null; if (!u) continue;
+    t.n += 1; t.input += num(u.input_tokens) || 0; t.output += num(u.output_tokens) || 0;
+    const c = num(m.cost_usd) != null ? num(m.cost_usd) : costFromUsage(m.model || chatModel(), u);
+    if (c != null) { t.cost += c; t.priced = true; } else t.unpriced += 1;
+  }
+  return t;
+}
+/** "about $0.07", "about $0.07 + 1 answer of unknown cost" or "cost unknown": a partial sum is never shown as the total. */
+function totalCostLabel(t) {
+  if (!t.unpriced) return costLabel(t.cost);
+  return t.priced ? costLabel(t.cost) + ' + ' + t.unpriced + (t.unpriced === 1 ? ' answer' : ' answers') + ' of unknown cost' : 'cost unknown';
+}
 function posTeam(c) { return esc(c.position || '?') + (c.team ? '<span class="muted"> · ' + esc(c.team) + '</span>' : ''); }
 function tierHTML(t) { const n = num(t); return n == null ? '–' : '<span class="tier t' + Math.min(n, 4) + '">T' + n + '</span>'; }
 function actionClass(a) {
@@ -777,19 +852,35 @@ function mdHTML(text) {
 }
 
 // ---------------------------------------------------------------- 2. api helpers
-class ApiError extends Error { constructor(msg, status) { super(msg); this.status = status; } }
+class ApiError extends Error { constructor(msg, status) { super(msg); this.status = status; this.espnAuth = false; } }   // espnAuth: ESPN refused the cookies (401), the server itself is fine
 
+/** Headers on every request: the Claude key, the access code and the two ESPN cookies (all from Settings, all optional). */
 function authHeaders() {
   const h = {};
   if (S.settings.apiKey) h['X-Anthropic-Key'] = S.settings.apiKey;
   if (S.settings.accessCode) h['X-Access-Code'] = S.settings.accessCode;
+  if (S.settings.espnS2) h['X-ESPN-S2'] = S.settings.espnS2;
+  if (S.settings.espnSwid) h['X-ESPN-SWID'] = S.settings.espnSwid;
   return h;
 }
-/** Every 401 means "access code missing/wrong": open Settings once and remember the demand. */
+/** A 401 is either the server's access code (default) or ESPN refusing a private league (the detail names the cookies). */
+function isEspnAuthError(detail) { return /espn_s2|swid/i.test(String(detail || '')); }
 function onUnauthorized(detail) {
+  if (isEspnAuthError(detail)) { onEspnUnauthorized(detail); return; }
   S.ui.needAccess = true;
   if (!S.ui.settingsOpen) openSettings('The server requires an access code' + (S.settings.accessCode ? ' (the saved one was rejected)' : '') + '. ' + (detail || ''));
-  renderTop();
+  renderTop(); renderSetup();
+}
+/** A 2xx from a guarded endpoint (everything but /api/status, which answers without the code) proves the saved access code. */
+function accessAccepted(path) {
+  if (S.ui.needAccess && S.settings.accessCode && !String(path).startsWith('/api/status')) { S.ui.needAccess = false; renderTop(); renderSetup(); }
+}
+/** The cheapest guarded call: on a server that requires the code, a 401 / 2xx here settles the readiness chip (notes are optional). */
+function verifyAccess() { if (S.settings.accessCode && get(S.status, 'access_code_required', false)) loadNotes(); }
+/** ESPN says the league is private: open Settings at the cookie fields once per attempt, then just toast (polls repeat every 2 s). */
+function onEspnUnauthorized(detail) {
+  if (!S.ui.settingsOpen && !S.ui.espnAuthAsked) { S.ui.espnAuthAsked = true; openSettings(detail || 'ESPN says this league is private', 'espn'); }
+  else toast(detail || 'ESPN says this league is private');
 }
 /** fetch JSON with a timeout; throws ApiError with the server's `detail` when not 2xx. */
 async function api(path, opts) {
@@ -809,12 +900,16 @@ async function api(path, opts) {
     if (!res.ok) {
       const detail = data && (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data));
       if (res.status === 401) onUnauthorized(detail);
-      throw new ApiError(detail || (res.status + ' ' + res.statusText), res.status);
+      const err = new ApiError(detail || (res.status + ' ' + res.statusText), res.status);
+      err.espnAuth = res.status === 401 && isEspnAuthError(detail);
+      throw err;
     }
+    accessAccepted(path);
     return data;
   } catch (e) {
     if (e instanceof ApiError) throw e;
     if (e.name === 'AbortError') throw new ApiError('timeout after ' + ((opts.timeout || 15000) / 1000) + 's', 0);
+    if (e instanceof TypeError && /header|ByteString/i.test(e.message || '')) throw new ApiError('a saved header value is not plain ASCII — check the ESPN cookies / key in Settings', 0);
     throw new ApiError(e.message || 'network error', 0);
   } finally { clearTimeout(timer); }
 }
@@ -839,6 +934,7 @@ async function sse(path, body, onEvent, signal) {
     if (res.status === 401) onUnauthorized(detail);
     throw new ApiError(detail || (res.status + ' ' + res.statusText), res.status);
   }
+  accessAccepted(path);
   const handleLine = (line) => {
     line = line.replace(/\r$/, '');
     if (!line.startsWith('data:')) return;          // ignore comments / event: / id: lines
@@ -881,18 +977,18 @@ const S = {
   session: null,                      // the browser-owned session object (§3.9) or null
   snapshot: null, leagueInfo: null,   // from POST /api/session/start
   state: null, stateAt: 0,            // last render payload
-  clockSkew: 0,                       // local epoch seconds − server `ts`
   failures: 0,                        // consecutive polling failures
-  settings: { apiKey: '', accessCode: '', model: 'claude-opus-5', theme: 'dark' },
-  advice: { version: null, status: 'idle', text: null, model: null, inflight: null, cache: {} },
-  chat: { key: 'none', messages: [], streaming: false, abort: null, draft: '' },
-  research: { running: false, done: 0, total: 0, remaining: null, current: '', stop: false, error: null, player: null },
-  notes: {},                          // player_id → note (GET /api/notes + research results)
+  lastPickNo: null, pickSeen: null,   // ESPN clock: the next_pick_no of the previous poll, and {no, at} when this page saw it change
+  settings: { apiKey: '', accessCode: '', espnS2: '', espnSwid: '', model: '', theme: 'dark' },   // model '' = the server's default (chatModel())
+  chat: { key: 'none', messages: [], streaming: false, abort: null, draft: '' },   // assistant messages carry usage / cost_usd / model
+  notes: {},                          // player_id → legacy research note (GET /api/notes + notes inside cards); read-only
   board: { rows: null, position: '', top: 100, q: '', loading: false, error: null, loaded: false, leagueId: null },
   ui: {
     tab: 'setup', hoverId: null, pinnedId: null, availLimit: 40, availQ: '', availPos: '', availSort: 'score',
     autopilot: false, lookup: null, explain: {}, picking: false, mockBusy: false, needAccess: false, settingsOpen: false,
     fresh: {}, starting: false, chatOpen: false,
+    platform: 'sleeper', espn: null, espnLoading: false, espnAuthAsked: false, seasonFilled: false,   // Setup: platform switch + the last ESPN league look-up
+    espnDenied: null,                   // the ESPN 401 detail while live polls are refused (expired cookies); null once a poll succeeds
   },
 };
 const mode = () => (S.session && S.session.mode) || 'idle';
@@ -900,13 +996,18 @@ const isLive = () => mode() === 'live' || mode() === 'mock';
 const isMock = () => mode() === 'mock';
 const myTurn = () => !!get(S.state, 'draft.is_my_turn', false);
 const claudeAvailable = () => !!(S.settings.apiKey || get(S.status, 'claude.server_key', false));
+/** Platform of the running session: what the last poll said, else the session, else Sleeper (mocks count as Sleeper). */
+const platform = () => String(get(S.state, 'status.platform', null) || get(S.session, 'platform', null) || 'sleeper').toLowerCase();
+const isEspn = () => mode() === 'live' && platform() === 'espn';
+const platformLabel = (p) => (p === 'espn' ? 'ESPN' : 'Sleeper');
+const SESSION_KEYS = ['platform', 'draft_id', 'league_id', 'season', 'username', 'user_id', 'slot', 'team_id'];
 
-/** The session object exactly as §3.9 defines it (extra UI fields stripped). */
+/** The session object exactly as §3.9 defines it (extra UI fields stripped). Live sessions carry `platform` (sleeper | espn). */
 function sessionPayload() {
   const s = S.session; if (!s) return null;
   const out = { mode: s.mode };
-  for (const k of ['draft_id', 'league_id', 'username', 'user_id', 'slot']) if (s[k] != null && s[k] !== '') out[k] = s[k];
-  out.use_claude = !!s.use_claude;
+  for (const k of SESSION_KEYS) if (s[k] != null && s[k] !== '') out[k] = s[k];
+  out.use_claude = true;                     // compatibility field: the server does nothing with it (chat is user-initiated)
   if (s.mode === 'mock') { out.mock = s.mock || {}; out.picks = Array.isArray(s.picks) ? s.picks : []; }
   return out;
 }
@@ -915,8 +1016,8 @@ function sessionQuery(extra) {
   const q = new URLSearchParams();
   const s = sessionPayload();
   if (s) {
-    for (const k of ['mode', 'draft_id', 'league_id', 'username', 'user_id', 'slot']) if (s[k] != null) q.set(k, String(s[k]));
-    q.set('use_claude', s.use_claude ? 'true' : 'false');
+    for (const k of ['mode'].concat(SESSION_KEYS)) if (s[k] != null) q.set(k, String(s[k]));
+    q.set('use_claude', 'true');
     if (s.mock) for (const [k, v] of Object.entries(s.mock)) if (v != null) q.set('mock_' + k, String(v));
     if (s.picks) q.set('picks', s.picks.join(','));
     q.set('session', JSON.stringify(s));
@@ -933,7 +1034,9 @@ function loadSettings() {
   const st = lsGet('da.settings', null) || {};
   S.settings.apiKey = typeof st.apiKey === 'string' ? st.apiKey : '';
   S.settings.accessCode = typeof st.accessCode === 'string' ? st.accessCode : '';
-  S.settings.model = MODELS.includes(st.model) ? st.model : 'claude-opus-5';
+  S.settings.espnS2 = typeof st.espnS2 === 'string' ? st.espnS2 : '';
+  S.settings.espnSwid = typeof st.espnSwid === 'string' ? st.espnSwid : '';
+  S.settings.model = MODELS.includes(st.model) ? st.model : '';
   let theme = st.theme; try { theme = theme || localStorage.getItem('da.theme'); } catch (e) { /* ignore */ }
   S.settings.theme = theme === 'light' ? 'light' : 'dark';
 }
@@ -966,7 +1069,7 @@ function findCard(pid) {
   if (Array.isArray(S.board.rows)) for (const c of S.board.rows) if (c && String(c.player_id) === String(pid)) return c;
   return null;
 }
-/** The research note for a card: the card's own `note`, else the /api/notes cache. */
+/** The legacy research note for a card (if one was written by an earlier version): the card's own `note`, else the /api/notes cache. */
 function noteFor(c) {
   if (!c) return null;
   const n = c.note && typeof c.note === 'object' ? c.note : S.notes[String(c.player_id)];
@@ -993,11 +1096,13 @@ function renderTop() {
   const pill = $('mode-pill');
   setText(pill, m + (S.ui.needAccess ? ' · 401' : ''));
   setClass(pill, 'pill ' + (S.ui.needAccess ? 'bad' : m === 'live' ? 'bad' : m === 'mock' ? 'info' : ''));
-  show($('busy-dot'), S.ui.mockBusy || S.ui.starting || S.research.running || S.chat.streaming || !!S.advice.inflight);
-  const msg = S.ui.starting ? 'starting session…' : S.research.running ? 'research ' + S.research.done + '/' + S.research.total : S.chat.streaming ? 'Claude is answering…' :
-    S.advice.inflight ? 'Claude is thinking…' : S.ui.mockBusy ? 'bots are picking…' : '';
+  show($('busy-dot'), S.ui.mockBusy || S.ui.starting || S.chat.streaming);
+  const msg = S.ui.starting ? 'starting session…' : S.chat.streaming ? 'Claude is answering…' : S.ui.mockBusy ? 'bots are picking…' : '';
   setText($('top-msg'), msg);
-  show($('conn-pill'), S.failures >= 2);
+  const conn = $('conn-pill');
+  setText(conn, S.ui.espnDenied ? 'ESPN 401' : 'offline');
+  conn.title = S.ui.espnDenied ? 'ESPN refuses the league — paste fresh espn_s2 / SWID cookies in Settings' : 'the server is not answering';
+  show(conn, S.failures >= 2 || !!S.ui.espnDenied);
   $$('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === S.ui.tab));
   const fab = $('chat-fab');
   show(fab, !S.ui.chatOpen);
@@ -1023,17 +1128,73 @@ function renderSetup() {
   });
   setText($('st-bundle'), bundle ? ((bundle.players != null ? bundle.players + ' players' : 'bundle') + (bundle.seasons ? ', seasons ' + (Array.isArray(bundle.seasons) ? bundle.seasons.join('–') : bundle.seasons) : '') +
     (bundle.built_at ? ', built ' + (typeof bundle.built_at === 'number' ? fmtTime(bundle.built_at) : bundle.built_at) : '')) : S.status ? 'no bundle — projections unavailable' : '–');
-  setText($('st-claude'), S.status ? (S.settings.apiKey ? 'your key (this browser)' + (get(st, 'claude.server_key') ? ' + server key' : '') : get(st, 'claude.server_key') ? 'server has a key' : 'no key — advice, chat and research are off') : '–');
-  setText($('st-notes'), st.notes ? (get(st, 'notes.count', 0) + ' research notes (' + (get(st, 'notes.store', '?')) + ')') : '–');
+  setText($('st-claude'), S.status ? (S.settings.apiKey ? 'your key (this browser)' + (get(st, 'claude.server_key') ? ' + server key' : '') : get(st, 'claude.server_key') ? 'server has a key' : 'no key — chat is off') +
+    ' • chat model ' + chatModel() + (S.settings.model ? '' : ' (server default)') : '–');
+  setText($('st-notes'), st.notes ? (get(st, 'notes.count', 0) + ' legacy research notes (' + (get(st, 'notes.store', '?')) + ', read-only)') : '–');
+  const est = estimateCostPerMessage(chatModel()), pr = priceOf(chatModel());
+  setText($('claude-hint'), 'Claude is used only when you send a chat message (💬). Nothing runs on a timer or on every pick; each message is one paid request' +
+    (est != null ? ' — ' + costLabel(est) + ' with ' + chatModel() + ' ($' + pr[0] + ' in / $' + pr[1] + ' out per 1M tokens; the context grows with every turn)' : '') +
+    ' and the chat shows the tokens and estimated cost of every answer.');
   setText($('st-version'), st.version != null ? String(st.version) + (st.access_code_required ? ' • access code required' : '') : '–');
   const s = S.session;
-  setText($('st-session'), s ? (s.mode + ' — ' + (get(S.leagueInfo, 'name', '') || s.draft_id || s.league_id || (s.mode === 'mock' ? get(s, 'mock.teams', '?') + ' teams × ' + get(s, 'mock.rounds', '?') : '')) +
+  setText($('st-session'), s ? (s.mode + (s.mode === 'live' ? ' · ' + platformLabel(s.platform) : '') + ' — ' +
+    (get(S.leagueInfo, 'name', '') || s.draft_id || s.league_id || (s.mode === 'mock' ? get(s, 'mock.teams', '?') + ' teams × ' + get(s, 'mock.rounds', '?') : '')) +
+    (s.platform === 'espn' && s.season ? ' ' + s.season : '') + (s.platform === 'espn' && s.team_id != null ? ', team ' + s.team_id : '') +
     (s.slot ? ' (slot ' + s.slot + ')' : '') + (s.mode === 'mock' ? ', ' + (s.picks || []).length + ' picks' : '')) : 'none');
   $('live-start').disabled = S.ui.starting || isLive();
+  $('espn-start').disabled = S.ui.starting || isLive();
   $('mock-start').disabled = S.ui.starting || isLive();
   $('lookup-btn').disabled = S.ui.starting;
+  $('espn-load').disabled = S.ui.starting || S.ui.espnLoading;
   $('stop-btn').disabled = !isLive();
-  renderResearch();
+  // ESPN season defaults to the server's season once (typed values are never overwritten)
+  const season = num(st.season);
+  if (season && !S.ui.seasonFilled) { S.ui.seasonFilled = true; const inp = $('espn-season'); inp.placeholder = String(season); if (!inp.value) inp.value = String(season); }
+  const espnBtn = $('platform-seg').querySelector('[data-platform="espn"]');
+  const espnOk = !S.status || !Array.isArray(st.platforms) || st.platforms.includes('espn');
+  espnBtn.disabled = !espnOk;
+  espnBtn.title = espnOk ? 'ESPN fantasy football league' : 'this server has no ESPN support';
+  renderPlatform();
+}
+/** The Sleeper | ESPN switch of the Live draft panel: shows one of the two forms (remembered in localStorage). */
+function renderPlatform() {
+  const p = S.ui.platform === 'espn' ? 'espn' : 'sleeper';
+  $$('#platform-seg button').forEach((b) => b.classList.toggle('active', b.dataset.platform === p));
+  show($('live-form'), p === 'sleeper');
+  show($('espn-form'), p === 'espn');
+  setText($('platform-hint'), p === 'espn' ? 'enter the league id from the ESPN URL, load it, pick your team' : 'look up your Sleeper username, then pick the league or draft');
+}
+/** Fill the ESPN league facts + team <select> from a /api/lookup response (platform espn). */
+function renderEspnLookup() {
+  const lk = S.ui.espn;
+  const sel = $('espn-team'), facts = $('espn-facts');
+  if (!lk) { show(facts, false); return; }
+  const lg = lk.league || {}, dr = lg.draft || {};
+  const teams = Array.isArray(lk.teams) ? lk.teams : [];
+  const me = lk.me && typeof lk.me === 'object' ? lk.me : null;
+  const un = Array.isArray(lk.unmapped_scoring) ? lk.unmapped_scoring : [];
+  const kv = (k, v) => '<div class="kv"><span>' + esc(k) + '</span><span>' + v + '</span></div>';
+  let h = kv('League', '<b>' + esc(lg.name || lg.league_id || '?') + '</b>' + (lg.season ? ' <span class="muted">' + esc(lg.season) + '</span>' : '') +
+    (lg.is_public === false ? ' <span class="chip warn small" title="ESPN calls this league private: the cookies from Settings are sent with every request">private</span>' : ''));
+  h += kv('Scoring', esc(lg.scoring_type || '?') + (lg.teams ? ' • ' + esc(lg.teams) + ' teams' : ''));
+  h += kv('Draft', esc(dr.type || '?') + (dr.status ? ' [' + esc(dr.status) + ']' : '') + (dr.rounds ? ' • ' + esc(dr.rounds) + ' rounds' : '') +
+    (dr.start_time ? ' • ' + esc(fmtTime(dr.start_time)) : ''));
+  h += kv('Clock', num(dr.pick_timer) > 0 ? esc(dr.pick_timer) + ' s per pick' : 'no pick timer');
+  h += kv('Order', dr.order_known ? 'draft order known' : '<span class="muted">not set yet — your slot resolves when the commissioner publishes it</span>');
+  if (un.length) h += kv('Not modelled', '<span class="unmapped-note" title="listed under League → ESPN rules not modelled once the draft is running">' +
+    esc(un.map((u) => (u.label || '?') + (num(u.points) != null ? ' (' + signed(u.points, 1) + ')' : '')).join(', ')) + '</span>');
+  setHTML(facts, h);
+  show(facts, true);
+  let o = '<option value="">— spectate (no team) —</option>';
+  for (const t of teams) {
+    const owners = Array.isArray(t.owners) && t.owners.length ? ' — ' + t.owners.join(', ') : '';
+    o += '<option value="' + esc(t.team_id) + '"' + (t.slot ? ' data-slot="' + esc(t.slot) + '"' : '') + '>' + (t.slot ? 'Slot ' + esc(t.slot) + ' · ' : '') +
+      esc(t.name || 'Team ' + t.team_id) + (t.abbrev ? ' (' + esc(t.abbrev) + ')' : '') + esc(owners) + (t.is_me ? ' (you)' : '') + '</option>';
+  }
+  sel.innerHTML = o;
+  sel.value = me && me.team_id != null ? String(me.team_id) : '';
+  setText($('espn-info'), teams.length + ' teams' + (me ? ' — your team was picked out by your SWID' :
+    S.settings.espnSwid ? ' — none belongs to the SWID in Settings: choose yours' : ' — choose your team (or set your SWID in Settings)'));
 }
 
 /** Fill the league/draft <select>s from a /api/lookup response. */
@@ -1066,26 +1227,6 @@ function syncDraftToLeague() {
   if (did) for (const o of dsel.options) if (o.value === did) { dsel.value = did; break; }
 }
 
-// ---- Research progress (Setup panel + Draft side panel share the state) ----
-function renderResearch() {
-  const r = S.research;
-  const ok = claudeAvailable();
-  const total = r.total || 0;
-  const txt = r.running ? ('Researching ' + r.done + '/' + total + (r.current ? ' — ' + r.current : '') + '…') :
-    r.error ? 'Research stopped: ' + r.error : r.remaining === 0 && total ? 'Done: ' + r.done + '/' + total + ' players have fresh notes.' :
-    r.total ? 'Stopped at ' + r.done + '/' + total + ' — click again to resume.' : '';
-  for (const sfx of ['', '2']) {
-    const btn = $('research-btn' + sfx), stop = $('research-stop' + sfx), bar = $('research-bar' + sfx), status = $('research-status' + sfx);
-    if (!btn) continue;
-    btn.disabled = r.running || !ok;
-    btn.title = ok ? '' : 'set an Anthropic API key in Settings first';
-    show(stop, r.running);
-    show(bar, r.running || (total > 0 && r.done > 0));
-    bar.firstElementChild.style.width = total ? Math.round(100 * r.done / total) + '%' : '0%';
-    if (sfx === '2' || txt) setText(status, txt || (ok ? '' : 'Research needs a Claude key (Settings).'));
-  }
-}
-
 // ---- Draft: header --------------------------------------------------------
 function renderDraft() {
   const st = S.state;
@@ -1097,15 +1238,17 @@ function renderDraft() {
   if (!live) {
     setText($('draft-empty'), isLive() ? (S.ui.starting ? 'Starting the session…' : 'Loading the draft…') : 'No draft running — start a live or mock draft from the Setup tab.');
     setText($('dh-name'), isLive() ? (get(S.leagueInfo, 'name', '') || (isMock() ? 'Mock draft' : 'Draft')) : 'No draft');
+    renderPlatformPill();
     setText($('dh-scoring'), '');
     setText($('dh-round'), ''); setText($('dh-otc'), ''); setText($('dh-next'), '');
     show($('turn-banner'), false); show($('mock-controls'), false); show($('clock'), false);
     setText($('dh-lat'), '');
-    renderClaudePill();
+    renderChatPill();
     return;
   }
   const d = st.draft || {}, lg = st.league || {};
   setText($('dh-name'), lg.name || get(S.leagueInfo, 'name', '') || (isMock() ? 'Mock draft' : 'Draft'));
+  renderPlatformPill();
   const teams = lg.teams || d.teams;
   setText($('dh-scoring'), [lg.scoring_description || lg.scoring_type || '', teams ? teams + ' teams' : '', d.type || ''].filter(Boolean).join(' • '));
 
@@ -1128,8 +1271,8 @@ function renderDraft() {
 
   const banner = $('turn-banner');
   if (d.is_complete) { show(banner, true); setClass(banner, 'banner done'); setText(banner, 'DRAFT COMPLETE'); }
+  else if (d.status === 'paused') { show(banner, true); setClass(banner, 'banner paused'); setText(banner, 'PAUSED'); }   // even on my pick: nothing is ticking
   else if (d.is_my_turn) { show(banner, true); setClass(banner, 'banner'); setText(banner, 'YOUR PICK'); }
-  else if (d.status === 'paused') { show(banner, true); setClass(banner, 'banner paused'); setText(banner, 'PAUSED'); }
   else show(banner, false);
   renderCountdown();
   const showMock = isMock() && !d.is_complete;
@@ -1144,7 +1287,7 @@ function renderDraft() {
   const s = st.status || {};
   setText($('dh-lat'), [s.latency_ms != null ? 'poll ' + fmt(s.latency_ms) + ' ms' : '', s.compute_ms != null ? 'compute ' + fmt(s.compute_ms) + ' ms' : '',
     st.version != null ? 'v' + st.version : ''].filter(Boolean).join(' • '));
-  renderClaudePill();
+  renderChatPill();
 
   renderRoster(st);
   renderBest(st);
@@ -1154,45 +1297,77 @@ function renderDraft() {
   renderFooter(st);
   renderAvailable(st);
   renderChat();
-  renderResearch();
 }
 
-function renderClaudePill() {
-  const el = $('dh-claude');
-  const on = claudeAvailable() && !!get(S.session, 'use_claude', false);
-  const status = !on ? 'off' : S.advice.inflight ? 'thinking' : S.advice.status || 'idle';
-  const cls = { off: '', idle: 'ok', ready: 'ok', thinking: 'warn', error: 'bad', 'no answer': 'warn' }[status] || '';
-  setText(el, 'Claude: ' + status + (status === 'thinking' ? '…' : ''));
-  setClass(el, 'pill ' + cls);
+/** Chat-model label in the draft header. Claude is called only when you send a message; nothing here polls it. */
+function renderChatPill() {
+  const el = $('dh-chat');
+  const on = claudeAvailable();
+  setText(el, on ? 'chat: ' + chatModel() + (S.chat.streaming ? ' …' : '') : 'chat: no key');
+  setClass(el, 'pill ' + (on ? (S.chat.streaming ? 'warn' : 'ok') : ''));
+  el.title = on ? 'chat model — used only when you send a message (' + costLabel(estimateCostPerMessage(chatModel())) + ' each)' : 'add an Anthropic API key in Settings to chat';
+}
+/** "Sleeper" / "ESPN" next to the league name of a live draft (hidden for mocks and when idle). */
+function renderPlatformPill() {
+  const el = $('dh-platform');
+  const on = mode() === 'live';
+  if (on) { setText(el, platformLabel(platform())); setClass(el, 'pill plat ' + (platform() === 'espn' ? 'warn' : 'info')); }
+  show(el, on);
 }
 /**
- * Sleeper clock. Shown ONLY from what the latest poll reported: `pick_timer` (0/null → nothing) and
- * `seconds_left` (preferred; ticks down locally until the next poll re-bases it). Never assumes a fixed length.
+ * The clock. Sleeper: shown ONLY from what the latest poll reported — `pick_timer` (0/null → nothing) and
+ * `seconds_left` (preferred; ticks down locally until the next poll re-bases it); never assumes a fixed length.
+ * ESPN: no pick timestamps exist, so the page shows the pick length and, once it has SEEN `next_pick_no` change,
+ * an approximate countdown anchored to that moment (labelled "≈ since last pick seen"; never authoritative).
  */
 function renderCountdown() {
   const d = get(S.state, 'draft', null);
   const el = $('clock');
+  if (!d || !isLive() || d.is_complete) { show(el, false); return; }
+  if (isEspn()) { renderEspnClock(d); return; }
   const left = secondsLeft(d);
-  if (left == null || !isLive() || get(S.state, 'draft.is_complete', false)) { show(el, false); return; }
+  if (left == null) { show(el, false); return; }
+  setText($('clock-label'), 'Sleeper clock');
   setText($('countdown'), fmtClock(left));
+  show($('clock-note'), false);
   setClass(el, 'clock' + (left <= 10 && d.is_my_turn ? ' low' : ''));
   show(el, true);
 }
+function renderEspnClock(d) {
+  const el = $('clock');
+  const timer = num(d.pick_timer);
+  setText($('clock-label'), 'ESPN clock: ' + (timer > 0 ? timer + ' s per pick' : 'no pick timer'));
+  const left = espnSecondsLeft(d);
+  setText($('countdown'), left == null ? '' : fmtClock(left));
+  show($('clock-note'), left != null);
+  setClass(el, 'clock');
+  show(el, true);
+}
+/** Estimated seconds left on an ESPN pick: pick length minus the time since this page saw the last pick land (null until then). */
+function espnSecondsLeft(d) {
+  const timer = num(d.pick_timer);
+  if (!timer || timer <= 0 || !S.pickSeen || d.status === 'pre_draft') return null;
+  return Math.max(0, timer - (Date.now() - S.pickSeen.at) / 1000);
+}
+/** Called on every applied state: remembers when `next_pick_no` moved so the ESPN clock has something to count from. */
+function observePick(st) {
+  const no = num(get(st, 'draft.next_pick_no', null));
+  if (no != null && S.lastPickNo != null && no !== S.lastPickNo) S.pickSeen = { no: no, at: Date.now() };
+  if (no != null) S.lastPickNo = no;
+}
+/** Sleeper countdown from the last poll only: `pick_timer` + `seconds_left` (null while paused or unknown → nothing is shown). */
 function secondsLeft(d) {
-  if (!d) return null;
+  if (!d || d.status === 'paused') return null;
   const timer = num(d.pick_timer);
   if (!timer || timer <= 0) return null;                     // no clock in this draft (or unknown) → show nothing
-  const elapsed = (Date.now() - S.stateAt) / 1000;
   const sl = num(d.seconds_left);
-  if (sl != null) return Math.max(0, sl - elapsed);
-  const started = num(d.turn_started_at);
-  if (started) { const nowServer = Date.now() / 1000 - S.clockSkew; return Math.max(0, timer - (nowServer - started)); }
-  return null;
+  if (sl == null) return null;                               // the server sends none while paused; nothing is derived locally
+  return Math.max(0, sl - (Date.now() - S.stateAt) / 1000);
 }
 
 // ---- Draft: left column ---------------------------------------------------
 const SLOT_ABBR = { SUPER_FLEX: 'SFLEX', WRRB_FLEX: 'WR/RB', REC_FLEX: 'WR/TE', FLEX: 'FLEX' };
-/** "!" for engine warnings + a red ⚠ badge when the research note has red flags / off-field risk. */
+/** "!" for engine warnings + a red ⚠ badge when a (legacy) research note has red flags / off-field risk. */
 function warnHTML(c) {
   const w = Array.isArray(c.warnings) ? c.warnings : [];
   let h = w.length ? '<span class="warn-flag" title="' + esc(w.join('\n')) + '">!</span>' : '';
@@ -1331,21 +1506,12 @@ function renderOpponents(st) {
   setHTML($('opp-tbl').querySelector('tbody'), h);
 }
 
-// ---- Draft: footer (advice from GET /api/advice + engine notes) -----------
+// ---- Draft: footer (engine notes + the last poll error) ---------------------
 function renderFooter(st) {
-  const box = $('claude-box');
-  const on = claudeAvailable() && !!get(S.session, 'use_claude', false);
-  const a = S.advice;
-  if (!on) {
-    setText(box, !claudeAvailable() ? 'Claude: off — add an Anthropic API key in Settings (⚙) to get on-the-clock advice, chat and research.' : 'Claude: off for this session ("use Claude" was unchecked).');
-    setClass(box, 'claude-box off');
-  } else if (a.text && a.version === get(st, 'version', a.version)) { setHTML(box, mdHTML(a.text) + (a.model ? '<div class="muted small">' + esc(a.model) + ' • state v' + esc(a.version) + '</div>' : '')); setClass(box, 'claude-box'); }
-  else if (a.inflight) { setText(box, 'Claude is thinking…'); setClass(box, 'claude-box off'); }
-  else if (a.text) { setHTML(box, mdHTML(a.text) + '<div class="muted small">from state v' + esc(a.version) + ' — will refresh when you are on the clock</div>'); setClass(box, 'claude-box'); }
-  else { setText(box, a.status === 'error' ? 'Claude: error — ' + (a.error || 'see toasts') : a.status === 'no answer' ? 'Claude gave no answer.' : 'Advice appears here when you are on the clock (or one pick away).'); setClass(box, 'claude-box off'); }
   const notes = Array.isArray(st.notes) ? st.notes : [];
   setHTML($('notes'), notes.length ? notes.map((n) => '<li>' + esc(n) + '</li>').join('') : '<li class="muted">no notes</li>');
-  setText($('last-error'), get(st, 'status.last_error', '') ? 'last error: ' + get(st, 'status.last_error', '') : '');
+  const lastErr = S.ui.espnDenied || get(st, 'status.last_error', '');
+  setText($('last-error'), lastErr ? 'last error: ' + lastErr : '');
 }
 
 // ---- Board (GET /api/projections?league_id=…) ----------------------------
@@ -1353,9 +1519,9 @@ async function loadBoard() {
   const b = S.board;
   if (b.loading) return;
   b.loading = true; b.error = null; renderBoard();
-  const qs = new URLSearchParams();
-  const lid = get(S.session, 'league_id', null);
-  if (lid) qs.set('league_id', String(lid));
+  // a live session (Sleeper or ESPN) is sent whole so the board uses the league's scoring; mocks and idle use the default board
+  const qs = new URLSearchParams(mode() === 'live' ? sessionQuery() : '');
+  const lid = boardKey();
   if (b.position) qs.set('position', b.position);
   qs.set('top', String(b.top));
   if (b.q) qs.set('q', b.q);
@@ -1367,12 +1533,17 @@ async function loadBoard() {
   b.loading = false;
   renderBoard();
 }
+/** What the loaded board belongs to: the live league (platform + id + season) or nothing. */
+function boardKey() {
+  const s = S.session;
+  return s && s.mode === 'live' && s.league_id ? [s.platform || 'sleeper', s.league_id, s.season || ''].join(':') : null;
+}
 function renderBoard() {
   const b = S.board;
   $('board-reload').disabled = b.loading;
   $$('#board-pos button').forEach((x) => x.classList.toggle('active', x.dataset.pos === b.position));
-  const lid = get(S.session, 'league_id', null);
-  setText($('board-info'), b.loading ? 'loading…' : b.error ? 'error: ' + b.error : b.rows ? b.rows.length + ' players' + (lid ? ' • league scoring' : ' • half-PPR (no league)') : '');
+  const lid = boardKey();
+  setText($('board-info'), b.loading ? 'loading…' : b.error ? 'error: ' + b.error : b.rows ? b.rows.length + ' players' + (lid ? ' • league scoring (' + platformLabel(get(S.session, 'platform', 'sleeper')) + ')' : ' • half-PPR (no league)') : '');
   const rows = Array.isArray(b.rows) ? b.rows : [];
   let h = '';
   rows.forEach((c, i) => {
@@ -1405,7 +1576,11 @@ function renderLeague() {
   const dr = (snap && snap.draft) || {};
   const stLeague = get(S.state, 'league', {});
   const stDraft = get(S.state, 'draft', {});
+  const plat = String((snap && snap.platform) || get(sess, 'platform', null) || 'sleeper').toLowerCase();
+  const platName = isMock() ? 'Sleeper' : platformLabel(plat);
   const facts = [
+    ['Platform', isMock() ? 'mock draft (Sleeper rules)' : platName + (plat === 'espn' ? ' — league ' + (get(sess, 'league_id', null) || lg.league_id || '?') +
+      (get(sess, 'season', null) ? ', season ' + sess.season : '') + (get(sess, 'team_id', null) != null ? ', team ' + sess.team_id : ', spectating') : '')],
     ['League', lg.name || stLeague.name || get(S.leagueInfo, 'name', null) || (isMock() ? 'Mock draft' : '–')],
     ['Season', lg.season || stLeague.season || '–'],
     ['Teams', lg.total_rosters || lg.teams || stLeague.teams || dr.teams || get(sess, 'mock.teams', '–')],
@@ -1418,8 +1593,14 @@ function renderLeague() {
     ['Status', stDraft.status || dr.status || '–'],
     ['Captured', snap && snap.captured_at ? fmtTime(snap.captured_at) : '–'],
   ];
-  if (facts[7][1] != null) facts[7][1] = facts[7][1] > 0 ? facts[7][1] + ' s per pick (as reported by Sleeper now)' : 'no timer'; else facts[7][1] = '–';
+  const clock = facts.find((f) => f[0] === 'Clock');
+  clock[1] = clock[1] == null ? '–' : clock[1] > 0 ? clock[1] + ' s per pick (as reported by ' + platName + ' now' + (plat === 'espn' ? '; ESPN gives no pick timestamps, so the countdown is an estimate' : '') + ')' : 'no timer';
   setHTML($('lg-facts'), facts.map(([k, v]) => '<div class="kv"><span>' + esc(k) + '</span><span>' + esc(v) + '</span></div>').join(''));
+  // ESPN scoring items with no Sleeper equivalent (the server lists them; the projections ignore them)
+  const un = snap && Array.isArray(snap.unmapped_scoring) ? snap.unmapped_scoring.filter((u) => u && typeof u === 'object') : [];
+  show($('lg-unmapped-panel'), un.length > 0);
+  setHTML($('lg-unmapped').querySelector('tbody'), un.map((u) => '<tr><td class="fill" title="' + esc(u.label || '') + '">' + esc(u.label || ('ESPN stat ' + (u.stat_id != null ? u.stat_id : '?'))) +
+    '</td><td class="n">' + (num(u.points) != null ? signed(u.points, 2).replace(/\.?0+$/, '') : '–') + '</td></tr>').join(''));
 
   const flags = snap && Array.isArray(snap.flags) ? snap.flags : [];
   setHTML($('lg-flags'), flags.length ? flags.map((f) => '<li>' + esc(f) + '</li>').join('') : '<li class="muted">' + (snap ? 'no special flags — a plain league' : 'no snapshot yet') + '</li>');
@@ -1427,7 +1608,8 @@ function renderLeague() {
   const diff = snap && snap.diff ? snap.diff : null;
   const deltas = diff && Array.isArray(diff.deltas) ? diff.deltas : [];
   setText($('lg-diff-head'), diff ? ('Type ' + (diff.scoring_type || '?') + ' (' + fmt(diff.rec_points, 2) + ' per reception). ' +
-    (deltas.length ? deltas.length + ' rule(s) differ from Sleeper base; everything else is base.' : 'Scoring is identical to Sleeper base.')) : 'no scoring snapshot');
+    (deltas.length ? deltas.length + ' rule(s) differ from Sleeper base; everything else is base.' : 'Scoring is identical to Sleeper base.') +
+    (plat === 'espn' && !isMock() ? ' ESPN rules were translated to Sleeper scoring keys first.' : '')) : 'no scoring snapshot');
   const fv = (v) => v == null ? '—' : fmt(v, 2).replace(/\.?0+$/, '');
   setHTML($('lg-diff').querySelector('tbody'), deltas.length ? deltas.map((d) => {
     const k = deltaKind(d);
@@ -1450,7 +1632,8 @@ function chatShell(root, full) {
   root.dataset.built = '1';
   root.innerHTML = '<div class="log"></div><div class="qchips">' + QUICK_PROMPTS.map((p) => '<button type="button" data-q="' + esc(p) + '">' + esc(p) + '</button>').join('') + '</div>' +
     '<textarea placeholder="' + (full ? 'Ask anything about the draft — Claude sees your roster, needs, the board and the current recommendation. Ctrl/Cmd+Enter sends.' : 'Ask Claude… (Ctrl/Cmd+Enter)') + '"></textarea>' +
-    '<div class="row2"><button type="button" class="primary send">Send</button><button type="button" class="small stop" hidden>Stop</button><button type="button" class="small clear">Clear</button><span class="muted small hint-line"></span></div>';
+    '<div class="row2"><button type="button" class="primary send">Send</button><button type="button" class="small stop" hidden>Stop</button><button type="button" class="small clear">Clear</button><span class="muted small hint-line"></span></div>' +
+    '<div class="costhint"></div>';
   const ta = root.querySelector('textarea');
   ta.addEventListener('input', () => { S.chat.draft = ta.value; });
   ta.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); sendChat(ta.value); } });
@@ -1471,9 +1654,11 @@ function renderChat() {
     msgs.forEach((m, i) => {
       const last = i === msgs.length - 1;
       const streaming = last && S.chat.streaming && m.role === 'assistant';
-      h += '<div class="bubble ' + esc(m.role) + (m.error ? ' error' : '') + (streaming ? ' cursor' : '') + '">' + (m.role === 'assistant' ? mdHTML(m.content || (streaming ? '' : '(empty)')) : '<div class="md"><p>' + esc(m.content).replace(/\n/g, '<br>') + '</p></div>') + '</div>';
+      const usage = m.role === 'assistant' && !streaming ? usageText(m) : '';
+      h += '<div class="bubble ' + esc(m.role) + (m.error ? ' error' : '') + (streaming ? ' cursor' : '') + '">' + (m.role === 'assistant' ? mdHTML(m.content || (streaming ? '' : '(empty)')) : '<div class="md"><p>' + esc(m.content).replace(/\n/g, '<br>') + '</p></div>') +
+        (usage ? '<div class="usage">' + usage + '</div>' : '') + '</div>';
     });
-    if (!msgs.length) h = '<div class="muted small" style="padding:6px">' + (on ? 'No messages yet. Claude answers with the live draft context — the current recommendation, your roster and needs, candidates and research notes.' :
+    if (!msgs.length) h = '<div class="muted small" style="padding:6px">' + (on ? 'No messages yet. Claude answers with the live draft context — the current recommendation, your roster and needs, candidates and any notes. Each message is one paid request; the tokens and cost show under every answer.' :
       'Add an Anthropic API key in Settings (⚙) to chat.') + '</div>';
     const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
     const changed = _lastHTML.get(log) !== h;
@@ -1486,7 +1671,12 @@ function renderChat() {
     show(root.querySelector('.stop'), S.chat.streaming);
     root.querySelector('.clear').disabled = S.chat.streaming || !msgs.length;
     $$('.qchips button', root).forEach((b) => { b.disabled = !on || S.chat.streaming; });
-    setText(root.querySelector('.hint-line'), S.chat.streaming ? 'streaming…' : (S.settings.model + (isLive() ? '' : ' • no draft running: general questions only')));
+    setText(root.querySelector('.hint-line'), S.chat.streaming ? 'streaming…' : (chatModel() + (isLive() ? '' : ' • no draft running: general questions only')));
+    const est = estimateCostPerMessage(chatModel()), pr = priceOf(chatModel());
+    setText(root.querySelector('.costhint'), 'Every message is a paid request to the Anthropic API' + (est != null && pr ? ' — ' + costLabel(est) + ' each with ' + chatModel() +
+      ' ($' + pr[0] + ' in / $' + pr[1] + ' out per 1M tokens); the draft context is re-sent and the history grows with every turn.' : '.'));
+    const tot = chatTotals();
+    setText($('chat-total'), tot.n ? tot.n + (tot.n === 1 ? ' answer' : ' answers') + ' · ' + fmtK(tot.input) + ' in / ' + fmtK(tot.output) + ' out · ' + totalCostLabel(tot) : '');
   }
 }
 
@@ -1498,22 +1688,18 @@ function meterHTML(label, v, invert) {
   const cls = risk < 0.34 ? 'good' : risk < 0.67 ? 'mid' : 'bad';
   return '<div class="meter ' + cls + '"><span>' + esc(label) + '</span><div class="bar"><div style="width:' + Math.round(x * 100) + '%"></div></div><span class="n">' + pct(x) + '</span></div>';
 }
-function noteHTML(n, c, pinned) {
+/** A legacy research note (written by an earlier version of the app; nothing writes new ones). Empty when the player has none. */
+function noteHTML(n, pinned) {
+  if (!n) return '';
   let h = '<div class="note">';
-  if (n) {
-    const fl = redFlags(n);
-    if (fl.length) h += '<ul class="redflags">' + fl.map((f) => '<li>⚠ ' + esc(f) + '</li>').join('') + '</ul>';
-    h += '<b>Research:</b> ' + esc(n.summary || '(no summary)');
-    h += meterHTML('injury risk', n.injury_risk) + meterHTML('role certainty', n.role_certainty, true) + meterHTML('off-field risk', n.offfield_risk);
-    if (n.upside) h += '<div><span class="muted">Upside:</span> ' + esc(n.upside) + '</div>';
-    if (n.downside) h += '<div><span class="muted">Downside:</span> ' + esc(n.downside) + '</div>';
-    if (pinned && Array.isArray(n.sources) && n.sources.length) h += '<div class="srcs">' + n.sources.slice(0, 5).map((u, i) => '<a href="' + esc(u) + '" target="_blank" rel="noopener">[' + (i + 1) + ']</a>').join('') + '</div>';
-    if (n.generated_at || n.model) h += '<div class="muted small">' + esc(n.model || '') + (n.generated_at ? ' • ' + fmtTime(n.generated_at) : '') + '</div>';
-  } else h += '<span class="muted">no research note yet</span>';
-  if (pinned) {
-    const busy = S.research.player === String(c.player_id);
-    h += ' <button type="button" class="small" data-research="' + esc(c.player_id) + '"' + (busy || !claudeAvailable() ? ' disabled' : '') + '>' + (busy ? 'researching…' : n ? 'Research again' : 'Research now') + '</button>';
-  }
+  const fl = redFlags(n);
+  if (fl.length) h += '<ul class="redflags">' + fl.map((f) => '<li>⚠ ' + esc(f) + '</li>').join('') + '</ul>';
+  h += '<b>Note:</b> ' + esc(n.summary || '(no summary)');
+  h += meterHTML('injury risk', n.injury_risk) + meterHTML('role certainty', n.role_certainty, true) + meterHTML('off-field risk', n.offfield_risk);
+  if (n.upside) h += '<div><span class="muted">Upside:</span> ' + esc(n.upside) + '</div>';
+  if (n.downside) h += '<div><span class="muted">Downside:</span> ' + esc(n.downside) + '</div>';
+  if (pinned && Array.isArray(n.sources) && n.sources.length) h += '<div class="srcs">' + n.sources.slice(0, 5).map((u, i) => '<a href="' + esc(u) + '" target="_blank" rel="noopener">[' + (i + 1) + ']</a>').join('') + '</div>';
+  h += '<div class="muted small">legacy research note' + (n.model ? ' • ' + esc(n.model) : '') + (n.generated_at ? ' • ' + fmtTime(n.generated_at) : '') + '</div>';
   return h + '</div>';
 }
 function cardHTML(c) {
@@ -1532,7 +1718,7 @@ function cardHTML(c) {
   const warns = Array.isArray(c.warnings) ? c.warnings : [];
   if (reasons.length) h += '<ul>' + reasons.map((r) => '<li>' + esc(r) + '</li>').join('') + '</ul>';
   if (warns.length) h += '<ul class="warn">' + warns.map((r) => '<li>' + esc(r) + '</li>').join('') + '</ul>';
-  h += noteHTML(noteFor(c), c, pinned);
+  h += noteHTML(noteFor(c), pinned);
   const ex = S.ui.explain[c.player_id];
   if (ex) h += '<div class="explain">' + esc(ex) + '</div>';
   if (pinned) {
@@ -1594,18 +1780,25 @@ function pinCard(pid, anchor, root) {
 function unpinCard() { clearTimeout(_hideTimer); S.ui.pinnedId = null; S.ui.hoverId = null; _popAnchor = null; renderPop(); }
 
 // ---- Settings modal ---------------------------------------------------------
-function openSettings(msg) {
+/** Open the modal; `focus` = 'espn' lands on the cookie fields (an ESPN 401), else the message decides (access code / key). */
+function openSettings(msg, focus) {
   S.ui.settingsOpen = true;
   $('set-key').value = S.settings.apiKey;
   $('set-access').value = S.settings.accessCode;
+  $('set-espn-s2').value = S.settings.espnS2;
+  $('set-espn-swid').value = S.settings.espnSwid;
   $('set-model').value = S.settings.model;
+  $('set-model').options[0].text = 'server default (' + get(S.status, 'claude.chat_model', 'claude-opus-5') + ')';
   $('set-theme').value = S.settings.theme;
   setText($('key-server'), get(S.status, 'claude.server_key', false) ? '— the server has a key; yours overrides it' : S.status ? '— the server has no key' : '');
   setText($('access-hint'), get(S.status, 'access_code_required', false) || S.ui.needAccess ? '— required by this server' : S.status ? '— not required by this server' : '');
+  setText($('espn-server'), get(S.status, 'espn.server_cookies', false) ? '— the server has cookies; yours override them' : '— only needed for private leagues');
   setText($('settings-msg'), msg || '');
   show($('settings-msg'), !!msg);
   show($('settings-modal'), true);
-  (msg && /access/i.test(msg) ? $('set-access') : $('set-key')).focus();
+  const target = focus === 'espn' || isEspnAuthError(msg) ? (S.settings.espnS2 ? $('set-espn-swid') : $('set-espn-s2')) : msg && /access/i.test(msg) ? $('set-access') : $('set-key');
+  if (focus === 'espn' || isEspnAuthError(msg)) target.scrollIntoView({ block: 'nearest' });
+  target.focus();
 }
 function closeSettings() { S.ui.settingsOpen = false; show($('settings-modal'), false); }
 
@@ -1613,8 +1806,8 @@ function closeSettings() { S.ui.settingsOpen = false; show($('settings-modal'), 
 /** Apply a render payload (from GET /api/state or POST /api/mock/state). */
 function applyState(st, lastPicks) {
   S.state = st || {}; S.stateAt = Date.now();
-  if (num(st.ts) != null) S.clockSkew = Date.now() / 1000 - st.ts;
   if (st.snapshot) S.snapshot = st.snapshot;
+  observePick(S.state);
   S.ui.fresh = {};
   if (Array.isArray(lastPicks)) for (const p of lastPicks) { const no = p && typeof p === 'object' ? p.pick_no : null; if (no != null) S.ui.fresh[String(no)] = true; }
   // fold notes that arrived inside cards into the note cache
@@ -1622,7 +1815,6 @@ function applyState(st, lastPicks) {
   for (const l of lists) if (Array.isArray(l)) for (const c of l) if (c && c.note && typeof c.note === 'object') S.notes[String(c.player_id)] = c.note;
   onOk();
   renderAll();
-  maybeFetchAdvice();
 }
 async function startSession(session) {
   if (S.ui.starting) return false;
@@ -1636,12 +1828,14 @@ async function startSession(session) {
     S.session.mock = Object.assign({}, session.mock || {}, resolved.mock || {});
     S.session.picks = Array.isArray(resolved.picks) ? resolved.picks : (Array.isArray(session.picks) ? session.picks : []);
   } else delete S.session.picks;
-  if (typeof S.session.use_claude !== 'boolean') S.session.use_claude = !!session.use_claude;
+  S.session.use_claude = true;                    // compatibility field only
+  if (S.session.mode === 'live') S.session.platform = String(resolved.platform || session.platform || 'sleeper').toLowerCase();
   S.snapshot = r.snapshot || null; S.leagueInfo = r.league || null;
-  S.state = null; S.advice = { version: null, status: 'idle', text: null, model: null, inflight: null, cache: {} };
+  S.state = null; S.lastPickNo = null; S.pickSeen = null; S.ui.espnAuthAsked = false; S.ui.espnDenied = null;
   S.board.loaded = false; S.board.rows = null;
   saveSession(); loadChat();
-  toast((S.session.mode === 'mock' ? 'Mock' : 'Live') + ' session started', 'info', 2500);
+  toast((S.session.mode === 'mock' ? 'Mock' : 'Live' + (S.session.platform === 'espn' ? ' (ESPN)' : '')) + ' session started', 'info', 2500);
+  if (typeof r.message === 'string' && r.message.trim()) toast(r.message, 'info', 7000);   // e.g. "spectating" / "draft order not set yet"
   showTab('draft');
   if (S.session.mode === 'mock') { await mockAction('advance'); runAutopilot(); }
   else schedule(10);
@@ -1660,10 +1854,10 @@ async function resumeSession() {
 }
 function stopSession() {
   if (S.chat.abort) S.chat.abort.abort();
-  S.research.stop = true;
   const key = S.chat.key;
   S.session = null; S.snapshot = null; S.leagueInfo = null; S.state = null; S.ui.autopilot = false; S.ui.fresh = {};
-  S.advice = { version: null, status: 'idle', text: null, model: null, inflight: null, cache: {} };
+  S.lastPickNo = null; S.pickSeen = null; S.ui.espnAuthAsked = false; S.ui.espnDenied = null;
+  S.board.loaded = false; S.board.rows = null;
   lsSet('da.session', null); lsSet('da.snapshot', null); lsSet('da.ui', null); if (key !== 'none') lsSet(key, null);
   S.chat.key = 'none'; S.chat.messages = [];
   unpinCard(); renderAll(); schedule(10);
@@ -1672,8 +1866,13 @@ function stopSession() {
 
 // ---- live polling -----------------------------------------------------------
 let _pollTimer = null;
-function onOk() { if (S.failures) { S.failures = 0; renderTop(); } }
+function onOk() { if (S.failures || S.ui.espnDenied) { S.failures = 0; S.ui.espnDenied = null; renderTop(); } }
 function onFail(e) {
+  if (e && e.espnAuth) {                   // ESPN refuses the cookies: the server answered, so this is not "offline"
+    const first = !S.ui.espnDenied; S.ui.espnDenied = e.message || 'ESPN says this league is private';
+    if (first) { renderTop(); if (S.ui.tab === 'draft' && S.state) renderDraft(); }
+    return;
+  }
   S.failures += 1;
   if (S.failures === 1 || S.failures % 15 === 0) toast('server: ' + e.message);
   renderTop();
@@ -1682,9 +1881,9 @@ async function loadStatus() {
   try {
     const st = await api('/api/status', { timeout: 8000 });
     S.status = st || {}; S.statusAt = Date.now();
-    if (S.ui.needAccess && S.settings.accessCode) S.ui.needAccess = false;   // a 2xx with the code means it is accepted
     if (st && st.access_code_required && !S.settings.accessCode && !S.ui.settingsOpen && !S.ui.accessAsked) { S.ui.accessAsked = true; openSettings('This server requires an access code.'); }
-    onOk(); renderAll();
+    if (S.failures) { S.failures = 0; renderTop(); }   // not onOk(): /api/status never talks to ESPN, so it cannot clear espnDenied
+    renderAll();
   } catch (e) { onFail(e); }
 }
 async function loadLiveState() {
@@ -1711,7 +1910,7 @@ async function tick() {
 }
 function schedule(ms) {
   clearTimeout(_pollTimer);
-  if (ms == null) ms = mode() === 'live' ? (myTurn() ? 1000 : 2000) : isMock() ? 5000 : 2000;
+  if (ms == null) ms = mode() === 'live' ? (S.ui.espnDenied ? 5000 : myTurn() ? 1000 : 2000) : isMock() ? 5000 : 2000;   // slower while ESPN says 401
   _pollTimer = setTimeout(tick, ms);
 }
 setInterval(() => { if (S.ui.tab === 'draft') renderCountdown(); }, 1000);
@@ -1771,28 +1970,7 @@ async function runAutopilot() {
   } finally { _autopilotRunning = false; renderAll(); }
 }
 
-// ---- advice (GET /api/advice; long request; never blocks the poll) ------------
-function maybeFetchAdvice() {
-  const st = S.state; if (!st || !S.session || !S.session.use_claude || !claudeAvailable()) return;
-  const d = st.draft || {};
-  const want = d.is_my_turn || (num(d.picks_until_my_turn) != null && d.picks_until_my_turn <= 1);
-  if (!want || d.is_complete) return;
-  const v = st.version != null ? String(st.version) : 'v' + (S.session.picks || []).length;
-  if (S.advice.cache[v]) { const c = S.advice.cache[v]; if (S.advice.version !== v) { S.advice.version = v; S.advice.text = c.advice; S.advice.status = c.status; S.advice.model = c.model; renderFooter(st); renderClaudePill(); } return; }
-  if (S.advice.inflight) return;
-  S.advice.inflight = v; renderClaudePill(); renderFooter(st); renderTop();
-  api('/api/advice?' + sessionQuery(), { timeout: 45000 }).then((r) => {
-    const rec = { advice: r && r.advice ? String(r.advice) : null, status: (r && r.status) || (r && r.advice ? 'ready' : 'no answer'), model: r && r.model };
-    if (rec.status === 'thinking' && !rec.advice) { S.advice.inflight = null; setTimeout(() => { if (S.state && String(S.state.version) === v) maybeFetchAdvice(); }, 2500); renderClaudePill(); renderTop(); return; }
-    S.advice.cache[v] = rec;
-    S.advice.inflight = null; S.advice.version = v; S.advice.text = rec.advice; S.advice.status = rec.status; S.advice.model = rec.model;
-  }).catch((e) => {
-    S.advice.inflight = null; S.advice.status = 'error'; S.advice.error = e.message;
-    if (e.status !== 401) toast('advice: ' + e.message);
-  }).finally(() => { renderTop(); if (S.state) { renderFooter(S.state); renderClaudePill(); } });
-}
-
-// ---------------------------------------------------------------- 6. chat + research
+// ---------------------------------------------------------------- 6. chat (the only paid calls: one request per message you send; never automatic)
 async function sendChat(text) {
   text = String(text || '').trim();
   if (!text || S.chat.streaming) return;
@@ -1804,16 +1982,20 @@ async function sendChat(text) {
   const reply = { role: 'assistant', content: '' };
   S.chat.messages.push(reply);
   S.chat.streaming = true; S.chat.abort = new AbortController();
-  saveChat(); renderChat(); renderTop();
+  saveChat(); renderChat(); renderTop(); renderChatPill();
   let lastRender = 0;
   const render = () => { const now = Date.now(); if (now - lastRender > 60) { lastRender = now; renderChat(); } };
   try {
-    await sse('/api/chat', { session: sessionPayload(), messages: history.concat([{ role: 'user', content: text }]), model: S.settings.model }, (ev) => {
+    await sse('/api/chat', { session: sessionPayload(), messages: history.concat([{ role: 'user', content: text }]), model: S.settings.model || undefined }, (ev) => {   // no pick → the server's DRAFTADVISOR_CHAT_MODEL
       if (!ev || typeof ev !== 'object') return;
       if (typeof ev.delta === 'string') reply.content += ev.delta;
       else if (typeof ev.text === 'string') reply.content += ev.text;
       if (ev.error) { reply.error = true; reply.content += (reply.content ? '\n\n' : '') + 'Error: ' + (typeof ev.error === 'string' ? ev.error : JSON.stringify(ev.error)); }
-      if (ev.done && ev.usage && typeof ev.usage === 'object') reply.usage = ev.usage;
+      if (ev.done) {                                    // the server's final event: tokens, model and estimated cost of this answer
+        if (ev.usage && typeof ev.usage === 'object') reply.usage = ev.usage;
+        if (typeof ev.model === 'string') reply.model = ev.model;
+        if (num(ev.cost_usd) != null) reply.cost_usd = num(ev.cost_usd);
+      }
       render();
     }, S.chat.abort.signal);
     if (!reply.content) { reply.content = '(no answer)'; reply.error = true; }
@@ -1822,7 +2004,7 @@ async function sendChat(text) {
     else { reply.error = true; reply.content += (reply.content ? '\n\n' : '') + 'Error: ' + e.message; if (e.status !== 401) toast('chat: ' + e.message); }
   }
   S.chat.streaming = false; S.chat.abort = null;
-  saveChat(); renderChat(); renderTop();
+  saveChat(); renderChat(); renderTop(); renderChatPill();
 }
 function stopChat() { if (S.chat.abort) S.chat.abort.abort(); }
 function clearChat() { if (S.chat.streaming) return; S.chat.messages = []; saveChat(); renderChat(); }
@@ -1839,62 +2021,13 @@ function setChatOpen(on) {
   if (!$('card-pop').hidden) placePop($('card-pop'));
 }
 
-/** Loop POST /api/research/next {session, top} until remaining == 0 (or Stop). Resumable: the server skips fresh notes. */
-async function researchLoop(top) {
-  const r = S.research;
-  if (r.running) return;
-  if (!claudeAvailable()) { openSettings('Research needs an Anthropic API key.'); return; }
-  top = Math.max(10, Math.min(400, parseInt(top, 10) || 150));
-  r.running = true; r.stop = false; r.error = null; r.current = ''; r.remaining = null; r.done = 0; r.total = top;
-  renderResearch(); renderTop();
-  let count = 0;
-  try {
-    while (!r.stop) {
-      let res;
-      try { res = await api('/api/research/next', { method: 'POST', body: { session: sessionPayload(), top: top }, timeout: 90000 }); }
-      catch (e) { r.error = e.message; if (e.status !== 401) toast('research: ' + e.message); break; }
-      if (!res || typeof res !== 'object') { r.error = 'empty response'; break; }
-      r.done = num(res.done) != null ? res.done : r.done + 1;
-      r.total = num(res.total) != null ? res.total : r.total;
-      r.remaining = num(res.remaining) != null ? res.remaining : null;
-      const n = res.note && typeof res.note === 'object' ? res.note : null;
-      if (n) {
-        const pid = n.player_id != null ? String(n.player_id) : (res.player_id != null ? String(res.player_id) : null);
-        if (pid) S.notes[pid] = n;
-        const card = pid ? findCard(pid) : null;
-        r.current = n.name || n.player_name || (card && card.name) || pid || '';
-      }
-      count += 1;
-      renderResearch(); renderTop(); if (S.state && S.ui.tab === 'draft') renderDraft();
-      if (r.remaining === 0 || r.remaining == null && !n) break;
-      if (count % 8 === 0) loadNotes();
-    }
-  } finally {
-    r.running = false; renderResearch(); renderTop();
-    await loadNotes();
-    if (isMock() && S.state) await mockAction('sync'); else if (mode() === 'live') schedule(10);
-    if (!r.error) toast(r.remaining === 0 ? 'Research complete: ' + r.done + '/' + r.total : 'Research stopped at ' + r.done + '/' + r.total, 'ok', 3500);
-  }
-}
-function stopResearch() { S.research.stop = true; renderResearch(); }
-async function researchPlayer(pid) {
-  if (!claudeAvailable()) { openSettings('Research needs an Anthropic API key.'); return; }
-  S.research.player = String(pid); renderPop();
-  try {
-    const r = await api('/api/research/player', { method: 'POST', body: { session: sessionPayload(), player_id: String(pid), force: true }, timeout: 90000 });
-    if (r && r.note && typeof r.note === 'object') { S.notes[String(pid)] = r.note; const c = findCard(pid); if (c) c.note = r.note; toast('Note ready', 'ok', 2000); }
-    else toast('research: no note returned');
-  } catch (e) { if (e.status !== 401) toast('research: ' + e.message); }
-  S.research.player = null; renderAll();
-}
-
 // ---------------------------------------------------------------- 7. event wiring
 function showTab(name) {
   if (S.ui.tab !== name) unpinCard();          // a card anchored in another tab must not linger
   S.ui.tab = name;
   $$('.tab').forEach((s) => s.classList.toggle('active', s.id === 'tab-' + name));
   lsSet('da.tab', name);
-  if (name === 'board' && (!S.board.loaded || S.board.leagueId !== get(S.session, 'league_id', null)) && !S.board.loading) loadBoard();
+  if (name === 'board' && (!S.board.loaded || S.board.leagueId !== boardKey()) && !S.board.loading) loadBoard();
   renderAll();
 }
 $$('#tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
@@ -1912,15 +2045,22 @@ $('settings-btn2').addEventListener('click', () => openSettings());
 $('settings-close').addEventListener('click', closeSettings);
 $('settings-modal').addEventListener('click', (ev) => { if (ev.target === $('settings-modal')) closeSettings(); });
 $('key-eye').addEventListener('click', () => { const i = $('set-key'); i.type = i.type === 'password' ? 'text' : 'password'; });
+$('espn-eye').addEventListener('click', () => { const i = $('set-espn-s2'); i.type = i.type === 'password' ? 'text' : 'password'; });
 $('settings-save').addEventListener('click', () => {
   S.settings.apiKey = $('set-key').value.trim();
   S.settings.accessCode = $('set-access').value.trim();
-  S.settings.model = MODELS.includes($('set-model').value) ? $('set-model').value : 'claude-opus-5';
+  S.settings.espnS2 = $('set-espn-s2').value.trim();
+  let swid = $('set-espn-swid').value.trim();
+  try { swid = decodeURIComponent(swid); } catch (e) { /* not URL-encoded */ }                   // some browsers show %7B...%7D
+  if (swid && !/^\{.*\}$/.test(swid)) swid = '{' + swid.replace(/^\{|\}$/g, '') + '}';    // ESPN wants the braces
+  S.settings.espnSwid = swid;
+  if ([S.settings.apiKey, S.settings.accessCode, S.settings.espnS2, S.settings.espnSwid].some((v) => /[^\x20-\x7e]/.test(v))) toast('a value contains characters that cannot go into an HTTP header — check what you pasted');
+  S.settings.model = MODELS.includes($('set-model').value) ? $('set-model').value : '';
   S.settings.theme = $('set-theme').value === 'light' ? 'light' : 'dark';
   saveSettings(); closeSettings();
-  S.ui.needAccess = false; S.failures = 0;
+  S.ui.espnAuthAsked = false; S.ui.espnDenied = null; S.failures = 0;
   toast('Settings saved', 'ok', 2000);
-  renderAll(); schedule(10);
+  renderAll(); schedule(10); verifyAccess();
   if (isMock() && S.state) mockAction('sync');
 });
 
@@ -1937,9 +2077,51 @@ $('lookup-btn').addEventListener('click', async () => {
   if (r) { S.ui.lookup = r; renderLookup(); } else setText($('lookup-info'), 'look-up failed.');
 });
 $('live-league').addEventListener('change', syncDraftToLeague);
+// ---- ESPN: platform switch, Load league (POST /api/lookup {platform: "espn"}), start
+$$('#platform-seg button').forEach((b) => b.addEventListener('click', () => {
+  if (b.disabled) return;
+  S.ui.platform = b.dataset.platform === 'espn' ? 'espn' : 'sleeper';
+  lsSet('da.platform', S.ui.platform);
+  renderPlatform();
+  $(S.ui.platform === 'espn' ? 'espn-league' : 'live-username').focus();
+}));
+function espnForm() {
+  const league_id = $('espn-league').value.trim().replace(/^.*leagueId=(\d+).*$/i, '$1');   // a pasted URL works too
+  const season = parseInt($('espn-season').value, 10) || num(get(S.status, 'season', null)) || null;
+  return { league_id: league_id, season: season };
+}
+async function espnLoad() {
+  const f = espnForm();
+  if (!f.league_id) { toast('enter the ESPN league id first (the leagueId= number in the league URL)'); $('espn-league').focus(); return; }
+  if (S.ui.espnLoading) return;
+  S.ui.espnLoading = true; S.ui.espnAuthAsked = false; S.ui.espn = null;
+  renderSetup(); renderEspnLookup();
+  setText($('espn-info'), 'loading league ' + f.league_id + (f.season ? ' (' + f.season + ')' : '') + '…');
+  const r = await post('/api/lookup', { platform: 'espn', league_id: f.league_id, season: f.season }, 'ESPN league', 60000);
+  S.ui.espnLoading = false;
+  if (r && r.platform === 'espn') { S.ui.espn = r; renderEspnLookup(); }
+  else setText($('espn-info'), r ? 'unexpected answer from the server' : 'could not load the league.');
+  renderSetup();
+}
+$('espn-load').addEventListener('click', espnLoad);
+for (const id of ['espn-league', 'espn-season']) $(id).addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); espnLoad(); } });   // Enter = Load league, not Start
+$('espn-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const f = espnForm();
+  if (!f.league_id) { toast('enter the ESPN league id first (the leagueId= number in the league URL)'); $('espn-league').focus(); return; }
+  const session = { mode: 'live', platform: 'espn', league_id: f.league_id, use_claude: true };
+  if (f.season) session.season = f.season;
+  const tid = parseInt($('espn-team').value, 10);
+  const slot = parseInt($('espn-slot').value, 10);
+  if (tid > 0) session.team_id = tid;
+  else if (slot > 0) session.slot = slot;                  // a slot only stands in when no team is chosen
+  // a loaded league for a different id is stale: the server resolves everything from the id anyway
+  if (S.ui.espn && String(get(S.ui.espn, 'league.league_id', '')) !== String(f.league_id)) delete session.team_id;
+  await startSession(session);
+});
 $('live-form').addEventListener('submit', async (ev) => {
   ev.preventDefault();
-  const session = { mode: 'live', use_claude: $('live-claude').checked };
+  const session = { mode: 'live', use_claude: true };
   const league_id = $('live-league').value, draft_id = $('live-draft').value, username = $('live-username').value.trim();
   const slot = parseInt($('live-slot').value, 10);
   if (league_id) session.league_id = league_id;
@@ -1957,19 +2139,13 @@ $('mock-form').addEventListener('submit', async (ev) => {
   const slot = Math.min(teams, Math.max(1, parseInt($('mock-slot').value, 10) || 1));
   const seedRaw = $('mock-seed').value.trim();
   const session = {
-    mode: 'mock', slot: slot, use_claude: $('mock-claude').checked,
+    mode: 'mock', slot: slot, use_claude: true,
     mock: { teams: teams, rounds: rounds, slot: slot, scoring: $('mock-scoring').value, superflex: $('mock-superflex').checked, seed: seedRaw === '' ? null : parseInt(seedRaw, 10) },
     picks: [],
   };
   S.ui.autopilot = $('mock-autopilot').checked;
   await startSession(session);
 });
-for (const sfx of ['', '2']) {
-  $('research-btn' + sfx).addEventListener('click', () => researchLoop($('research-top' + sfx).value));
-  $('research-stop' + sfx).addEventListener('click', stopResearch);
-}
-$('research-top').addEventListener('change', (ev) => { $('research-top2').value = ev.target.value; });
-$('research-top2').addEventListener('change', (ev) => { $('research-top').value = ev.target.value; });
 $$('.panel.collapsible > h2').forEach((h) => h.addEventListener('click', () => {
   const p = h.parentElement; p.classList.toggle('closed');
   lsSet('da.panel.' + p.id, p.classList.contains('closed'));
@@ -2003,8 +2179,6 @@ for (const id of ['best-tbl', 'avail-tbl', 'pos-grid', 'roster-tbl', 'recent-tbl
 $('card-pop').addEventListener('mouseenter', () => clearTimeout(_hideTimer));
 $('card-pop').addEventListener('mouseleave', unhoverCard);
 $('card-pop').addEventListener('click', async (ev) => {
-  const b = ev.target.closest('button[data-research]');
-  if (b) { ev.preventDefault(); researchPlayer(b.dataset.research); return; }
   const a = ev.target.closest('a[data-explain], a[data-draft]');
   if (!a) return;
   ev.preventDefault();
@@ -2044,10 +2218,13 @@ $('board-reload').addEventListener('click', loadBoard);
 (async function boot() {
   loadSettings(); applyTheme();
   for (const p of $$('.panel.collapsible')) { const closed = lsGet('da.panel.' + p.id, null); if (typeof closed === 'boolean') p.classList.toggle('closed', closed); }
+  S.ui.platform = lsGet('da.platform', 'sleeper') === 'espn' ? 'espn' : 'sleeper';
+  renderPlatform();
   const tab = lsGet('da.tab', 'setup');
   showTab(TABS.includes(tab) ? tab : 'setup');
   if (lsGet('da.chatOpen', false) === true && window.innerWidth >= 1200) setChatOpen(true);
   await loadStatus();
+  verifyAccess();
   await resumeSession();
   renderAll();
   schedule(10);

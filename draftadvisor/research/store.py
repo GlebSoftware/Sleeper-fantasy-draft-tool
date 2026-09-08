@@ -1,9 +1,10 @@
-"""Research-note storage: local JSON files, Vercel Blob, or process memory.
+"""Read-only access to the legacy research notes: local JSON files, Vercel Blob, or process memory.
 
-The stateless web server persists Claude research notes here so every request
-(and every serverless instance) sees the same notes. Selection order in
-:func:`make_store`: Vercel Blob when ``BLOB_READ_WRITE_TOKEN`` is set, else the
-local data directory when writable, else memory (lost on restart).
+Earlier versions of the app researched players with Claude and wrote one note per player; that loop
+is gone (DESIGN.md §3.5) and nothing writes notes any more. The stateless web server still *reads*
+whatever notes exist so their red flags and risk numbers keep showing up on the cards and in the
+projections. Selection order in :func:`make_store`: Vercel Blob when ``BLOB_READ_WRITE_TOKEN`` is
+set, else the local data directory, else memory (always empty).
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import httpx
 
@@ -33,14 +34,13 @@ class NoteStore:
     def get(self, player_id: str) -> dict | None:
         return self.get_all().get(str(player_id))
 
-    def put(self, player_id: str, note: Mapping[str, Any]) -> None:
-        raise NotImplementedError
-
     def count(self) -> int:
         return len(self.get_all())
 
 
 class MemoryNoteStore(NoteStore):
+    """No notes at all (the fallback when the data directory is not writable)."""
+
     backend = "memory"
 
     def __init__(self) -> None:
@@ -49,12 +49,9 @@ class MemoryNoteStore(NoteStore):
     def get_all(self) -> dict[str, dict]:
         return dict(self._notes)
 
-    def put(self, player_id: str, note: Mapping[str, Any]) -> None:
-        self._notes[str(player_id)] = dict(note)
-
 
 class LocalNoteStore(NoteStore):
-    """One JSON file per player under ``<dir>/<player_id>.json`` (same layout as ClaudeResearcher)."""
+    """One JSON file per player under ``<dir>/<player_id>.json`` (the layout the old researcher wrote)."""
 
     backend = "local"
 
@@ -78,17 +75,9 @@ class LocalNoteStore(NoteStore):
         self._cache, self._cache_at = out, time.time()
         return dict(out)
 
-    def put(self, player_id: str, note: Mapping[str, Any]) -> None:
-        p = self.dir / f"{player_id}.json"
-        tmp = p.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(dict(note)), encoding="utf-8")
-        tmp.replace(p)
-        if self._cache is not None:
-            self._cache[str(player_id)] = dict(note)
-
 
 class BlobNoteStore(NoteStore):
-    """Vercel Blob (REST API) with a short in-memory cache; thread-safe."""
+    """Vercel Blob (REST API, list + download only) with a short in-memory cache; thread-safe."""
 
     backend = "blob"
 
@@ -101,10 +90,8 @@ class BlobNoteStore(NoteStore):
         self._cache_at = 0.0
         self._lock = threading.Lock()
 
-    def _headers(self, **extra: str) -> dict[str, str]:
-        h = {"Authorization": f"Bearer {self.token}", "x-api-version": BLOB_API_VERSION}
-        h.update(extra)
-        return h
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.token}", "x-api-version": BLOB_API_VERSION}
 
     def _refresh(self) -> None:
         notes: dict[str, dict] = {}
@@ -144,16 +131,6 @@ class BlobNoteStore(NoteStore):
             log.warning("blob list failed: %s", e)
         with self._lock:
             return dict(self._cache)
-
-    def put(self, player_id: str, note: Mapping[str, Any]) -> None:
-        path = f"{self.prefix}{player_id}.json"
-        with httpx.Client(timeout=self.timeout) as c:
-            r = c.put(f"{BLOB_API}/{path}", content=json.dumps(dict(note)).encode(),
-                      headers=self._headers(**{"x-content-type": "application/json", "x-add-random-suffix": "0",
-                                               "x-allow-overwrite": "1", "x-cache-control-max-age": "0"}))
-            r.raise_for_status()
-        with self._lock:
-            self._cache[str(player_id)] = dict(note)
 
 
 def make_store(home: Path | None = None) -> NoteStore:

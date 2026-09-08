@@ -16,7 +16,7 @@ except ImportError:  # pragma: no cover
 
 from ..config import DEFAULT_SEASON, SKILL_POSITIONS
 from ..models import Player
-from .crosswalk import Crosswalk, _clean_id, normalize_name
+from .crosswalk import Crosswalk, _clean_espn_id, _clean_id, normalize_name
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +63,7 @@ def player_from_sleeper(pid: str, p: Mapping) -> Player | None:
         depth_chart_position=p.get("depth_chart_position"),
         search_rank=_i(p.get("search_rank")),
         gsis_id=p.get("gsis_id"),
+        espn_id=_clean_espn_id(p.get("espn_id")),
         metadata={k: p.get(k) for k in ("number", "college", "height", "weight", "birth_date", "news_updated",
                                          "injury_notes", "injury_body_part", "practice_participation") if p.get(k) is not None},
     )
@@ -117,7 +118,7 @@ def players_from_crosswalk(cw: Crosswalk, roster: pd.DataFrame | None = None, se
             continue
         sid = f"{SYNTHETIC_ID_PREFIX}{g}"
         cw.add(sid, gsis_id=g, pfr_id=d.get("pfr_id"), name=d.get("full_name"), position=pos,
-               team=d.get("team"), years_exp=d.get("years_exp"), status=d.get("status"),
+               espn_id=d.get("espn_id"), team=d.get("team"), years_exp=d.get("years_exp"), status=d.get("status"),
                birth_date=d.get("birth_date"), draft_number=d.get("draft_number"), entry_year=d.get("entry_year"))
         synthetic.append(f"{d.get('full_name')} {pos} {d.get('team')}")
     if synthetic:
@@ -158,6 +159,7 @@ def players_from_crosswalk(cw: Crosswalk, roster: pd.DataFrame | None = None, se
             depth_chart_order=None,
             gsis_id=g,
             fantasypros_id=cw.sleeper_to_fp.get(sid),
+            espn_id=cw.espn_for(sid),
             draft_year=draft_year,
             draft_round=_i(a.get("draft_round")),
             draft_pick_overall=_i(a.get("draft_ovr")) or _i(ro.get("draft_number")),
@@ -172,6 +174,7 @@ def enrich_players(players: dict[str, Player], cw: Crosswalk, ecr: pd.DataFrame 
         a = cw.attrs.get(sid, {})
         pl.gsis_id = pl.gsis_id or cw.gsis_for(sid)
         pl.fantasypros_id = pl.fantasypros_id or cw.sleeper_to_fp.get(sid)
+        pl.espn_id = pl.espn_id or cw.espn_for(sid)
         pl.draft_year = pl.draft_year or _i(a.get("draft_year")) or _i(a.get("entry_year"))
         pl.draft_round = pl.draft_round or _i(a.get("draft_round"))
         pl.draft_pick_overall = pl.draft_pick_overall or _i(a.get("draft_ovr")) or _i(a.get("draft_number"))

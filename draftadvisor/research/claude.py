@@ -1,40 +1,26 @@
-"""Optional Claude (Sonnet) layer: per-player research notes, on-the-clock advice, free-form Q&A.
+"""Claude chat layer: the only code in the project that calls the Anthropic API.
 
-See DESIGN.md §3.5. Everything in here is optional: when no API key is available
-:class:`ClaudeResearcher` reports ``enabled == False`` and every method returns
-``None`` / ``{}`` / ``""`` immediately. The ``anthropic`` SDK is imported lazily
-(first real request), so importing this module never touches the network stack.
+See DESIGN.md §3.5. There are exactly two entry points and both are user-initiated:
 
-Design notes
-------------
-* Research notes are cached as JSON under ``research_dir()/notes/<player_id>.json``
-  (``ResearchNote.to_dict``) and reused while younger than ``max_age_days``.
-  Notes marked "(research unavailable)" (refusal / error) are retried on the next
-  run instead of being treated as fresh.
-* ``on_the_clock_advice`` is the only call on the draft loop's critical path. It
-  streams a short answer with thinking **disabled** and ``effort="low"`` (on
-  ``claude-sonnet-5`` an omitted ``thinking`` runs adaptive thinking, whose
-  tokens count against ``max_tokens`` and could leave a truncated or empty
-  answer on the 30-second clock), enforces ``asyncio.wait_for``, de-duplicates
-  concurrent requests for the same draft state and caches results by
-  ``(state.version, top candidate ids)``. The result is stored from a task
-  done-callback, so a lookahead request whose awaiter was cancelled by the draft
-  loop still lands in the cache instead of being paid for twice. It never raises.
-  ``stop_reason == "max_tokens"`` is treated as a failure (``None`` +
-  ``last_error``) rather than showing a half sentence as the pick.
-* Research requests fail fast: a 400/401/403/404 (bad key, no model access,
-  rejected schema, wrong model id) stops the whole run with ``last_error`` set
-  and returns the notes gathered so far; a 429 pauses every worker for the
-  server's ``retry-after`` and retries that player once. ``last_run_stats``
-  (``ok`` / ``failed`` / ``cached`` / ``skipped``) describes the last run.
-* Prompt caching: no ``cache_control`` markers are sent. The advice system prompt
-  is ~300 tokens and the research/ask prompts are shorter, all below the 1024-token
-  minimum cacheable prefix on Sonnet 5, so a marker would be silently ignored;
-  padding the prompt past 1024 tokens would cost more per cache miss (write
-  premium + extra input tokens) than it saves, and in a 12-team draft my picks are
-  ~6 minutes apart, longer than the 5-minute cache TTL. The advice system prompt is
-  still built once per league and kept byte-identical because it is cheap and
-  deterministic, not because it is cached.
+* :meth:`ClaudeChat.chat_stream` - the web app's ``POST /api/chat`` (the user typed a message);
+* :meth:`ClaudeChat.ask` - the CLI ``ask`` command (the user asked a question).
+
+Nothing here (or anywhere else) calls Claude on a timer, on a poll, on a draft-state change or
+in a loop. The former per-player research loop (web search) and the automatic on-the-clock
+advice were removed because they ran up a large bill; every remaining call is one request per
+user action and reports its token usage and an estimated cost.
+
+Everything is optional: when no API key is available :class:`ClaudeChat` reports
+``enabled == False``, ``chat_stream`` raises ``RuntimeError`` and ``ask`` returns ``""``. The
+``anthropic`` SDK is imported lazily (first real request), so importing this module never
+touches the network stack.
+
+Research notes that earlier versions wrote under ``research_dir()/notes/<player_id>.json`` are
+still read (:meth:`ClaudeChat.load_notes`) so their red flags and risk numbers keep showing up
+in the context text and the projections; nothing writes new ones.
+
+Prompt caching: no ``cache_control`` markers are sent. The chat and ask system prompts are far
+below the 1024-token minimum cacheable prefix, so a marker would be silently ignored.
 """
 from __future__ import annotations
 
@@ -42,132 +28,67 @@ import asyncio
 import json
 import logging
 import os
-import re
-import time
-from datetime import date
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Mapping
 
-from ..config import (
-    CLAUDE_MODEL,
-    CLAUDE_ON_CLOCK_TIMEOUT_S,
-    CLAUDE_RESEARCH_CONCURRENCY,
-    DEFAULT_SEASON,
-    SKILL_POSITIONS,
-    SLOT_ELIGIBILITY,
-    research_dir,
-)
-from ..models import (
-    DraftState,
-    LeagueSettings,
-    Pick,
-    Player,
-    Projection,
-    Recommendation,
-    ResearchNote,
-)
+from ..config import CLAUDE_MODEL, SKILL_POSITIONS, SLOT_ELIGIBILITY, research_dir
+from ..models import DraftState, LeagueSettings, Pick, Player, Recommendation, ResearchNote
 
 log = logging.getLogger(__name__)
 
 __all__ = [
+    "ClaudeChat",
     "ClaudeResearcher",
+    "CHAT_MODEL",
+    "CHAT_MAX_TURNS",
+    "CHAT_MAX_CHARS",
+    "MODEL_PRICES_USD_PER_MTOK",
+    "estimate_cost_usd",
+    "model_prices",
+    "trim_transcript",
+    "usage_dict",
     "build_context_text",
     "describe_scoring",
     "describe_roster_slots",
     "UNAVAILABLE_SUMMARY",
-    "RESEARCH_SCHEMA",
-    "ResearchAborted",
 ]
 
-#: Summary text stored in a minimal note when research failed / was refused.
+#: Summary text of a legacy note whose research failed; such notes are ignored in the context text.
 UNAVAILABLE_SUMMARY = "(research unavailable)"
 
-#: Number of candidates shown to Claude on the clock (and used in the cache key).
-ADVICE_TOP_N = 8
+#: Number of candidates listed in the context text.
+CONTEXT_TOP_N = 8
 #: Number of most recent picks shown in the context.
 RECENT_PICKS_N = 6
 
-WEB_SEARCH_TOOL: dict[str, Any] = {"type": "web_search_20260209", "name": "web_search", "max_uses": 4}
-
-#: Output budget for on-the-clock advice (thinking disabled, 2-4 plain sentences).
-ADVICE_MAX_TOKENS = 600
-#: Output budget for one research request (adaptive thinking + up to 3 searches share it) and
-#: the larger budget used for the single retry after ``stop_reason == "max_tokens"``.
-RESEARCH_MAX_TOKENS = 4096
-RESEARCH_RETRY_MAX_TOKENS = 12288
-#: Output budget for :meth:`ClaudeResearcher.ask`.
+#: Output budget for :meth:`ClaudeChat.ask`.
 ASK_MAX_TOKENS = 1500
 #: Appended to an ``ask`` answer that hit ``max_tokens``.
 TRUNCATION_MARKER = "\n\n[answer truncated: max_tokens reached]"
 
-#: HTTP statuses that mean the run cannot succeed (bad key, no access, rejected request, wrong
-#: model id). One of these aborts a research run instead of burning every remaining request.
-FATAL_STATUS_CODES = frozenset({400, 401, 403, 404})
-FATAL_ERROR_NAMES = frozenset({"AuthenticationError", "PermissionDeniedError", "BadRequestError", "NotFoundError"})
-#: Pause applied to every research worker after a 429 when the server sends no ``retry-after``.
-RATE_LIMIT_DEFAULT_PAUSE_S = 15.0
-RATE_LIMIT_MAX_PAUSE_S = 120.0
-#: Content-block types of the server-side web search tool (answer text follows the last one).
-SERVER_TOOL_BLOCK_TYPES = frozenset({"server_tool_use", "web_search_tool_result"})
-
-
-class ResearchAborted(Exception):
-    """Raised inside a research run when a fatal API error makes further requests pointless."""
-
-
-#: Structured-output schema for a research note.
-RESEARCH_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "summary": {"type": "string", "description": "<= 60 words: current situation, role, health, outlook."},
-        "injury_risk": {"type": "number", "description": "0 (healthy, durable) .. 1 (currently out / very likely to miss games)."},
-        "role_certainty": {"type": "number", "description": "0 (role unknown / committee / may lose job) .. 1 (locked-in starter)."},
-        "upside": {"type": "string", "description": "<= 25 words: best case."},
-        "downside": {"type": "string", "description": "<= 25 words: worst case."},
-        "offfield_risk": {"type": "number", "description": "0 (nothing found) .. 1 (suspension / legal case / holdout very likely to cost games this season)."},
-        "red_flags": {"type": "array", "items": {"type": "string"},
-                      "description": "0-6 short, concrete concerns with a date or source hint, e.g. 'Hamstring: DNP Aug 28-30', 'Facing DUI charge (arrest Jul 2026)', 'Trade request, holding out', 'Lost RB1 job to X in camp', 'Beat writers expect a committee'. Empty when nothing credible was found."},
-        "sources": {"type": "array", "items": {"type": "string"}, "description": "URLs consulted."},
-    },
-    "required": ["summary", "injury_risk", "role_certainty", "upside", "downside", "offfield_risk", "red_flags", "sources"],
-    "additionalProperties": False,
-}
-
-RESEARCH_SYSTEM_PROMPT = (
-    "You are a sharp, sceptical fantasy-football analyst preparing draft notes for the {season} NFL "
-    "season (redraft). For the player you are given, use web search (up to 4 searches; search the player's "
-    "name with terms like 'injury', 'news', 'suspension', 'arrest OR lawsuit OR investigation', 'depth chart', "
-    "'holdout OR trade request', and check the last few weeks first) to find what could make him score more "
-    "or less than his projection: (1) injuries - current status, practice participation, surgery/rehab "
-    "timelines, chronic issues; (2) OFF-FIELD risk - arrests, charges, lawsuits, domestic-violence "
-    "allegations, league investigations, PED or conduct suspensions (pending or served), contract holdouts, "
-    "trade requests, retirement talk; (3) role - depth-chart position, camp competition, benching, committee "
-    "talk, coaching/scheme/QB changes, target or carry share expectations; (4) market commentary - beat "
-    "reporters and analysts calling him a bust, a breakout, overdrafted or a value. Then fill the JSON schema. "
-    "red_flags must be concrete and dated where possible; put only things you actually found. Be factual and "
-    "current; if you cannot find reliable recent information, say so in the summary and use moderate values "
-    "(injury_risk 0.1-0.2, role_certainty 0.5, offfield_risk 0). Never invent sources or incidents."
-)
-
-ADVICE_STRATEGY_GUIDANCE = (
-    "Advice principles: the numbers you receive are league-scored season projections; VORP is points over "
-    "positional replacement; 'avail' is the probability the player is still there at the manager's next pick. "
-    "Prefer the best value that fills a starting need; take a player before a tier break at a scarce position; "
-    "if the top option is very likely (>=85%) to be available at the next pick, consider taking a scarcer player "
-    "now and him later; do not draft K/DEF before the last three rounds; treat bye-week overlap as a minor tie-breaker; "
-    "weigh injury/role notes but do not over-react to a single report. "
-    "Respond in 2-4 short sentences of plain text (no markdown, no lists, no preamble): name the pick, give the key "
-    "reason, and name the fallback if that player is gone."
-)
-
-#: Chat model (the conversational second opinion); research stays on the lighter Sonnet.
+#: Chat model for the web app (``DRAFTADVISOR_CHAT_MODEL`` overrides it per deployment).
 CHAT_MODEL = "claude-opus-5"
+
+#: Transcript limits the web endpoint applies before a request goes out (:func:`trim_transcript`):
+#: the newest turns win, so a long chat costs a bounded number of input tokens per message.
+CHAT_MAX_TURNS = 40
+CHAT_MAX_CHARS = 60_000
+
+#: USD per million tokens (input, output) for the models the app offers.
+MODEL_PRICES_USD_PER_MTOK: dict[str, tuple[float, float]] = {
+    "claude-opus-5": (5.0, 25.0),
+    "claude-sonnet-5": (2.0, 10.0),
+}
+#: Cache reads are billed at 10 % of the input price, cache writes at 125 %.
+CACHE_READ_PRICE_FACTOR = 0.1
+CACHE_WRITE_PRICE_FACTOR = 1.25
+USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
 
 CHAT_SYSTEM_PROMPT = (
     "You are a fantasy-football draft strategist sitting next to a manager during a live Sleeper draft. "
     "Each user message may begin with a [Live draft context] block: the league scoring, the manager's roster and "
     "open needs, their upcoming pick numbers, the engine's current recommendations (projected league points, "
-    "value over replacement, availability at their next pick, tiers, reasons) and research notes with red flags. "
+    "value over replacement, availability at their next pick, tiers, reasons) and any notes with red flags. "
     "Treat that block as the current truth about the draft; it is generated by software, not typed by the user. "
     "Answer the question directly, disagree with the engine when the evidence supports it, quantify trade-offs "
     "(points, tiers, availability), name concrete players, and keep answers short enough to read on a pick clock "
@@ -186,58 +107,11 @@ ASK_SYSTEM_PROMPT = (
 # ---------------------------------------------------------------------------
 
 
-def _clamp01(x: Any, default: float) -> float:
-    try:
-        v = float(x)
-    except (TypeError, ValueError):
-        return default
-    if v != v:  # NaN
-        return default
-    return max(0.0, min(1.0, v))
-
-
 def _describe_error(exc: BaseException) -> str:
     name = type(exc).__name__
     status = getattr(exc, "status_code", None)
     text = str(exc).replace("\n", " ")[:200]
     return f"{name}({status}): {text}" if status else f"{name}: {text}"
-
-
-def _error_kind(exc: BaseException) -> str:
-    """Classify an API error without importing the SDK: ``"fatal"`` (400/401/403/404 - the run
-    cannot succeed), ``"rate_limit"`` (429) or ``"other"`` (retryable / unknown)."""
-    status = getattr(exc, "status_code", None)
-    name = type(exc).__name__
-    if status in FATAL_STATUS_CODES or name in FATAL_ERROR_NAMES:
-        return "fatal"
-    if status == 429 or name == "RateLimitError":
-        return "rate_limit"
-    return "other"
-
-
-def _retry_after_seconds(exc: BaseException) -> float:
-    """``retry-after`` from a 429 response (seconds; HTTP-date form falls back to the default), clamped."""
-    delay = RATE_LIMIT_DEFAULT_PAUSE_S
-    headers = getattr(getattr(exc, "response", None), "headers", None)
-    raw = None
-    if headers is not None:
-        try:
-            raw = headers.get("retry-after")
-        except Exception:  # unusual header container
-            raw = None
-    if raw is not None:
-        try:
-            delay = float(raw)
-        except (TypeError, ValueError):
-            delay = RATE_LIMIT_DEFAULT_PAUSE_S
-    return max(0.0, min(RATE_LIMIT_MAX_PAUSE_S, delay))
-
-
-def _supports_thinking_disabled(model: str) -> bool:
-    """``thinking={"type": "disabled"}`` is accepted on Sonnet/Opus/Haiku ids but returns 400 on the
-    Fable / Mythos line (thinking is always on there); those must omit the parameter."""
-    m = (model or "").lower()
-    return not ("fable" in m or "mythos" in m)
 
 
 def _text_blocks(message: Any) -> list[str]:
@@ -251,62 +125,83 @@ def _text_blocks(message: Any) -> list[str]:
     return out
 
 
-def _answer_text_blocks(message: Any) -> list[str]:
-    """Text blocks after the last server-tool block (the structured answer once searching is
-    done); the whole text list when there were no tool blocks or nothing follows them."""
-    blocks = list(getattr(message, "content", None) or [])
-    last_tool = -1
-    for i, block in enumerate(blocks):
-        if getattr(block, "type", None) in SERVER_TOOL_BLOCK_TYPES:
-            last_tool = i
-    tail: list[str] = []
-    for block in blocks[last_tool + 1:]:
-        if getattr(block, "type", None) == "text":
-            text = getattr(block, "text", None)
-            if text:
-                tail.append(str(text))
-    return tail or _text_blocks(message)
-
-
 def _response_text(message: Any) -> str:
     return "\n".join(_text_blocks(message)).strip()
 
 
-def _parse_json_object(texts: Iterable[str]) -> dict[str, Any] | None:
-    """Parse the JSON object Claude produced: each block alone (last first), then the blocks
-    concatenated with ``''`` (a structured answer may be split across blocks by citations; a
-    newline inside a string literal would make it invalid) sliced at the outer braces."""
-    texts = [t for t in texts if t]
-    for candidate in reversed(texts):
-        try:
-            obj = json.loads(candidate)
-        except ValueError:
-            continue
-        if isinstance(obj, dict):
-            return obj
-    joined = "".join(texts)
-    start, end = joined.find("{"), joined.rfind("}")
-    if 0 <= start < end:
-        try:
-            obj = json.loads(joined[start:end + 1])
-        except ValueError:
-            return None
-        if isinstance(obj, dict):
-            return obj
+def _usage_int(usage: Any, key: str) -> int | None:
+    value = usage.get(key) if isinstance(usage, Mapping) else getattr(usage, key, None)
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def usage_dict(usage: Any) -> dict[str, int | None]:
+    """The four token counters of an SDK ``Usage`` object (or a dict) as a plain dict."""
+    return {key: _usage_int(usage, key) for key in USAGE_KEYS}
+
+
+def model_prices(model: str | None) -> tuple[float, float] | None:
+    """(input, output) USD per million tokens for ``model`` (exact id, or a dated variant of one)."""
+    name = (model or "").strip().lower()
+    if not name:
+        return None
+    hit = MODEL_PRICES_USD_PER_MTOK.get(name)
+    if hit is not None:
+        return hit
+    for key, prices in MODEL_PRICES_USD_PER_MTOK.items():
+        if name.startswith(key):
+            return prices
     return None
 
 
-def _parse_research_response(response: Any) -> dict[str, Any] | None:
-    """Structured note from a research response; prefers the text after the last search block."""
-    answer = _answer_text_blocks(response)
-    data = _parse_json_object(answer)
-    if data is None:
-        everything = _text_blocks(response)
-        if everything != answer:
-            data = _parse_json_object(everything)
-    if data is None and log.isEnabledFor(logging.DEBUG):
-        log.debug("research response not parseable as JSON; raw text blocks: %r", _text_blocks(response))
-    return data
+def estimate_cost_usd(model: str | None, usage: Any) -> float | None:
+    """Estimated USD cost of one response from its ``usage`` (dict or SDK object).
+
+    ``input_tokens`` / ``output_tokens`` are billed at the list price, ``cache_read_input_tokens``
+    at 10 % of the input price and ``cache_creation_input_tokens`` at 125 %. ``None`` when the
+    model is not in :data:`MODEL_PRICES_USD_PER_MTOK` or the usage carries no token counts.
+    """
+    prices = model_prices(model)
+    if prices is None or usage is None:
+        return None
+    counts = usage_dict(usage)
+    if counts["input_tokens"] is None and counts["output_tokens"] is None:
+        return None
+    in_price, out_price = prices
+    total = (counts["input_tokens"] or 0) * in_price + (counts["output_tokens"] or 0) * out_price
+    total += (counts["cache_read_input_tokens"] or 0) * in_price * CACHE_READ_PRICE_FACTOR
+    total += (counts["cache_creation_input_tokens"] or 0) * in_price * CACHE_WRITE_PRICE_FACTOR
+    return round(total / 1_000_000.0, 6)
+
+
+def _turn_len(turn: Mapping[str, Any]) -> int:
+    return len(str(turn.get("content") or "")) if isinstance(turn, Mapping) else 0
+
+
+def trim_transcript(messages: list[dict[str, Any]], *, max_turns: int = CHAT_MAX_TURNS,
+                    max_chars: int = CHAT_MAX_CHARS) -> list[dict[str, Any]]:
+    """The newest turns of ``messages`` that fit within ``max_turns`` and ``max_chars`` of content.
+
+    Turns are dropped oldest first; the last turn is always kept (the caller rejects a single turn
+    that is too long on its own). Leading assistant turns left over after the cut are dropped too,
+    so the transcript still starts with a user turn as the API requires.
+    """
+    kept: list[dict[str, Any]] = []
+    total = 0
+    for turn in reversed(messages):
+        size = _turn_len(turn)
+        if kept and (len(kept) >= max_turns or total + size > max_chars):
+            break
+        kept.append(turn)
+        total += size
+    kept.reverse()
+    while kept and isinstance(kept[0], Mapping) and kept[0].get("role") != "user":
+        kept.pop(0)
+    return kept
 
 
 def _player_line(pl: Player, points: float | None = None) -> str:
@@ -322,7 +217,7 @@ def _player_line(pl: Player, points: float | None = None) -> str:
 
 
 def describe_scoring(league: LeagueSettings | None) -> str:
-    """One-line human description of the league scoring (stable text for the cached system prompt)."""
+    """One-line human description of the league scoring."""
     if league is None:
         return "scoring unknown (assume half-PPR)"
     s = league.scoring_settings or {}
@@ -368,7 +263,7 @@ def describe_roster_slots(league: LeagueSettings | None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Context text (shared by advice and ask)
+# Context text (shared by chat and ask)
 # ---------------------------------------------------------------------------
 
 
@@ -422,9 +317,9 @@ def _roster_section(state: DraftState, rec: Recommendation | None, players: dict
     return lines
 
 
-def _candidate_lines(rec: Recommendation, notes: dict[str, ResearchNote] | None) -> list[str]:
-    lines = [f"TOP {min(ADVICE_TOP_N, len(rec.best_overall))} CANDIDATES (by model score):"]
-    for i, pv in enumerate(rec.best_overall[:ADVICE_TOP_N], start=1):
+def _candidate_lines(rec: Recommendation, notes: Mapping[str, ResearchNote] | None) -> list[str]:
+    lines = [f"TOP {min(CONTEXT_TOP_N, len(rec.best_overall))} CANDIDATES (by model score):"]
+    for i, pv in enumerate(rec.best_overall[:CONTEXT_TOP_N], start=1):
         pl, pr = pv.player, pv.projection
         head = (
             f"  {i}. {_player_line(pl)} - {pr.points:.0f} pts, VORP {pv.vorp:+.0f}, "
@@ -477,7 +372,7 @@ def build_context_text(
     state: DraftState,
     rec: Recommendation | None,
     players: dict[str, Player],
-    notes: dict[str, ResearchNote] | None,
+    notes: Mapping[str, ResearchNote] | None,
 ) -> str:
     """Compact plain-text picture of the draft for Claude (roster, needs, candidates, picks, pressure)."""
     draft = state.draft
@@ -523,19 +418,15 @@ def build_context_text(
 
 
 # ---------------------------------------------------------------------------
-# Researcher
+# Chat client
 # ---------------------------------------------------------------------------
 
 
-class ClaudeResearcher:
-    """Optional Claude layer. Safe to construct anywhere; does nothing when disabled."""
+class ClaudeChat:
+    """User-initiated Claude access (web chat + CLI ask). Safe to construct anywhere; does nothing when disabled."""
 
-    #: Upper bound for one research request (web search included).
-    research_timeout_s: float = 120.0
     #: Upper bound for :meth:`ask`.
     ask_timeout_s: float = 120.0
-    #: Max cached advice entries kept in memory.
-    _ADVICE_CACHE_MAX = 64
 
     def __init__(
         self,
@@ -545,20 +436,15 @@ class ClaudeResearcher:
         client: Any = None,
     ) -> None:
         self._api_key = api_key or os.environ.get("ANTHROPIC_API_KEY") or None
+        #: Model used by :meth:`ask` (``chat_stream`` takes its own ``model`` argument).
         self.model = model or CLAUDE_MODEL
         self._cache_dir = Path(cache_dir) if cache_dir is not None else None
         self._client = client
         self._sdk_unavailable = False
         self.last_error: str | None = None
-        #: Outcome of the last :meth:`research_players` run: ``ok`` (parsed notes), ``failed``
-        #: (minimal notes / fatal error), ``cached`` (fresh notes reused), ``skipped`` (not
-        #: attempted because the run was aborted).
-        self.last_run_stats: dict[str, int] = {"ok": 0, "failed": 0, "cached": 0, "skipped": 0}
-        self.season: int = DEFAULT_SEASON
-        self._advice_cache: dict[tuple, str] = {}
-        self._advice_inflight: dict[tuple, "asyncio.Task[str | None]"] = {}
-        self._system_cache: dict[str, str] = {}
-        self._rate_limited_until: float = 0.0  # loop.time() deadline shared by research workers
+        #: Token usage / estimated cost of the last completed request (``ask`` or ``chat_stream``).
+        self.last_usage: dict[str, int | None] | None = None
+        self.last_cost_usd: float | None = None
         self.request_count = 0
 
     # -- state ----------------------------------------------------------------
@@ -588,13 +474,18 @@ class ClaudeResearcher:
         self._client = anthropic.AsyncAnthropic(api_key=self._api_key, max_retries=2)
         return self._client
 
-    # -- notes on disk --------------------------------------------------------
-    def _note_path(self, player_id: str) -> Path:
-        safe = re.sub(r"[^A-Za-z0-9_.-]", "_", str(player_id))
-        return self.notes_dir / f"{safe}.json"
+    def _record_usage(self, model: str | None, response: Any) -> None:
+        self.request_count += 1
+        usage = getattr(response, "usage", None)
+        self.last_usage = usage_dict(usage) if usage is not None else None
+        self.last_cost_usd = estimate_cost_usd(model, self.last_usage) if self.last_usage else None
 
+    # -- legacy notes on disk ---------------------------------------------------
     def load_notes(self) -> dict[str, ResearchNote]:
-        """Read every cached note from ``notes_dir`` (corrupt files are skipped)."""
+        """Read every note left by earlier research runs from ``notes_dir`` (corrupt files are skipped).
+
+        Read-only: nothing in the project writes notes any more.
+        """
         out: dict[str, ResearchNote] = {}
         d = self.notes_dir
         if not d.is_dir():
@@ -609,194 +500,15 @@ class ClaudeResearcher:
             out[note.player_id] = note
         return out
 
-    def save_note(self, note: ResearchNote) -> None:
-        """Atomically write one note to disk (errors are logged, never raised)."""
-        path = self._note_path(note.player_id)
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_suffix(".json.tmp")
-            with open(tmp, "w", encoding="utf-8") as fh:
-                json.dump(note.to_dict(), fh, indent=1)
-            os.replace(tmp, path)
-        except OSError as exc:
-            log.warning("could not write research note %s: %s", path, _describe_error(exc))
-
-    @staticmethod
-    def _is_fresh(note: ResearchNote | None, max_age_days: float) -> bool:
-        if note is None or note.summary == UNAVAILABLE_SUMMARY:
-            return False
-        return (time.time() - note.generated_at) <= max_age_days * 86400.0
-
-    def _minimal_note(self, player_id: str, reason: str) -> ResearchNote:
-        log.info("research unavailable for %s: %s", player_id, reason)
-        return ResearchNote(
-            player_id=player_id, summary=UNAVAILABLE_SUMMARY, injury_risk=0.0, role_certainty=0.5,
-            upside="", downside="", sources=[], generated_at=time.time(), model=None,
-        )
-
-    # -- research -------------------------------------------------------------
-    async def research_players(
-        self,
-        players: list[Player],
-        projections: dict[str, Projection] | None = None,
-        max_age_days: float = 3,
-        concurrency: int = CLAUDE_RESEARCH_CONCURRENCY,
-        progress: Callable[[int, int, str], None] | None = None,
-    ) -> dict[str, ResearchNote]:
-        """Research each player (one web-search request each), caching notes on disk.
-
-        Returns notes for every requested player that was attempted (fresh cached notes are
-        reused without a request; per-player failures yield a minimal "(research unavailable)"
-        note so callers never block). A fatal API error (bad key, no model access, rejected
-        request, wrong model id) aborts the run: ``last_error`` is set, the remaining players are
-        left un-researched (no note written, so they are retried next run) and whatever was
-        gathered is returned. ``last_run_stats`` summarises the run.
-        """
-        stats = {"ok": 0, "failed": 0, "cached": 0, "skipped": 0}
-        self.last_run_stats = stats
-        if not players:
-            return {}
-        cached = self.load_notes()
-        result: dict[str, ResearchNote] = {}
-        todo: list[Player] = []
-        seen: set[str] = set()
-        for pl in players:
-            if pl.player_id in seen:
-                continue
-            seen.add(pl.player_id)
-            note = cached.get(pl.player_id)
-            if self._is_fresh(note, max_age_days):
-                result[pl.player_id] = note  # type: ignore[assignment]
-                stats["cached"] += 1
-            else:
-                todo.append(pl)
-        if not todo:
-            return result
-        if not self.enabled or self._get_client() is None:
-            log.info("Claude disabled: %d players left un-researched", len(todo))
-            stats["skipped"] = len(todo)
-            return result
-        log.info("researching %d players (%d cached)", len(todo), len(result))
-        sem = asyncio.Semaphore(max(1, int(concurrency)))
-        total, done = len(todo), 0
-        aborted = False
-
-        async def one(pl: Player) -> None:
-            nonlocal done, aborted
-            if aborted:
-                stats["skipped"] += 1
-                return
-            async with sem:
-                if aborted:  # a sibling hit a fatal error while we waited for the semaphore
-                    stats["skipped"] += 1
-                    return
-                proj = (projections or {}).get(pl.player_id)
-                try:
-                    note = await self._research_one(pl, proj)
-                except ResearchAborted as exc:
-                    if not aborted:
-                        log.error("research aborted: %s", exc)
-                    aborted = True
-                    stats["failed"] += 1
-                    return
-            self.save_note(note)
-            result[pl.player_id] = note
-            stats["ok" if note.summary != UNAVAILABLE_SUMMARY else "failed"] += 1
-            done += 1
-            if progress is not None:
-                try:
-                    progress(done, total, pl.name)
-                except Exception as exc:  # never let a UI callback break research
-                    log.debug("progress callback failed: %s", _describe_error(exc))
-
-        await asyncio.gather(*(one(pl) for pl in todo))
-        log.info("research run: %d ok, %d failed, %d cached, %d skipped",
-                 stats["ok"], stats["failed"], stats["cached"], stats["skipped"])
-        return result
-
-    async def _wait_for_rate_limit(self) -> None:
-        """Block until the shared 429 pause (set by any worker) has elapsed."""
-        while True:
-            remaining = self._rate_limited_until - asyncio.get_running_loop().time()
-            if remaining <= 0:
-                return
-            await asyncio.sleep(remaining)
-
-    def _pause_for_rate_limit(self, exc: BaseException) -> float:
-        """Record a 429: every research worker waits ``retry-after`` before its next request."""
-        delay = _retry_after_seconds(exc)
-        loop = asyncio.get_running_loop()
-        self._rate_limited_until = max(self._rate_limited_until, loop.time() + delay)
-        log.warning("Claude rate limited (%s); pausing research for %.0fs", _describe_error(exc), delay)
-        return delay
-
-    def _research_user_message(self, pl: Player, proj: Projection | None) -> str:
-        facts = [
-            f"Today is {date.today().isoformat()}. Research this player for the {self.season} fantasy season.",
-            f"Player: {pl.name}, {pl.position}, team {pl.team or 'free agent'}.",
-        ]
-        if pl.age:
-            facts.append(f"Age {pl.age:.0f}.")
-        if pl.years_exp is not None:
-            facts.append("Rookie." if pl.years_exp == 0 else f"{pl.years_exp} NFL seasons.")
-        if pl.injury_status:
-            facts.append(f"Sleeper injury status: {pl.injury_status}.")
-        if pl.depth_chart_order:
-            facts.append(f"Depth chart: {pl.depth_chart_position or pl.position}{pl.depth_chart_order}.")
-        if pl.adp:
-            facts.append(f"ADP {pl.adp:.0f}.")
-        if pl.ecr:
-            facts.append(f"Expert consensus rank {pl.ecr:.0f}.")
-        if proj is not None:
-            facts.append(f"Our projection: {proj.points:.0f} season points ({proj.ppg:.1f}/game over {proj.games:.0f} games).")
-        facts.append("Fill in the schema. Keep summary <= 60 words, upside/downside <= 25 words each.")
-        return " ".join(facts)
-
-    async def _research_call(self, client: Any, user_text: str, max_tokens: int) -> Any:
-        """One research request (plus the ``pause_turn`` continuation). Raises SDK errors."""
-        messages: list[dict[str, Any]] = [{"role": "user", "content": user_text}]
-        kwargs: dict[str, Any] = dict(
-            model=self.model,
-            max_tokens=max_tokens,
-            system=[{"type": "text", "text": RESEARCH_SYSTEM_PROMPT.format(season=self.season)}],
-            tools=[dict(WEB_SEARCH_TOOL)],
-            output_config={"effort": "medium", "format": {"type": "json_schema", "schema": RESEARCH_SCHEMA}},
-        )
-        response = await asyncio.wait_for(
-            client.messages.create(messages=messages, **kwargs), self.research_timeout_s,
-        )
-        self.request_count += 1
-        if getattr(response, "stop_reason", None) == "pause_turn":
-            messages = messages + [{"role": "assistant", "content": response.content}]
-            response = await asyncio.wait_for(
-                client.messages.create(messages=messages, **kwargs), self.research_timeout_s,
-            )
-            self.request_count += 1
-        return response
-
-    async def research_player(self, pl: Player, proj: Projection | None = None, *, force: bool = False,
-                              max_age_days: float = 3.0, cached: ResearchNote | None = None) -> ResearchNote | None:
-        """Research ONE player now (web search) unless a fresh note exists; saves it locally.
-
-        ``cached`` lets a caller with its own note store pass the existing note. Returns None when
-        Claude is disabled. Fatal API errors surface as :class:`ResearchAborted`.
-        """
-        if not self.enabled:
-            return None
-        note = cached if cached is not None else self.load_notes().get(pl.player_id)
-        if not force and self._is_fresh(note, max_age_days):
-            return note
-        note = await self._research_one(pl, proj)
-        self.save_note(note)
-        return note
-
+    # -- web chat -----------------------------------------------------------------
     async def chat_stream(self, messages: list[dict[str, Any]], context_text: str, *, model: str | None = None,
                           max_tokens: int = 2000, system: str | None = None):
         """Stream a chat answer (text deltas) with the live draft context injected into the last user turn.
 
         ``messages`` is the browser-held transcript ([{"role": "user"|"assistant", "content": str}, ...]).
-        Yields text chunks; the final yield is a dict ``{"done": True, "usage": {...}, "stop_reason": ...}``.
-        Raises SDK errors to the caller (the web layer turns them into an SSE error event).
+        Yields text chunks; the final yield is a dict ``{"done": True, "stop_reason", "model", "usage": {...},
+        "cost_usd": float|None}``. Raises SDK errors to the caller (the web layer turns them into an SSE
+        error event). One request per call; never called without a user message.
         """
         client = self._get_client()
         if client is None:
@@ -825,211 +537,18 @@ class ClaudeResearcher:
                 if text:
                     yield text
             final = await stream.get_final_message()
-        usage = getattr(final, "usage", None)
-        yield {"done": True, "stop_reason": getattr(final, "stop_reason", None), "model": model,
-               "usage": {"input_tokens": getattr(usage, "input_tokens", None), "output_tokens": getattr(usage, "output_tokens", None)}}
+        served = getattr(final, "model", None) or model
+        self._record_usage(served, final)
+        cost = self.last_cost_usd
+        if cost is None and self.last_usage:
+            cost = estimate_cost_usd(model, self.last_usage)      # the served id is not in the price table
+        yield {"done": True, "stop_reason": getattr(final, "stop_reason", None), "model": served,
+               "usage": dict(self.last_usage or usage_dict(None)), "cost_usd": cost}
 
-    async def _research_one(self, pl: Player, proj: Projection | None) -> ResearchNote:
-        """Research one player. Per-player problems (timeout, refusal, unparseable, 5xx, network)
-        become a minimal note; a fatal API error raises :class:`ResearchAborted`; a 429 pauses
-        all workers for ``retry-after`` and retries once; ``stop_reason == "max_tokens"`` retries
-        once with a larger output budget."""
-        client = self._get_client()
-        if client is None:
-            return self._minimal_note(pl.player_id, "disabled")
-        user_text = self._research_user_message(pl, proj)
-        max_tokens = RESEARCH_MAX_TOKENS
-        rate_limit_retried = False
-        while True:
-            await self._wait_for_rate_limit()
-            try:
-                response = await self._research_call(client, user_text, max_tokens)
-            except asyncio.TimeoutError:
-                return self._minimal_note(pl.player_id, "timeout")
-            except Exception as exc:
-                self.last_error = _describe_error(exc)
-                kind = _error_kind(exc)
-                if kind == "fatal":
-                    raise ResearchAborted(self.last_error) from exc
-                if kind == "rate_limit" and not rate_limit_retried:
-                    self._pause_for_rate_limit(exc)
-                    rate_limit_retried = True
-                    continue
-                return self._minimal_note(pl.player_id, self.last_error)
-            stop = getattr(response, "stop_reason", None)
-            if stop == "max_tokens" and max_tokens < RESEARCH_RETRY_MAX_TOKENS:
-                log.info("research for %s hit max_tokens=%d; retrying with %d",
-                         pl.name, max_tokens, RESEARCH_RETRY_MAX_TOKENS)
-                max_tokens = RESEARCH_RETRY_MAX_TOKENS
-                continue
-            break
-        if stop == "refusal":
-            return self._minimal_note(pl.player_id, "refusal")
-        if stop == "max_tokens":
-            self.last_error = f"max_tokens ({RESEARCH_RETRY_MAX_TOKENS}) exceeded twice for {pl.name}"
-            return self._minimal_note(pl.player_id, self.last_error)
-        data = _parse_research_response(response)
-        if data is None:
-            return self._minimal_note(pl.player_id, f"unparseable response (stop_reason={stop})")
-        return self._note_from_data(pl.player_id, data)
-
-    def _note_from_data(self, player_id: str, data: dict[str, Any]) -> ResearchNote:
-        sources = data.get("sources") or []
-        if not isinstance(sources, list):
-            sources = [str(sources)]
-        return ResearchNote(
-            player_id=player_id,
-            summary=str(data.get("summary") or "").strip() or UNAVAILABLE_SUMMARY,
-            injury_risk=_clamp01(data.get("injury_risk"), 0.0),
-            role_certainty=_clamp01(data.get("role_certainty"), 0.5),
-            upside=str(data.get("upside") or "").strip(),
-            downside=str(data.get("downside") or "").strip(),
-            sources=[str(s) for s in sources if s][:10],
-            generated_at=time.time(),
-            model=self.model,
-            offfield_risk=_clamp01(data.get("offfield_risk"), 0.0),
-            red_flags=[str(x).strip() for x in (data.get("red_flags") or []) if str(x).strip()][:6]
-            if isinstance(data.get("red_flags"), list) else [],
-        )
-
-    # -- on the clock ---------------------------------------------------------
-    def advice_system_prompt(self, league: LeagueSettings | None) -> str:
-        """Stable (byte-identical per league) system prompt so prompt caching hits."""
-        key = league.league_id if league is not None else "-"
-        cached = self._system_cache.get(key)
-        if cached is not None:
-            return cached
-        teams = league.total_rosters if league is not None else "?"
-        name = league.name if league is not None else "the league"
-        season = league.season if league is not None else self.season
-        text = (
-            f"You are an expert fantasy-football draft analyst advising one manager live during a {season} "
-            f"Sleeper draft ({name}, {teams} teams) with a 30-second pick clock.\n"
-            f"Scoring: {describe_scoring(league)}.\n"
-            f"Starting lineup: {describe_roster_slots(league)}.\n"
-            f"{ADVICE_STRATEGY_GUIDANCE}"
-        )
-        self._system_cache[key] = text
-        return text
-
-    @staticmethod
-    def _advice_key(state: DraftState, rec: Recommendation) -> tuple:
-        return (state.version, tuple(pv.player_id for pv in rec.best_overall[:ADVICE_TOP_N]))
-
-    async def on_the_clock_advice(
-        self,
-        state: DraftState,
-        rec: Recommendation,
-        players: dict[str, Player],
-        notes: dict[str, ResearchNote],
-        timeout: float = CLAUDE_ON_CLOCK_TIMEOUT_S,
-    ) -> str | None:
-        """2-4 sentences of advice for the current pick, or None (disabled / timeout / error).
-
-        Cached by ``(state.version, top candidate ids)``; concurrent calls for the same key share
-        one request. On success the text is also stored in ``rec.claude_advice``. The request task
-        stores its own result via a done-callback, so a caller that is cancelled while waiting
-        (the draft loop cancels the lookahead request when my pick comes up) does not waste the
-        answer: the next call for the same state is a cache hit.
-        """
-        if not self.enabled or rec is None or not rec.best_overall:
-            return None
-        key = self._advice_key(state, rec)
-        hit = self._advice_cache.get(key)
-        if hit is not None:
-            rec.claude_advice = hit
-            return hit
-        task = self._advice_inflight.get(key)
-        owner = task is None
-        if task is None:
-            task = asyncio.ensure_future(self._advice_request(state, rec, players, notes))
-            self._advice_inflight[key] = task
-            task.add_done_callback(lambda t, key=key: self._advice_done(key, t))
-        try:
-            text = await asyncio.wait_for(asyncio.shield(task), timeout)
-        except asyncio.TimeoutError:
-            log.warning("Claude advice timed out after %.1fs", timeout)
-            if owner:
-                task.cancel()
-            text = None
-        except asyncio.CancelledError:
-            if not task.cancelled():
-                raise  # the caller itself was cancelled; the request finishes and caches itself
-            text = None
-        except Exception as exc:
-            self.last_error = _describe_error(exc)
-            log.warning("Claude advice failed: %s", self.last_error)
-            text = None
-        if text:
-            self._remember_advice(key, text)
-            rec.claude_advice = text
-        return text
-
-    def _advice_done(self, key: tuple, task: "asyncio.Task[str | None]") -> None:
-        """Done-callback of an advice request: drop it from the in-flight table and cache a
-        successful answer even when nobody is awaiting it any more."""
-        if self._advice_inflight.get(key) is task:
-            self._advice_inflight.pop(key, None)
-        if task.cancelled():
-            return
-        exc = task.exception()  # also marks the exception as retrieved when no awaiter is left
-        if exc is not None:
-            self.last_error = _describe_error(exc)
-            return
-        text = task.result()
-        if text:
-            self._remember_advice(key, text)
-
-    def _remember_advice(self, key: tuple, text: str) -> None:
-        if len(self._advice_cache) >= self._ADVICE_CACHE_MAX:
-            oldest = next(iter(self._advice_cache))
-            self._advice_cache.pop(oldest, None)
-        self._advice_cache[key] = text
-
-    async def _advice_request(
-        self,
-        state: DraftState,
-        rec: Recommendation,
-        players: dict[str, Player],
-        notes: dict[str, ResearchNote],
-    ) -> str | None:
-        client = self._get_client()
-        if client is None:
-            return None
-        context = build_context_text(state, rec, players, notes)
-        user_text = f"{context}\n\nWho should I pick now? Answer in 2-4 sentences."
-        t0 = time.perf_counter()
-        kwargs: dict[str, Any] = dict(
-            model=self.model,
-            max_tokens=ADVICE_MAX_TOKENS,
-            system=[{"type": "text", "text": self.advice_system_prompt(state.league)}],
-            messages=[{"role": "user", "content": user_text}],
-            output_config={"effort": "low"},
-        )
-        if _supports_thinking_disabled(self.model):
-            # On Sonnet 5 an omitted ``thinking`` runs adaptive thinking whose tokens count against
-            # max_tokens; on the 30-second clock we want the whole budget to be the answer.
-            kwargs["thinking"] = {"type": "disabled"}
-        async with client.messages.stream(**kwargs) as stream:
-            message = await stream.get_final_message()
-        self.request_count += 1
-        stop = getattr(message, "stop_reason", None)
-        if stop == "refusal":
-            log.info("Claude refused the advice request")
-            return None
-        if stop == "max_tokens":
-            # A cut-off sentence could name the wrong pick or fallback; better no advice than that.
-            self.last_error = f"advice truncated (stop_reason=max_tokens at {ADVICE_MAX_TOKENS} tokens)"
-            log.warning("Claude advice hit max_tokens; discarding partial answer")
-            return None
-        text = _response_text(message)
-        log.info("Claude advice in %.0f ms (%d chars)", (time.perf_counter() - t0) * 1000, len(text))
-        return text or None
-
-    # -- free-form ------------------------------------------------------------
+    # -- CLI ask ------------------------------------------------------------------
     async def ask(self, question: str, context_text: str) -> str:
         """Free-form question with draft context. Returns "" when disabled or on error
-        (``last_error`` then holds the reason)."""
+        (``last_error`` then holds the reason). ``last_usage`` / ``last_cost_usd`` describe the request."""
         if not self.enabled:
             return ""
         client = self._get_client()
@@ -1047,7 +566,7 @@ class ClaudeResearcher:
                 ),
                 self.ask_timeout_s,
             )
-            self.request_count += 1
+            self._record_usage(getattr(response, "model", None) or self.model, response)
         except asyncio.TimeoutError:
             self.last_error = "timeout"
             log.warning("Claude ask timed out")
@@ -1068,3 +587,7 @@ class ClaudeResearcher:
                 return ""
             text += TRUNCATION_MARKER
         return text
+
+
+#: Backwards-compatible alias (the class used to research players as well).
+ClaudeResearcher = ClaudeChat

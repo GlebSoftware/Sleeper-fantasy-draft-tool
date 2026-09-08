@@ -116,7 +116,7 @@ def _render(width: int = 160, height: int = 45, n_picks: int = 5, status: dict |
     state = make_state(n_picks)
     rec = make_rec(state)
     db = Dashboard(console, projections=PROJ)
-    db.update(state, rec, PLAYERS, status or {"latency_ms": 120, "claude": "off"})
+    db.update(state, rec, PLAYERS, status or {"latency_ms": 120})
     return state, rec, console.export_text()
 
 
@@ -144,19 +144,19 @@ def test_dashboard_key_strings_160x45():
     assert rec.best_overall[0].player.name in text
     assert "You pick in 1 (#7)" in text
     assert "Half PPR" in text and "Test League" in text
-    assert "Claude: off" in text and "poll 120 ms" in text
+    assert "poll 120 ms" in text and "Claude" not in text        # no Claude status: nothing is called automatically
     assert "Need:" in text and "Bye clash" in text
     assert "RB run" in text
     assert "YOUR PICK" not in text
 
 
 def test_dashboard_your_pick_and_countdown():
-    status = {"turn_started_at": time.time() - 5, "claude": "thinking"}
+    status = {"turn_started_at": time.time() - 5}
     state, rec, text = _render(n_picks=6, status=status)
     assert state.is_my_turn
     assert "YOUR PICK" in text
     assert "s left" in text          # countdown from pick_timer 30
-    assert "Claude: thinking" in text
+    assert "Claude" not in text
 
 
 def test_dashboard_compact_drops_opponent_needs():
@@ -167,14 +167,15 @@ def test_dashboard_compact_drops_opponent_needs():
     assert max(len(l) for l in lines) <= 120
 
 
-def test_dashboard_claude_advice_in_footer():
+def test_dashboard_footer_shows_notes_and_ignores_legacy_claude_fields():
     console = _console()
     state = make_state(6)
     rec = make_rec(state)
-    rec.claude_advice = "Take Bijan Robinson; RBs are flying off the board. Fallback: Gibbs."
-    Dashboard(console, projections=PROJ).update(state, rec, PLAYERS, {"claude": "ready"})
+    rec.claude_advice = "Take Bijan Robinson; RBs are flying off the board. Fallback: Gibbs."   # legacy model field
+    Dashboard(console, projections=PROJ).update(state, rec, PLAYERS, {"claude": "ready", "message": "hello there"})
     text = console.export_text()
-    assert "Take Bijan Robinson" in text
+    assert "Take Bijan Robinson" not in text and "Claude" not in text
+    assert "RB run" in text and "hello there" in text
 
 
 def test_dashboard_handles_missing_rec_and_unknown_players():
@@ -214,7 +215,7 @@ def test_live_start_stop_and_refresh():
     assert db.running
     state = make_state(6)
     db.update(state, make_rec(state), PLAYERS, {"turn_started_at": time.time()})
-    db.refresh({"claude": "ready"})
+    db.refresh({"latency_ms": 5})
     db.stop()
     db.stop()
     assert not db.running
@@ -223,15 +224,21 @@ def test_live_start_stop_and_refresh():
 def test_render_text_plain():
     state = make_state(6)
     rec = make_rec(state)
-    rec.claude_advice = "Go Bijan."
+    rec.claude_advice = "Go Bijan."                  # legacy model field: never rendered
     text = render_text(rec, state, PLAYERS)
     assert "YOUR PICK" in text
     assert "Best picks now" in text and rec.best_overall[0].player.name in text
     assert "TAKE NOW" in text and "WAIT" in text
-    assert "Need:" in text and "Claude: Go Bijan." in text
+    assert "Need:" in text and "Claude" not in text
     assert "RB run" in text
     assert "Last picks" in text
     assert "(no recommendation yet)" in render_text(None, state, PLAYERS)
+    # an offline mock draft is labelled as such, never as a Sleeper draft
+    from draftadvisor.ui.dashboard import platform_label, platform_of
+
+    assert text.startswith("== [Sleeper]") and platform_of(state) == "sleeper"
+    assert platform_of(state, {"mode": "mock", "platform": "mock"}) == "mock" and platform_label("mock") == "Mock"
+    assert render_text(rec, state, PLAYERS, {"platform": "mock"}).startswith("== [Mock]")
 
 
 def test_scoring_description_variants():
@@ -302,10 +309,9 @@ def test_header_shows_stale_and_error():
     assert staleness(state, {"last_poll_at": now - 40}, now) is None
     state.draft.status = "drafting"
     assert staleness(state, {"stale_since": None, "last_poll_at": now - 1}, now) is None
-    _, _, text = _render(status={"latency_ms": 120, "claude": "off", "stale_since": now - 37,
-                                 "last_error": "ConnectError: boom"})
+    _, _, text = _render(status={"latency_ms": 120, "stale_since": now - 37, "last_error": "ConnectError: boom"})
     assert "stale 37s" in text and "ConnectError" in text
-    _, _, text2 = _render(status={"latency_ms": 120, "claude": "off", "stale_since": None, "last_error": None})
+    _, _, text2 = _render(status={"latency_ms": 120, "stale_since": None, "last_error": None})
     assert "stale" not in text2
 
 

@@ -3,12 +3,19 @@
 :func:`build_context` turns raw data into an :class:`AppContext`::
 
     crosswalk -> players (Sleeper payload, else offline roster universe)
-              -> enrich (FantasyPros ECR, bye weeks) -> ADP (Sleeper, else ECR)
-              -> projections (cached < 12 h; else ML model -> offline shrinkage -> ECR-only)
-              -> Advisor (+ optional Claude researcher and its cached notes)
+              -> [ESPN league: placeholder players for ESPN-only ids]
+              -> enrich (FantasyPros ECR, bye weeks) -> ADP (override e.g. ESPN, else Sleeper, else ECR)
+              -> projections (cached < 12 h; else ML model -> offline shrinkage -> ECR-only; a projected
+                 stat line from another provider fills in for players Sleeper does not project)
+              -> Advisor (+ the Claude chat client for ``ask`` and any legacy research notes on disk)
 
 Every step degrades gracefully: a missing data source is logged and skipped so the
 tool still runs (with ECR-only projections in the worst case).
+
+ESPN leagues (``Settings.platform == "espn"``) use the same universe (Sleeper players / offline
+roster); :func:`espn_overrides` maps ESPN's ``kona_player_info`` list onto it (ESPN ADP as the ADP
+source, ESPN projected season stats as the fallback line, placeholders for unknown players) and
+:func:`fetch_espn_league` / :func:`load_snapshot` replace the Sleeper lookups.
 """
 from __future__ import annotations
 
@@ -20,9 +27,10 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from .config import (
+    DEFAULT_PLATFORM,
     DEFAULT_SEASON,
     SKILL_POSITIONS,
     TRAIN_SEASONS,
@@ -39,7 +47,6 @@ log = logging.getLogger(__name__)
 __all__ = [
     "AppContext",
     "build_context",
-    "rebuild_projections",
     "prep",
     "default_league",
     "projections_cache_path",
@@ -48,8 +55,12 @@ __all__ = [
     "save_projections",
     "ecr_only_projections",
     "load_snapshot_league",
+    "load_saved_snapshot",
+    "load_snapshot",
+    "espn_snapshot_from_dict",
     "fetch_league",
-    "top_players_by_adp",
+    "fetch_espn_league",
+    "espn_overrides",
 ]
 
 #: Cached projections older than this are rebuilt.
@@ -77,13 +88,14 @@ class AppContext:
     players: dict[str, Player]
     projections: dict[str, Projection]
     advisor: Any                                    # strategy.recommend.Advisor
-    researcher: Any                                 # research.claude.ClaudeResearcher
+    claude: Any                                     # research.claude.ClaudeChat (CLI ``ask`` only; never called by the loop)
     notes: dict[str, ResearchNote]
     byes: dict[str, int]
     crosswalk: Any                                  # data.crosswalk.Crosswalk
     sources: dict = field(default_factory=dict)     # what fed the build: {"players": "sleeper", "ml": "model", ...}
-    sleeper_proj: Any = None                        # Sleeper season projections payload used (for re-blends)
+    sleeper_proj: Any = None                        # projection lines used (Sleeper payload + any provider fallback)
     use_model: bool = True                          # whether the ML model was allowed for this build
+    platform: str = DEFAULT_PLATFORM                # "sleeper" | "espn": the league provider this context serves
 
     @property
     def timings(self) -> dict[str, float]:
@@ -183,14 +195,14 @@ def load_cached_projections(path: Path, max_age_hours: float | None = PROJECTION
 
 def projection_fingerprint(league: LeagueSettings, players: Mapping[str, Player], *,
                            sleeper_proj: Mapping | None, sleeper_players: Mapping | bool | None, use_model: bool,
-                           notes: Mapping[str, ResearchNote] | None) -> str:
+                           notes: Mapping[str, ResearchNote] | None, adp_source: str | None = None) -> str:
     """Digest of everything that changes the projections for ``players`` (the relevant subset).
 
     League id + scoring settings + roster positions, whether Sleeper payloads were supplied,
-    ``use_model``, the research notes and, per player, the inputs the Projector reads
-    (injury status, depth chart, team, ECR, bye) plus his Sleeper projection line. A cache
-    whose fingerprint differs must not be served: on draft day it would silently override
-    fresh Sleeper projections, an IR designation or the notes the user paid for.
+    ``use_model``, the research notes, the ADP source and, per player, the inputs the Projector reads
+    (injury status, depth chart, team, ECR, bye) plus his projection line (Sleeper's, or the
+    provider fallback). A cache whose fingerprint differs must not be served: on draft day it would
+    silently override fresh Sleeper projections, an IR designation or the legacy notes on disk.
     """
     per_player = []
     for pid in sorted(players):
@@ -211,6 +223,7 @@ def projection_fingerprint(league: LeagueSettings, players: Mapping[str, Player]
         "sleeper_players": bool(sleeper_players),
         "use_model": bool(use_model),
         "n_notes": len(notes or {}),
+        "adp_source": adp_source,
         "players": per_player,
     }
     raw = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
@@ -225,11 +238,6 @@ def _market_rank(pl: Player) -> float:
     if pl.search_rank is not None and pl.search_rank < 9_000_000:
         return 400.0 + float(pl.search_rank)
     return 10_000.0
-
-
-def top_players_by_adp(players: Mapping[str, Player], n: int = 200) -> list[Player]:
-    """Best ``n`` players by ADP (ECR / search rank fallback)."""
-    return sorted(players.values(), key=_market_rank)[:n]
 
 
 def ecr_only_projections(players: Mapping[str, Player], league: LeagueSettings | None = None) -> dict[str, Projection]:
@@ -318,9 +326,17 @@ def _load_byes(season: int) -> dict[str, int]:
 
 
 def _assign_adp(players: dict[str, Player], league: LeagueSettings | None, draft: DraftSettings | None,
-                sleeper_proj: Mapping | None) -> str:
+                sleeper_proj: Mapping | None, adp_override: Mapping[str, float] | None = None,
+                adp_source: str | None = None) -> str:
+    """Set ``Player.adp``: ``adp_override`` (e.g. ESPN's ADP for an ESPN league) for every player that has
+    one and ECR for the rest; otherwise Sleeper's ADP for the league's scoring, else ECR. Returns the label."""
     from .data.universe import assign_adp
 
+    if adp_override:
+        label = adp_source or "override"
+        n = assign_adp(players, adp_override, label)
+        log.info("ADP from %s for %d players", label, n)
+        return label if n else "ecr"
     if sleeper_proj:
         try:
             from .sleeper.parsing import adp_key_for, adp_map
@@ -449,34 +465,28 @@ def build_projections(players: Mapping[str, Player], engine: ScoringEngine, leag
     return proj, source
 
 
-def _make_researcher(settings: Settings):
+def _make_claude(settings: Settings):
+    """The Claude chat client for the CLI ``ask`` command (nothing else ever calls it)."""
     try:
-        from .research.claude import ClaudeResearcher
+        from .research.claude import ClaudeChat
 
-        key = settings.anthropic_api_key if settings.use_claude else None
-        r = ClaudeResearcher(api_key=key, model=settings.claude_model)
-        if not settings.use_claude:
-            r._api_key = None  # explicit --no-claude: never enabled even with env key
-        return r
+        return ClaudeChat(api_key=settings.anthropic_api_key, model=settings.claude_model)
     except Exception as e:  # noqa: BLE001
         log.warning("Claude layer unavailable: %s", e)
-        return _DisabledResearcher()
+        return _DisabledClaude()
 
 
-class _DisabledResearcher:
-    """Stand-in with the researcher interface when the research module is unusable."""
+class _DisabledClaude:
+    """Stand-in with the chat-client interface when the research module is unusable."""
 
     enabled = False
     last_error: str | None = None
+    last_usage: dict | None = None
+    last_cost_usd: float | None = None
+    model = "off"
 
     def load_notes(self) -> dict[str, ResearchNote]:
         return {}
-
-    async def research_players(self, *a: Any, **k: Any) -> dict[str, ResearchNote]:
-        return {}
-
-    async def on_the_clock_advice(self, *a: Any, **k: Any) -> str | None:
-        return None
 
     async def ask(self, *a: Any, **k: Any) -> str:
         return ""
@@ -490,12 +500,22 @@ class _DisabledResearcher:
 def build_context(settings: Settings, league: LeagueSettings | None = None, draft: DraftSettings | None = None, *,
                   offline: bool = False, sleeper_players: Mapping | None = None, sleeper_proj: Mapping | None = None,
                   refresh: bool = False, use_model: bool = True, quiet: bool = False,
-                  progress: Callable[[str], None] | None = None) -> AppContext:
+                  progress: Callable[[str], None] | None = None, espn_players: Iterable[Mapping] | None = None,
+                  adp_override: Mapping[str, float] | None = None, adp_source: str | None = None,
+                  proj_fallback: Mapping[str, Mapping[str, float]] | None = None,
+                  extra_players: Mapping[str, Player] | None = None) -> AppContext:
     """Assemble the :class:`AppContext` (see module docstring).
 
     ``offline`` only documents intent (no network is used here anyway: Sleeper payloads are
     passed in by the caller). ``quiet`` lowers the log level of the timing messages.
     ``progress`` (optional) receives short step descriptions for CLI feedback.
+
+    Provider overrides (all keyed by canonical player id): ``adp_override`` replaces Sleeper's ADP
+    (labelled ``adp_source``; players without one fall back to ECR), ``proj_fallback`` supplies a
+    Sleeper-key projected stat line for players Sleeper does not project (never overriding Sleeper's
+    own line; the blend labels those components ``"espn"`` for an ESPN league) and ``extra_players``
+    joins the universe. ``espn_players`` (an ESPN ``kona_player_info`` list) derives all three through
+    :func:`espn_overrides`; explicit overrides win over the derived ones.
     """
     ensure_dirs()
     tm = _Timer()
@@ -504,7 +524,8 @@ def build_context(settings: Settings, league: LeagueSettings | None = None, draf
     league = league or default_league(settings)
     season = league.season or settings.season
     engine = ScoringEngine(league.scoring_settings or None)
-    sources: dict[str, Any] = {"offline": offline, "season": season}
+    platform = "espn" if (settings.is_espn or (league.settings or {}).get("platform") == "espn") else DEFAULT_PLATFORM
+    sources: dict[str, Any] = {"offline": offline, "season": season, "platform": platform}
 
     say("building id crosswalk")
     cw = _build_crosswalk(season)
@@ -514,6 +535,21 @@ def build_context(settings: Settings, league: LeagueSettings | None = None, draf
     players, sources["players"] = _build_players(cw, season, sleeper_players)
     tm.lap("players")
 
+    espn_entries = [e for e in (espn_players or []) if isinstance(e, Mapping)]
+    if espn_entries:
+        say("mapping ESPN players onto the universe")
+        placeholders, espn_adp_map, espn_proj = espn_overrides(players, espn_entries, season)
+        for pid, pl in placeholders.items():
+            players.setdefault(pid, pl)
+        adp_override = {**espn_adp_map, **dict(adp_override or {})}
+        adp_source = adp_source or "espn"
+        proj_fallback = {**espn_proj, **dict(proj_fallback or {})}
+        sources["espn"] = {"players": len(espn_entries), "placeholders": len(placeholders),
+                           "adp": len(espn_adp_map), "projections": len(espn_proj)}
+        tm.lap("espn")
+    for pid, pl in (extra_players or {}).items():
+        players.setdefault(str(pid), pl)
+
     say("loading ECR and bye weeks")
     ecr, pos_ecr = _load_ecr(league.is_superflex)
     byes = _load_byes(season)
@@ -522,13 +558,22 @@ def build_context(settings: Settings, league: LeagueSettings | None = None, draf
     enrich_players(players, cw, ecr, byes, pos_ecr)
     sources["ecr"] = ecr is not None
     sources["byes"] = len(byes)
-    sources["adp"] = _assign_adp(players, league, draft, sleeper_proj)
+    sources["adp"] = _assign_adp(players, league, draft, sleeper_proj, adp_override, adp_source)
+    fallback_ids: set[str] = set()
+    if proj_fallback:
+        merged: dict[str, Any] = dict(sleeper_proj or {})
+        for pid, line in proj_fallback.items():
+            if line and pid in players and not merged.get(pid):
+                merged[pid] = dict(line)
+                fallback_ids.add(pid)
+        sleeper_proj = merged
+    sources["proj_fallback"] = len(fallback_ids)
     tm.lap("enrich")
 
-    researcher = _make_researcher(settings)
+    claude = _make_claude(settings)
     notes: dict[str, ResearchNote] = {}
     try:
-        notes = researcher.load_notes()
+        notes = claude.load_notes()          # legacy research notes on disk (read-only)
     except Exception as e:  # noqa: BLE001
         log.warning("research notes unreadable: %s", e)
     sources["notes"] = len(notes)
@@ -536,7 +581,8 @@ def build_context(settings: Settings, league: LeagueSettings | None = None, draf
     relevant = _relevant_subset(players)
     cache_path = projections_cache_path(league.league_id)
     fingerprint = projection_fingerprint(league, relevant, sleeper_proj=sleeper_proj,
-                                         sleeper_players=sources["players"] == "sleeper", use_model=use_model, notes=notes)
+                                         sleeper_players=sources["players"] == "sleeper", use_model=use_model, notes=notes,
+                                         adp_source=sources["adp"])
     # the cache is only served when it was built from exactly these inputs (PROJ-3): the
     # live-draft path (Sleeper payloads supplied) never reuses an offline / stale build
     projections = None if refresh else load_cached_projections(cache_path, fingerprint=fingerprint)
@@ -547,7 +593,8 @@ def build_context(settings: Settings, league: LeagueSettings | None = None, draf
         say("building projections")
         projections, sources["projections"] = _build_and_cache(
             relevant, engine, league, settings, cw, cache_path, fingerprint, sleeper_proj=sleeper_proj,
-            notes=notes, byes=byes, use_model=use_model)
+            notes=notes, byes=byes, use_model=use_model,
+            fallback_ids=fallback_ids, fallback_label="espn" if platform == "espn" else "fallback")
     tm.lap("projections")
 
     say("preparing advisor")
@@ -560,16 +607,38 @@ def build_context(settings: Settings, league: LeagueSettings | None = None, draf
     log.log(level, "context ready: %d players, %d projections (%s), %d notes, %.0f ms total",
             len(players), len(projections), sources["projections"], len(notes), tm.total_ms)
     return AppContext(settings=settings, engine=engine, league=league, draft=draft, players=players,
-                      projections=projections, advisor=advisor, researcher=researcher, notes=notes, byes=byes,
-                      crosswalk=cw, sources=sources, sleeper_proj=sleeper_proj, use_model=use_model)
+                      projections=projections, advisor=advisor, claude=claude, notes=notes, byes=byes,
+                      crosswalk=cw, sources=sources, sleeper_proj=sleeper_proj, use_model=use_model,
+                      platform=platform)
+
+
+def _relabel_fallback(projections: Mapping[str, Projection], ids: Iterable[str], label: str) -> int:
+    """The Projector calls every supplied stat line ``"sleeper"``; rename the component / weight of the
+    projections whose line came from another provider to ``label`` and flag them (``<label>_proj``)."""
+    n = 0
+    for pid in ids:
+        pr = projections.get(pid)
+        if pr is None or "sleeper" not in (pr.weights or {}):
+            continue
+        pr.weights[label] = pr.weights.pop("sleeper")
+        if "sleeper" in (pr.components or {}):
+            pr.components[label] = pr.components.pop("sleeper")
+        flag = f"{label}_proj"
+        if flag not in pr.flags:
+            pr.flags.append(flag)
+        n += 1
+    return n
 
 
 def _build_and_cache(relevant: Mapping[str, Player], engine: ScoringEngine, league: LeagueSettings, settings: Settings,
                      cw, cache_path: Path, fingerprint: str, *, sleeper_proj: Mapping | None,
                      notes: Mapping[str, ResearchNote] | None, byes: Mapping[str, int],
-                     use_model: bool) -> tuple[dict[str, Projection], str]:
+                     use_model: bool, fallback_ids: Iterable[str] = (),
+                     fallback_label: str = "fallback") -> tuple[dict[str, Projection], str]:
     projections, source = build_projections(relevant, engine, league, settings, cw, sleeper_proj=sleeper_proj,
                                             notes=notes, byes=byes, use_model=use_model)
+    if fallback_ids:
+        _relabel_fallback(projections, fallback_ids, fallback_label)
     try:
         save_projections(cache_path, projections, {"league_id": league.league_id, "source": source,
                                                    "season": league.season, "fingerprint": fingerprint,
@@ -579,53 +648,139 @@ def _build_and_cache(relevant: Mapping[str, Player], engine: ScoringEngine, leag
     return projections, source
 
 
-def rebuild_projections(ctx: AppContext, notes: Mapping[str, ResearchNote] | None = None) -> AppContext:
-    """Re-blend the projections of ``ctx`` with ``notes`` (default: ``ctx.notes``) and swap
-    ``ctx.projections`` / ``ctx.advisor`` in place; the cache file is rewritten too.
+# ---------------------------------------------------------------------------
+# ESPN inputs (placeholders, ADP override, projected-stat fallback)
+# ---------------------------------------------------------------------------
 
-    Used after a research run so ``injury_risk`` / ``role_certainty`` reach points, VORP,
-    tiers and availability instead of only the Claude prompt (R1). The new dicts are
-    assigned (not mutated) so a concurrent reader keeps a consistent snapshot.
+
+def espn_overrides(players: Mapping[str, Player], espn_players: Iterable[Mapping] | None, season: int,
+                   rank_type: str = "PPR") -> tuple[dict[str, Player], dict[str, float], dict[str, dict[str, float]]]:
+    """``(placeholders, adp, projections)`` from an ESPN ``kona_player_info`` list, keyed by canonical id.
+
+    ESPN ids resolve through :class:`draftadvisor.espn.ids.EspnIdMap` built from ``players``
+    (``espn_id``, team defenses, then name + position). ESPN players missing from the universe become
+    placeholder :class:`Player` objects (``espn:<id>``, see :func:`draftadvisor.espn.ids.placeholder_player`)
+    so their picks, ADP and projections still carry a name; ``adp`` is ESPN's ``averageDraftPosition``
+    (draft-rank fallback) and ``projections`` the ``10<season>`` projected season stats in Sleeper keys.
     """
-    from .strategy.recommend import Advisor
+    from .espn.capture import espn_adp, espn_projections
+    from .espn.ids import EspnIdMap, placeholder_player
 
-    if notes is not None and notes is not ctx.notes:
-        ctx.notes.update(notes)
-    relevant = _relevant_subset(ctx.players)
-    fingerprint = projection_fingerprint(ctx.league, relevant, sleeper_proj=ctx.sleeper_proj,
-                                         sleeper_players=ctx.sources.get("players") == "sleeper",
-                                         use_model=ctx.use_model, notes=ctx.notes)
-    projections, source = _build_and_cache(
-        relevant, ctx.engine, ctx.league, ctx.settings, ctx.crosswalk, projections_cache_path(ctx.league.league_id),
-        fingerprint, sleeper_proj=ctx.sleeper_proj, notes=ctx.notes, byes=ctx.byes, use_model=ctx.use_model)
-    advisor = Advisor(ctx.league, ctx.players, projections, ctx.settings)
-    ctx.projections = projections
-    ctx.advisor = advisor
-    ctx.sources["projections"] = source
-    ctx.sources["notes"] = len(ctx.notes)
-    log.info("projections re-blended with %d research notes (%s)", len(ctx.notes), source)
-    return ctx
+    entries = [e for e in (espn_players or []) if isinstance(e, Mapping)]
+    if not entries:
+        return {}, {}, {}
+    id_map = EspnIdMap.from_players(players)
+    placeholders: dict[str, Player] = {}
+    for entry in entries:
+        pid = id_map.resolve_player_json(entry)
+        if pid not in players and pid not in placeholders:
+            placeholders[pid] = placeholder_player(entry, pid)
+    adp = espn_adp(entries, id_map, rank_type)
+    proj = espn_projections(entries, id_map, int(season))
+    log.info("ESPN player pool: %d entries, %d placeholders, %d with ADP, %d projected", len(entries),
+             len(placeholders), len(adp), len(proj))
+    return placeholders, adp, proj
 
 
 # ---------------------------------------------------------------------------
-# League lookup helpers (Sleeper / snapshot)
+# League lookup helpers (Sleeper / ESPN / snapshot)
 # ---------------------------------------------------------------------------
+
+
+def espn_snapshot_from_dict(d: Mapping[str, Any]):
+    """Rebuild a saved ESPN capture (``raw["platform"] == "espn"``) as a
+    :class:`draftadvisor.capture.LeagueSnapshot` (its own ``from_dict`` only knows Sleeper payloads).
+    Pick ids are synthetic (no universe here); the report, teams, order and "my" slot are complete."""
+    from .capture import LeagueSnapshot, ScoringDiff, scoring_diff
+    from .espn.capture import espn_names
+    from .espn.ids import EspnIdMap
+    from .espn.parsing import parse_espn_draft, parse_espn_league, parse_espn_managers, parse_espn_picks, roster_names
+
+    raw = dict(d.get("raw") or {})
+    league_json, draft_json = dict(raw.get("league") or {}), dict(raw.get("draft") or {})
+    league = parse_espn_league(league_json, draft_json)
+    draft = parse_espn_draft(league_json, draft_json)
+    managers = parse_espn_managers(league_json, draft)
+    names: dict[str, Any] = dict(roster_names(league_json))
+    names.update(espn_names(raw.get("players")))
+    picks = parse_espn_picks(draft_json, EspnIdMap(), draft, names)
+    return LeagueSnapshot(
+        captured_at=float(d.get("captured_at") or 0.0),
+        season=int(d.get("season") or league.season or DEFAULT_SEASON),
+        league=league, draft=draft, managers=managers,
+        keepers=[p for p in picks if p.is_keeper],
+        picks_made=int(d.get("picks_made") or len(picks)),
+        my_user_id=d.get("my_user_id"), my_slot=d.get("my_slot"), my_roster_id=d.get("my_roster_id"),
+        my_picks=[int(x) for x in (d.get("my_picks") or [])],
+        diff=ScoringDiff.from_dict(d["diff"]) if d.get("diff") else scoring_diff(league.scoring_settings),
+        flags=list(d.get("flags") or []), nfl_state=dict(d.get("nfl_state") or {}), raw=raw,
+    )
+
+
+def snapshot_platform(snap: Any) -> str:
+    """``"espn"`` or ``"sleeper"`` for a :class:`LeagueSnapshot` (from ``raw["platform"]`` / the league settings)."""
+    raw = getattr(snap, "raw", None) or {}
+    if raw.get("platform") == "espn":
+        return "espn"
+    league = getattr(snap, "league", None)
+    if league is not None and (league.settings or {}).get("platform") == "espn":
+        return "espn"
+    return DEFAULT_PLATFORM
+
+
+def load_snapshot(league_or_draft_id: str, platform: str | None = None):
+    """A saved capture (Sleeper or ESPN) by league / draft id, else ``None``.
+
+    ``platform`` (when given) must match the file's provider: numeric Sleeper and ESPN league ids can
+    collide in the snapshot directory, and a Sleeper capture must never be served to an ESPN session.
+    """
+    from .capture import LeagueSnapshot, leagues_dir
+
+    path = leagues_dir() / f"{league_or_draft_id}.json"
+    if not path.exists():
+        return None
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        log.warning("could not read snapshot %s: %s", path, e)
+        return None
+    saved = "espn" if str((d.get("raw") or {}).get("platform") or "") == "espn" else DEFAULT_PLATFORM
+    if platform is not None and saved != platform:
+        log.info("snapshot %s is a %s capture, not %s; ignoring", path.name, saved, platform)
+        return None
+    if saved == "espn":
+        try:
+            return espn_snapshot_from_dict(d)
+        except Exception as e:  # noqa: BLE001
+            log.warning("could not load ESPN snapshot %s: %s", path, e)
+            return None
+    return LeagueSnapshot.load(league_or_draft_id)
+
+
+def load_saved_snapshot(settings: Settings):
+    """The saved capture snapshot of ``settings``' league / draft (``draftadvisor capture``), if any: the
+    league id, the draft id, then (ESPN) ``espn-<league>-<season>``; same platform only, else ``None``."""
+    keys = [settings.league_id, settings.draft_id]
+    if settings.is_espn and settings.league_id:
+        keys.append(f"espn-{settings.league_id}-{settings.season}")
+    for key in keys:
+        if not key:
+            continue
+        try:
+            snap = load_snapshot(str(key), settings.platform)
+        except Exception as e:  # noqa: BLE001
+            log.warning("snapshot %s unavailable: %s", key, e)
+            continue
+        if snap is not None:
+            log.info("using league snapshot %s", key)
+            return snap
+    return None
 
 
 def load_snapshot_league(settings: Settings) -> tuple[LeagueSettings | None, DraftSettings | None]:
-    """League/draft from a saved capture snapshot (``draftadvisor capture``), if any."""
-    try:
-        from .capture import LeagueSnapshot
-    except Exception:  # noqa: BLE001
-        return None, None
-    for key in (settings.league_id, settings.draft_id):
-        if not key:
-            continue
-        snap = LeagueSnapshot.load(str(key))
-        if snap is not None:
-            log.info("using league snapshot %s", key)
-            return snap.league, snap.draft
-    return None, None
+    """League/draft from a saved capture snapshot (``draftadvisor capture``), if any (same platform only)."""
+    snap = load_saved_snapshot(settings)
+    return (snap.league, snap.draft) if snap is not None else (None, None)
 
 
 async def fetch_league(client, league_id: str | None, draft_id: str | None = None) -> tuple[LeagueSettings | None, DraftSettings | None]:
@@ -652,14 +807,39 @@ async def fetch_league(client, league_id: str | None, draft_id: str | None = Non
     return league, draft
 
 
+async def fetch_espn_league(client, league_id: str, season: int, *, players_limit: int = 600
+                            ) -> tuple[LeagueSettings, DraftSettings, dict, list[dict]]:
+    """``(league, draft, raw league payload, ESPN player pool)`` of one ESPN league.
+
+    ``client`` is a :class:`draftadvisor.espn.client.EspnClient`. Two GETs (settings / teams / rosters and
+    the draft) plus the ``kona_player_info`` pool, which is optional (``[]`` when ESPN refuses it: ADP and
+    projections then come from ECR / Sleeper). :class:`~draftadvisor.espn.client.EspnNotFound` /
+    :class:`~draftadvisor.espn.client.EspnAccessDenied` propagate.
+    """
+    from .espn.client import EspnAPIError
+    from .espn.parsing import parse_espn_draft, parse_espn_league
+
+    league_json = await client.get_settings_and_teams(league_id, season)
+    draft_json = await client.get_draft_detail(league_id, season)
+    players: list[dict] = []
+    try:
+        players = await client.get_players(league_id, season, limit=players_limit)
+    except EspnAPIError as e:
+        log.warning("ESPN player pool unavailable (%s); ADP / projections fall back to ECR", e)
+    return (parse_espn_league(league_json, draft_json), parse_espn_draft(league_json, draft_json),
+            dict(league_json), players)
+
+
 # ---------------------------------------------------------------------------
 # prep
 # ---------------------------------------------------------------------------
 
 
-async def _fetch_sleeper_inputs(settings: Settings) -> tuple:
+async def _fetch_sleeper_inputs(settings: Settings, league_lookup: bool = True) -> tuple:
     """(league, draft, players payload, projections payload, snapshot) from Sleeper; every
-    piece is ``None`` when unreachable (network errors are logged, never raised)."""
+    piece is ``None`` when unreachable (network errors are logged, never raised). With
+    ``league_lookup=False`` only the player universe and the projections are fetched (an ESPN league
+    still draws its players from Sleeper's pool)."""
     league = draft = None
     sleeper_players = sleeper_proj = None
     snapshot = None
@@ -667,7 +847,8 @@ async def _fetch_sleeper_inputs(settings: Settings) -> tuple:
         from .sleeper.client import SleeperClient
 
         async with SleeperClient() as client:
-            league, draft = await fetch_league(client, settings.league_id, settings.draft_id)
+            if league_lookup:
+                league, draft = await fetch_league(client, settings.league_id, settings.draft_id)
             try:
                 sleeper_players = await client.get_players()
             except Exception as e:  # noqa: BLE001
@@ -676,7 +857,7 @@ async def _fetch_sleeper_inputs(settings: Settings) -> tuple:
                 sleeper_proj = await client.get_season_projections(settings.season)
             except Exception as e:  # noqa: BLE001
                 log.warning("Sleeper projections unavailable: %s", e)
-            if settings.league_id or settings.draft_id:
+            if league_lookup and (settings.league_id or settings.draft_id):
                 try:
                     from .capture import capture_league
 
@@ -690,15 +871,40 @@ async def _fetch_sleeper_inputs(settings: Settings) -> tuple:
     return league, draft, sleeper_players, sleeper_proj, snapshot
 
 
-async def prep(settings: Settings, research: bool = False, refresh: bool = False, train: bool = True,
-               top: int = 200, progress: Callable[[str], None] | None = None, offline: bool = False) -> AppContext:
+async def _fetch_espn_inputs(settings: Settings) -> tuple:
+    """(league, draft, ESPN player pool, snapshot) for ``settings.league_id`` / ``settings.season``; every
+    piece is ``None`` / ``[]`` when ESPN is *unreachable* (transport errors, 5xx: logged, never raised, so
+    ``prep`` still finishes offline). A private league (:class:`~draftadvisor.espn.client.EspnAccessDenied`),
+    an unknown league id (:class:`~draftadvisor.espn.client.EspnNotFound`) and an unknown ``--team-id`` /
+    ``--username`` / ``--slot`` (:class:`ValueError` listing the teams) are re-raised: a cache built for
+    the default league would hide the real problem. The capture is saved so ``--offline`` commands can
+    replay it."""
+    if not settings.league_id:
+        return None, None, [], None
+    from .espn.capture import capture_espn_league
+    from .espn.client import EspnAccessDenied, EspnClient, EspnNotFound
+
+    try:
+        async with EspnClient(espn_s2=settings.espn_s2, swid=settings.swid) as client:
+            snap = await capture_espn_league(client, settings.league_id, settings.season, swid=settings.swid,
+                                             team_id=settings.team_id, slot=settings.slot, username=settings.username,
+                                             save=True)
+            return snap.league, snap.draft, list(snap.raw.get("players") or []), snap
+    except (EspnAccessDenied, EspnNotFound, ValueError):
+        raise
+    except Exception as e:  # noqa: BLE001
+        log.warning("ESPN league %s unavailable (%s); continuing without it", settings.league_id, e)
+    return None, None, [], None
+
+
+async def prep(settings: Settings, refresh: bool = False, train: bool = True,
+               progress: Callable[[str], None] | None = None, offline: bool = False) -> AppContext:
     """Download data, train the model, fetch Sleeper payloads if reachable, build + cache the context.
 
     Network errors are swallowed (logged) so ``prep`` works offline with ``data/raw``; with
     ``offline=True`` Sleeper is not contacted at all (no retries / timeouts to sit through).
-    When ``research`` runs, the projections are re-blended with the new notes (and re-cached)
-    so the draft command picks them up. ``sources`` of the returned context carries ``metrics``
-    (backtest), ``snapshot`` (capture) and ``research`` (number of notes written).
+    Nothing here calls Claude. ``sources`` of the returned context carries ``metrics``
+    (backtest) and ``snapshot`` (capture).
     """
     ensure_dirs()
     say = progress or (lambda s: None)
@@ -724,42 +930,29 @@ async def prep(settings: Settings, research: bool = False, refresh: bool = False
 
     league = draft = None
     sleeper_players = sleeper_proj = None
+    espn_players: list[dict] = []
     snapshot = None
     if offline:
-        say("Sleeper skipped (--offline)")
+        say("Sleeper skipped (--offline)" if not settings.is_espn else "ESPN and Sleeper skipped (--offline)")
+    elif settings.is_espn:
+        say(f"contacting ESPN (league {settings.league_id}, season {settings.season})")
+        league, draft, espn_players, snapshot = await _fetch_espn_inputs(settings)
+        say("contacting Sleeper (player universe and projections)")
+        _, _, sleeper_players, sleeper_proj, _ = await _fetch_sleeper_inputs(settings, league_lookup=False)
     else:
         say("contacting Sleeper")
         league, draft, sleeper_players, sleeper_proj, snapshot = await _fetch_sleeper_inputs(settings)
     if league is None:
-        league, draft = load_snapshot_league(settings)
+        saved = load_saved_snapshot(settings)
+        if saved is not None:
+            league, draft = saved.league, saved.draft
+            if settings.is_espn and not espn_players:
+                espn_players = list(saved.raw.get("players") or [])      # the captured pool: names / ADP / projections
 
     ctx = build_context(settings, league, draft, offline=sleeper_players is None, sleeper_players=sleeper_players,
-                        sleeper_proj=sleeper_proj, refresh=True, use_model=True, progress=progress)
+                        sleeper_proj=sleeper_proj, espn_players=espn_players, refresh=True, use_model=True,
+                        progress=progress)
     ctx.sources["metrics"] = metrics
     ctx.sources["snapshot"] = snapshot
-    ctx.sources["research"] = 0
-    if research:
-        if not ctx.researcher.enabled:
-            log.warning("research requested but Claude is disabled (no ANTHROPIC_API_KEY)")
-        else:
-            say(f"running Claude research on the top {top} players")
-            targets = top_players_by_adp(ctx.players, top)
-            new_notes: dict[str, ResearchNote] = {}
-            try:
-                new_notes = await ctx.researcher.research_players(
-                    targets, ctx.projections, progress=lambda d, t, n: say(f"research {d}/{t}: {n}"))
-            except Exception as e:  # noqa: BLE001
-                log.warning("research failed: %s", e)
-            err = getattr(ctx.researcher, "last_error", None)
-            if err:
-                log.warning("research problem: %s", err)
-            ctx.sources["research"] = len(new_notes)
-            if new_notes:
-                # the notes must reach the cached projections the draft command loads (R1)
-                say("re-blending projections with the research notes")
-                try:
-                    rebuild_projections(ctx, new_notes)
-                except Exception as e:  # noqa: BLE001
-                    log.warning("could not re-blend projections with research notes: %s", e)
     return ctx
 
