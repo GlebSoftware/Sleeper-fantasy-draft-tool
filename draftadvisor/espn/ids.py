@@ -35,6 +35,7 @@ __all__ = [
     "espn_position",
     "espn_team",
     "dst_team",
+    "is_real_player_id",
     "placeholder_player",
 ]
 
@@ -64,6 +65,21 @@ def dst_team(espn_id: Any) -> str | None:
     if i is None or i >= 0:
         return None
     return PRO_TEAM_MAP.get(DST_ID_BASE - i)
+
+
+def is_real_player_id(espn_id: Any) -> bool:
+    """True when ``espn_id`` identifies an actual player: a positive id, or a D/ST id
+    (``-16000 - proTeamId``).
+
+    ESPN pre-populates the whole draft board before (and during) a draft: every pick that has not
+    been made yet is listed with ``playerId`` ``-1`` (``0`` in some seasons). Those entries are
+    placeholders, not picks - counting them fills the board, makes the draft look complete and stops
+    the poller. Every board / roster reader must go through this predicate.
+    """
+    i = _int(espn_id)
+    if i is None:
+        return False
+    return i > 0 or dst_team(i) is not None
 
 
 def espn_team(pro_team_id: Any) -> str | None:

@@ -15,6 +15,9 @@ Outputs (all < 200 KB):
 * ``draft_in_progress.json``      same league mid-draft: drafted=false, inProgress=true, 17 picks
   (pick 3 flagged ``keeper``, pick 14 ``reservedForKeeper``)
 * ``draft_pre_draft.json``        no picks, pickOrder set
+* ``draft_prepopulated.json``    board ESPN filled with placeholders: 150 entries, every playerId -1
+* ``draft_prepopulated_no_order.json``  the same board with pickOrder withheld (order is in the board)
+* ``draft_prepopulated_live.json``      the same board mid-draft: 17 entries filled in place, rest -1
 * ``players_kona.json``           synthetic ``kona_player_info`` shape for ~40 drafted players with
   ownership ADP, draft ranks and the ``10<season>`` projected season stats
 * ``league_modern.json``          newer payload shape: owners as dicts, ``name`` instead of
@@ -114,6 +117,37 @@ def build(source: Path, dest: Path) -> None:
     pre["settings"]["draftSettings"]["type"] = "SNAKE"
     pre["settings"]["draftSettings"]["date"] = 1535198400000
     _dump(dest / "draft_pre_draft.json", pre)
+
+    # A board ESPN has pre-populated: one entry per pick, playerId -1 until the pick is made.
+    # This is what a real un-started (and a live) ESPN draft returns; counting those entries as picks
+    # fills the board and makes the draft look complete.
+    def _placeholder(pick: dict) -> dict:
+        out = copy.deepcopy(pick)
+        out["playerId"] = -1
+        out["keeper"] = False
+        out["reservedForKeeper"] = False
+        out["autoDraftTypeId"] = 0
+        return out
+
+    prepop = dict(copy.deepcopy(common),
+                  draftDetail={"completeDate": 0, "drafted": False, "inProgress": False,
+                               "picks": [_placeholder(p) for p in picks]})
+    prepop["settings"]["draftSettings"]["type"] = "SNAKE"
+    prepop["settings"]["draftSettings"]["date"] = 1535198400000
+    _dump(dest / "draft_prepopulated.json", prepop)
+
+    # The same board with the order withheld (ESPN publishes pickOrder late) - the board still shows it.
+    prepop_no_order = copy.deepcopy(prepop)
+    prepop_no_order["settings"]["draftSettings"]["pickOrder"] = []
+    _dump(dest / "draft_prepopulated_no_order.json", prepop_no_order)
+
+    # Live: the first 17 entries have been filled in place, the rest are still -1.
+    live_picks = [copy.deepcopy(p) for p in picks[:17]] + [_placeholder(p) for p in picks[17:]]
+    prepop_live = dict(copy.deepcopy(common),
+                       draftDetail={"completeDate": 0, "drafted": False, "inProgress": True, "picks": live_picks})
+    prepop_live["settings"]["draftSettings"]["type"] = "SNAKE"
+    prepop_live["settings"]["draftSettings"]["date"] = 1535198400000
+    _dump(dest / "draft_prepopulated_live.json", prepop_live)
 
     # -- players_kona.json: drafted players that still have full info on a roster
     rostered: dict[int, tuple[dict, int]] = {}

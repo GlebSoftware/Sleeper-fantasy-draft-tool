@@ -231,10 +231,19 @@ def test_traded_picks_from_the_board(league, in_progress):
     assert d2.traded_picks == {(2, 1): 2}
     p18 = next(p for p in parse_espn_picks(dj2, EspnIdMap(), d2) if p.pick_no == 18)
     assert p18.draft_slot == 1 and p18.roster_id == 2
-    # nothing without an order (in either payload), for auctions, or on the untouched fixtures
+    # with pickOrder withheld the order still comes from the board, so the trade stays visible
     no_order = copy.deepcopy(dj)
     no_order["settings"]["draftSettings"]["pickOrder"] = []
-    assert parse_espn_draft({"settings": {"size": 10, "draftSettings": {"pickOrder": []}}}, no_order).traded_picks == {}
+    derived = parse_espn_draft({"settings": {"size": 10, "draftSettings": {"pickOrder": []}}}, no_order)
+    assert [derived.slot_to_roster_id[s] for s in range(1, 11)] == PICK_ORDER
+    assert derived.traded_picks == {(2, 1): 2}
+    # a board that cannot reveal the order (round 1 incomplete) leaves the order and the trades unknown
+    blind = copy.deepcopy(no_order)
+    blind["draftDetail"]["picks"] = [p for p in blind["draftDetail"]["picks"]
+                                     if (p.get("overallPickNumber") or 0) > 6]
+    blind_draft = parse_espn_draft({"settings": {"size": 10, "draftSettings": {"pickOrder": []}}}, blind)
+    assert blind_draft.slot_to_roster_id == {} and blind_draft.traded_picks == {}
+    # nothing for auctions or on the untouched fixtures
     dj["settings"]["draftSettings"]["type"] = "AUCTION"
     assert parse_espn_draft(league, dj).traded_picks == {}
     assert parse_espn_draft(league, in_progress).traded_picks == {} and parse_espn_draft(league, load("draft_complete.json")).traded_picks == {}
@@ -561,3 +570,96 @@ def test_normalize_swid_accepts_url_encoded_cookies():
     assert normalize_swid("%7B6863-6934-3455%7D") == raw
     assert normalize_swid("6863-6934-3455") == raw
     assert normalize_swid(" %7b6863-6934-3455%7d ") == raw
+
+
+# ---------------------------------------------------------------------------
+# Pre-populated boards: ESPN lists every pick before it is made, with playerId -1.
+# Counting those as picks filled the board, reported "draft complete" and stopped the poller.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def prepopulated():
+    return load("draft_prepopulated.json")
+
+
+@pytest.fixture
+def prepopulated_live():
+    return load("draft_prepopulated_live.json")
+
+
+def test_placeholder_entries_are_not_picks(league, prepopulated):
+    """A board of 150 placeholder entries is an empty board, not a finished draft."""
+    detail = prepopulated["draftDetail"]
+    assert len(detail["picks"]) == 150 and all(p["playerId"] == -1 for p in detail["picks"])
+
+    draft = parse_espn_draft(league, prepopulated)
+    picks = parse_espn_picks(prepopulated, EspnIdMap.from_players({}), draft)
+    assert picks == []
+    assert draft_status(detail) == "pre_draft"
+    assert draft.status == "pre_draft"
+
+    st = state_from_espn(league, prepopulated, EspnIdMap.from_players({}), swid=SWID_TEAM_1)
+    assert st.is_complete is False
+    assert st.next_pick_no == 1
+    assert st.my_slot == 3
+    assert st.my_picks() == []
+
+
+def test_zero_player_id_is_also_a_placeholder(league, prepopulated):
+    """Some seasons use 0 instead of -1; both mean "not picked yet"."""
+    board = copy.deepcopy(prepopulated)
+    for p in board["draftDetail"]["picks"]:
+        p["playerId"] = 0
+    draft = parse_espn_draft(league, board)
+    assert parse_espn_picks(board, EspnIdMap.from_players({}), draft) == []
+    assert draft_status(board["draftDetail"]) == "pre_draft"
+
+
+def test_a_team_defense_is_a_real_pick_despite_its_negative_id(league, prepopulated):
+    """D/ST ids are negative (-16000 - proTeamId): they must survive the placeholder filter."""
+    board = copy.deepcopy(prepopulated)
+    board["draftDetail"]["picks"][0]["playerId"] = -16023          # PIT D/ST
+    draft = parse_espn_draft(league, board)
+    picks = parse_espn_picks(board, EspnIdMap.from_players({}), draft)
+    assert [p.pick_no for p in picks] == [1]
+    assert picks[0].player_id == "PIT"
+    assert draft_status(board["draftDetail"]) == "drafting"
+
+
+def test_board_filled_in_place_is_a_live_draft(league, prepopulated_live):
+    """17 entries filled, the rest still -1: 17 picks, the draft is running, pick 18 is on the clock."""
+    detail = prepopulated_live["draftDetail"]
+    assert len(detail["picks"]) == 150
+    draft = parse_espn_draft(league, prepopulated_live)
+    picks = parse_espn_picks(prepopulated_live, EspnIdMap.from_players({}), draft)
+    assert [p.pick_no for p in picks] == list(range(1, 18))
+    assert draft.status == "drafting"
+
+    st = state_from_espn(league, prepopulated_live, EspnIdMap.from_players({}), swid=SWID_TEAM_1)
+    assert st.is_complete is False
+    assert st.next_pick_no == 18
+    assert st.my_slot == 3 and st.is_my_turn is True                # slot 3 picks 18th in round 2
+
+
+def test_pick_order_comes_from_the_board_when_espn_withholds_it(league):
+    """ESPN publishes pickOrder late; the pre-populated board already carries each pick's teamId."""
+    board = load("draft_prepopulated_no_order.json")
+    assert board["settings"]["draftSettings"]["pickOrder"] == []
+
+    draft = parse_espn_draft(league, board)
+    assert draft.teams == 10
+    assert [draft.slot_to_roster_id[s] for s in range(1, 11)] == PICK_ORDER
+
+    st = state_from_espn(league, board, EspnIdMap.from_players({}), swid=SWID_TEAM_1)
+    assert st.my_slot == 3
+
+
+def test_partial_round_one_never_invents_an_order(league, prepopulated):
+    """An incomplete or duplicated round 1 leaves the order unknown rather than guessing it."""
+    board = copy.deepcopy(prepopulated)
+    board["settings"]["draftSettings"]["pickOrder"] = []
+    for p in board["draftDetail"]["picks"][:10]:
+        p["teamId"] = 0 if p["overallPickNumber"] > 6 else p["teamId"]
+    draft = parse_espn_draft(league, board)
+    assert draft.slot_to_roster_id == {}

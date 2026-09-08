@@ -356,3 +356,25 @@ def test_picks_resolve_into_the_universe_the_board_uses(monkeypatch):
             rows = client.get("/api/projections", params=dict(params, position="WR", top=400)).json()
             mine = [c for c in rows if c["player_id"] == "99999"]
             assert mine and mine[0]["drafted_by"] == "drafted" and not any(c["player_id"] == "espn:3116406" for c in rows)
+
+
+def test_state_on_a_prepopulated_board_is_not_a_finished_draft():
+    """ESPN lists all 150 picks with playerId -1 before the draft starts. Counting those as picks made
+    the app report "DRAFT COMPLETE" on an un-started draft and stop following it."""
+    if not HAS_BUNDLE:
+        pytest.skip("needs web_bundle/ (run scripts/build_bundle.py)")
+    with WebEspnStub(draft="prepopulated") as stub:
+        proc, base = _start({"DRAFTADVISOR_ESPN_BASE": stub.base_url})
+        try:
+            params = {"mode": "live", "platform": "espn", "league_id": LEAGUE_ID, "season": SEASON, "team_id": 1}
+            st = httpx.get(base + "/api/state", params=params, timeout=120).json()
+            d = st["draft"]
+            assert d["is_complete"] is False and d["status"] == "pre_draft"
+            assert d["next_pick_no"] == 1 and d["current_round"] == 1
+            assert d["my_slot"] == 3 and d["total_picks"] == 150
+            assert st["recent"] == []                                  # no picks yet, not 150 phantom ones
+            assert not any(s["player"] for s in st["me"]["slots"])      # and my roster is empty
+            assert len(st["best"]) >= 5                                 # the board is still fully usable
+            assert all(b["name"] and not b["name"].startswith("ESPN player") for b in st["best"])
+        finally:
+            _stop(proc)

@@ -103,10 +103,13 @@ clock mid-draft changes only the display. ESPN's clock is different — see the 
   approximate countdown anchored to the moment *they* saw the pick number advance, labelled "≈ since last pick
   seen", and show nothing until a pick has been observed. Treat it as a hint.
 * **Live pick updates.** The advisor renders whatever ESPN's `draftDetail` returns on each poll (one GET
-  every ~2–3 s, plus a cached league capture). It uses the picks regardless of ESPN's `drafted` flag. Whether
-  ESPN's read API updates the pick list *while* a live draft is running could not be verified while building
-  this; if your board stays empty during a draft, that is the reason, and the capture / post-draft analysis
-  still work once ESPN marks the draft complete.
+  every ~2–3 s, plus a cached league capture). It uses the picks regardless of ESPN's `drafted` flag.
+  ESPN publishes the **whole board up front**: once the order is set there is one entry per pick, and every
+  pick that has not been made yet carries `playerId` `-1` (`0` in some seasons). Those entries are
+  placeholders, and ESPN fills them **in place** as picks happen, so the advisor ignores any entry without a
+  real player id and re-reads every entry on each poll (a pick made, corrected, or traded mid-list is picked
+  up either way). A pre-populated board also carries each pick's `teamId`, which is used as the draft order
+  when ESPN has not published `pickOrder` yet.
 * **Scoring.** ESPN's `scoringItems` are translated into the same per-unit keys the engine uses for Sleeper
   ("every 10 yards" items become points per yard, TE/RB/WR reception overrides become position premiums,
   D/ST items take the D/ST override). Rules with no equivalent — 40+/50+ yard TD bonuses, per-distance TD

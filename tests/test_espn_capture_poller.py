@@ -286,11 +286,16 @@ async def test_poll_once_returns_new_state_only_on_change():
 
 
 class PrepopulatedClient(FakeEspnClient):
-    """ESPN serving the whole board (150 entries) and filling them in place: unfilled entries have playerId 0."""
+    """ESPN serving the whole board (150 entries) and filling them in place.
 
-    def __init__(self, filled: int = 0):
+    Unfilled entries carry ``placeholder`` as their ``playerId``: ESPN uses ``-1`` (``0`` in some
+    seasons), never an absent field, so the board is full-length from the moment the order is set.
+    """
+
+    def __init__(self, filled: int = 0, placeholder: int = -1):
         super().__init__(n=150)
         self.filled = filled
+        self.placeholder = placeholder
         self.edits: dict[int, int] = {}                 # overallPickNumber -> playerId overriding the fixture
         self.drop_detail_times = 0
 
@@ -302,7 +307,7 @@ class PrepopulatedClient(FakeEspnClient):
             return d
         for i, p in enumerate(d["draftDetail"]["picks"]):
             if i >= self.filled:
-                p["playerId"] = 0
+                p["playerId"] = self.placeholder
             if p["overallPickNumber"] in self.edits:
                 p["playerId"] = self.edits[p["overallPickNumber"]]
         d["draftDetail"].update({"drafted": self.filled >= 150, "inProgress": 0 < self.filled < 150})
@@ -583,3 +588,34 @@ def test_package_imports_without_pandas_or_sklearn():
             "print('ok')")
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=str(ROOT), timeout=120)
     assert out.returncode == 0 and out.stdout.strip() == "ok", out.stderr
+
+
+@pytest.mark.parametrize("placeholder", [-1, 0])
+async def test_a_full_placeholder_board_is_not_a_finished_draft(placeholder):
+    """The regression that stopped ESPN drafts dead: 150 entries with playerId -1 were counted as 150
+    picks, so the state was "complete", run() returned at once and nothing was ever polled again."""
+    fc = PrepopulatedClient(filled=0, placeholder=placeholder)
+    p = make_poller(fc, swid=SWID_TEAM_1)
+    st = await p.bootstrap()
+    assert len(st.picks) == 0
+    assert st.is_complete is False and st.draft.status == "pre_draft"
+    assert st.next_pick_no == 1 and st.my_slot == 3
+
+    # run() must stay in its loop and deliver the picks as ESPN fills the board in place
+    seen: list[int] = []
+    stop = asyncio.Event()
+
+    async def on_update(state):
+        seen.append(len(state.picks))
+        if len(state.picks) == 0:
+            fc.filled = 3
+        elif len(state.picks) == 3:
+            fc.filled = 18
+        else:
+            stop.set()
+
+    p.settings.poll_seconds = 0.0
+    p.pre_draft_interval = 0.0
+    final = await p.run(on_update, stop)
+    assert seen == [0, 3, 18]
+    assert final.is_complete is False and len(final.picks) == 18

@@ -26,7 +26,7 @@ from typing import Any, Iterable, Mapping
 from ..config import DEFAULT_SEASON
 from ..models import DraftSettings, DraftState, LeagueSettings, Manager, Pick
 from .constants import IR_SLOT_ID, ROSTER_SLOT_ORDER, slot_label
-from .ids import EspnIdMap, espn_player_fields
+from .ids import EspnIdMap, espn_player_fields, is_real_player_id
 from .scoring import espn_scoring_to_sleeper
 
 log = logging.getLogger(__name__)
@@ -42,6 +42,7 @@ __all__ = [
     "parse_espn_draft",
     "parse_espn_managers",
     "parse_espn_picks",
+    "pick_order_from_board",
     "traded_picks_from_detail",
     "rostered_espn_ids",
     "rostered_ids",
@@ -126,7 +127,7 @@ def _is_made_pick(raw: Any) -> bool:
     """A board entry holding a real, non-keeper pick (empty / keeper-reserved slots do not start a draft)."""
     if not isinstance(raw, Mapping) or raw.get("keeper") or raw.get("reservedForKeeper"):
         return False
-    return bool(_int(raw.get("playerId")))
+    return is_real_player_id(raw.get("playerId"))
 
 
 def draft_status(detail: Mapping[str, Any] | None) -> str:
@@ -247,6 +248,30 @@ def parse_espn_league(league_json: Mapping[str, Any], draft_detail_json: Mapping
     )
 
 
+def pick_order_from_board(detail: Mapping[str, Any] | None, teams: int) -> list[int]:
+    """Round-1 board entries -> ``[team id in slot 1, slot 2, ...]``.
+
+    ESPN pre-populates the board with one entry per pick (``playerId`` ``-1`` until the pick is made),
+    each already carrying its ``teamId``, so the order is visible there before ``draftSettings.pickOrder``
+    is published. Returns ``[]`` unless a complete, duplicate-free round 1 is present.
+    """
+    if teams <= 0:
+        return []
+    by_pick: dict[int, int] = {}
+    for raw in _mapping(detail).get("picks") or []:
+        if not isinstance(raw, Mapping):
+            continue
+        pick_no = _int(raw.get("overallPickNumber"))
+        tid = _int(raw.get("teamId"))
+        if pick_no is None or not 1 <= pick_no <= teams or tid is None or tid <= 0:
+            continue
+        by_pick.setdefault(pick_no, tid)
+    order = [by_pick[k] for k in sorted(by_pick)]
+    if len(order) != teams or len(set(order)) != teams:
+        return []
+    return order
+
+
 def traded_picks_from_detail(detail: Mapping[str, Any] | None, draft: DraftSettings) -> dict[tuple[int, int], int]:
     """``{(round, original team id): owning team id}`` for every board entry whose owner is not the snake
     owner of its pick number (``owningTeamIds[0]`` for a pick still to be made, ``teamId`` once made).
@@ -268,7 +293,7 @@ def traded_picks_from_detail(detail: Mapping[str, Any] | None, draft: DraftSetti
         if pick_no is None or pick_no <= 0 or pick_no > draft.total_picks:
             continue
         owners = raw.get("owningTeamIds")
-        owner = _int(raw.get("teamId")) if _int(raw.get("playerId")) else None
+        owner = _int(raw.get("teamId")) if is_real_player_id(raw.get("playerId")) else None
         if owner is None and isinstance(owners, list) and owners:
             owner = _int(owners[0])
         if owner is None:
@@ -304,6 +329,10 @@ def parse_espn_draft(league_json: Mapping[str, Any], draft_detail_json: Mapping[
     pick_order = [t for t in (_int(x) for x in (ds.get("pickOrder") or [])) if t is not None]
     teams_list = lj.get("teams") if isinstance(lj.get("teams"), list) else []
     teams = _team_count(st, teams_list, pick_order)
+    if not pick_order:                       # order not published yet: the pre-populated board shows it
+        pick_order = pick_order_from_board(detail, teams)
+        if pick_order:
+            log.info("ESPN league %s: pick order derived from the draft board", league_id or "?")
     counts = _lineup_counts(draft_detail_json, lj)
     rounds = rounds_from_counts(counts) or 15
     pick_timer = _int(ds.get("timePerSelection"), 0) or 0
@@ -457,8 +486,8 @@ def parse_espn_picks(draft_detail_json: Mapping[str, Any] | None, id_map: EspnId
             continue
         pick_no = _int(raw.get("overallPickNumber"))
         espn_id = raw.get("playerId")
-        if pick_no is None or pick_no <= 0 or espn_id in (None, "", 0, "0"):
-            continue
+        if pick_no is None or pick_no <= 0 or not is_real_player_id(espn_id):
+            continue                                    # placeholder entry (playerId -1 / 0): not a pick
         tid = _int(raw.get("teamId"))
         slot = slot_of_team.get(tid) if tid is not None else None
         if slot is None:
@@ -504,7 +533,7 @@ def rostered_espn_ids(league_json: Mapping[str, Any] | None) -> set[str]:
         pid = e.get("playerId")
         if pid is None:
             pid = _mapping(_mapping(e.get("playerPoolEntry")).get("player")).get("id")
-        if pid not in (None, "", 0):
+        if is_real_player_id(pid):
             out.add(str(pid))
     return out
 

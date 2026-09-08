@@ -29,7 +29,7 @@ from typing import Any, Callable, Mapping
 from ..config import Settings
 from ..models import DraftState
 from .client import EspnAccessDenied, EspnAPIError, EspnClient, EspnNotFound
-from .ids import EspnIdMap
+from .ids import EspnIdMap, is_real_player_id
 from .parsing import (
     PLATFORM,
     draft_detail_of,
@@ -99,7 +99,7 @@ class EspnDraftPoller:
         counts = ((draft_json.get("settings") or {}).get("rosterSettings") or {}).get("lineupSlotCounts") or {}
         future_owners = tuple(sorted(
             (str(p.get("overallPickNumber")), str(p.get("owningTeamIds") or p.get("teamId")))
-            for p in cls._board_entries(draft_json) if p.get("playerId") in (None, "", 0, "0")))
+            for p in cls._board_entries(draft_json) if not is_real_player_id(p.get("playerId"))))
         return (
             tuple(str(t) for t in (ds.get("pickOrder") or [])),
             str(ds.get("timePerSelection")),
