@@ -1292,6 +1292,7 @@ class ExtAdviceReq(BaseModel):
     teams: int = 12
     rounds: int = 16
     superflex: bool = False
+    slot: int | None = None                         # my draft slot (1-based); None -> inferred from the picks made
     roster_positions: list[str] | None = None       # Sleeper slot labels; None -> the default lineup
 
 
@@ -1401,12 +1402,15 @@ def ext_resolve(refs: Sequence[ExtPlayerRef], idx: Mapping[str, Any], ctx: Any) 
     return out, unresolved
 
 
-def ext_state(ctx: Any, league: LeagueSettings, rounds: int, taken: Sequence[str], mine: Sequence[str]) -> DraftState:
+def ext_state(ctx: Any, league: LeagueSettings, rounds: int, taken: Sequence[str], mine: Sequence[str],
+              slot: int | None = None) -> DraftState:
     """A :class:`DraftState` that holds exactly what the extension reported: every taken player is
     unavailable and my players sit on my slot, so roster needs and lineup value are real.
 
-    The slot is the one whose share of the picks made so far matches the size of my roster, and the
-    pick numbers exist only to place the players consistently - none of them is reported back.
+    An explicit ``slot`` wins (the extension reads it off the ESPN draft banner); otherwise it is the
+    slot whose share of the picks made so far matches the size of my roster - a guess that lands on
+    slot 1 before any pick exists, which is why the caller should send it. The pick numbers exist only
+    to place the players consistently - none of them is reported back.
     """
     from ..mock.simulator import MY_USER_ID, make_mock_draft
 
@@ -1415,12 +1419,15 @@ def ext_state(ctx: Any, league: LeagueSettings, rounds: int, taken: Sequence[str
     mine_set = set(mine_ids)
     others = [p for p in taken if p not in mine_set]
     made = len(mine_ids) + len(others)
-    order = make_mock_draft(league, 1, teams, rounds)
-    my_slot, best = 1, None
-    for s in range(1, teams + 1):
-        d = abs(sum(1 for n in order.picks_for_slot(s) if n <= made) - len(mine_ids))
-        if best is None or d < best:
-            best, my_slot = d, s
+    if slot is not None and 1 <= int(slot) <= teams:
+        my_slot = int(slot)
+    else:
+        order = make_mock_draft(league, 1, teams, rounds)
+        my_slot, best = 1, None
+        for s in range(1, teams + 1):
+            d = abs(sum(1 for n in order.picks_for_slot(s) if n <= made) - len(mine_ids))
+            if best is None or d < best:
+                best, my_slot = d, s
     draft = make_mock_draft(league, my_slot, teams, rounds)
     my_numbers = draft.picks_for_slot(my_slot)
     mine_numbers = set(my_numbers)
@@ -1680,7 +1687,7 @@ def create_app() -> FastAPI:
         taken, unresolved = ext_resolve(req.taken, idx, ctx)
         mine, unresolved_mine = ext_resolve(req.mine, idx, ctx)
         taken_all = list(dict.fromkeys(list(taken) + list(mine)))
-        st = ext_state(ctx, league, req.rounds, taken_all, mine)
+        st = ext_state(ctx, league, req.rounds, taken_all, mine, req.slot)
         rec = await asyncio.to_thread(ctx.advisor.recommend, st, EXT_TOP_N, EXT_TOP_N)
         counts = {"taken": len(req.taken), "resolved": len(taken_all), "mine": len(mine)}
         payload = ext_payload(rec, counts, unresolved + [u for u in unresolved_mine if u not in unresolved],

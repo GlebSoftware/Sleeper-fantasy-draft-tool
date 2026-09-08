@@ -435,8 +435,9 @@
     return {
       taken: S.taken.map(function (t) { return { espn_id: t.espn_id === undefined ? null : t.espn_id, name: t.name || null }; }),
       mine: S.mine.map(function (m) { return { espn_id: m.espn_id === undefined ? null : m.espn_id, name: m.name || null }; }),
-      scoring: S.settings.scoring, teams: parseInt(S.settings.teams, 10) || 10,
-      rounds: parseInt(S.settings.rounds, 10) || 15, superflex: !!S.settings.superflex
+      scoring: S.settings.scoring, teams: parseInt(S.settings.teams, 10) || 12,
+      rounds: parseInt(S.settings.rounds, 10) || 16, superflex: !!S.settings.superflex,
+      slot: espnCfg.slot || null          // read off the ESPN draft banner; without it the server guesses slot 1
     };
   }
   function doRequest() {
