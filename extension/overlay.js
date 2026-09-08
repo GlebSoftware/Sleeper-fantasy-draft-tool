@@ -28,7 +28,7 @@
     mine: [],             // [{espn_id, name}]
     settings: {
       api: API_BASE_DEFAULT, scoring: "ppr", teams: 12, rounds: 16,
-      superflex: false, myTeamId: "", accessCode: "", domScan: true, domDisappear: false
+      superflex: false, myTeamId: "", mySlot: "", accessCode: "", domScan: true, domDisappear: false
     },
     ui: { top: 80, left: null, right: 24, w: 380, h: 620, collapsed: false, posOpen: { QB: 1, RB: 1, WR: 1, TE: 1, K: 0, DEF: 0 } }
   };
@@ -261,6 +261,28 @@
   var HEADSHOT_ID = /\/full\/(\d+)\.png/;
   var espnCfg = { slot: null, teams: null, read: false };
 
+  var espnScoring = null;
+  /** The league's real scoring rules straight from ESPN (same-origin fetch, the user's own cookies).
+   *  ESPN freezes draft PICKS during a draft but settings are served normally, so this is reliable. */
+  function loadEspnScoring() {
+    try {
+      var q = espnUrlParams();
+      if (!q.leagueId || !q.seasonId || espnScoring) return;
+      var url = "https://fantasy.espn.com/apis/v3/games/ffl/seasons/" + encodeURIComponent(q.seasonId) +
+                "/segments/0/leagues/" + encodeURIComponent(q.leagueId) + "?view=mSettings";
+      fetch(url, { credentials: "include" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+        var body = Array.isArray(j) ? j[0] : j;
+        var items = body && body.settings && body.settings.scoringSettings &&
+                    body.settings.scoringSettings.scoringItems;
+        if (items && items.length) {
+          espnScoring = items;
+          log("espn", "league scoring loaded from ESPN: " + items.length + " rules");
+          refresh();
+        }
+      }).catch(function (e) { log("espn", "could not read league scoring: " + e); });
+    } catch (e) { /* never block the overlay */ }
+  }
+
   function espnUrlParams() {
     try {
       var q = new URLSearchParams(location.search);
@@ -272,6 +294,7 @@
    *  from the pick train (round 1 runs up to the .picklist--divider). Both are best effort. */
   function espnAutoConfig() {
     try {
+      loadEspnScoring();
       if (espnCfg.teams == null) {
         var items = document.querySelectorAll("ul.picklist > li");
         var n = 0;
@@ -285,9 +308,11 @@
         }
       }
       if (espnCfg.slot == null) {
-        var m = (document.body.innerText || "").match(/your first pick[^0-9]{0,40}?pick\s*(\d{1,2})/i);
+        var txt = document.body.innerText || "";
+        var at = txt.toLowerCase().indexOf("your first pick");
+        var m = at >= 0 ? txt.slice(at, at + 90).match(/pick\s*[:#]?\s*(\d{1,2})\s*$|,\s*pick\s*(\d{1,2})/i) : null;
         if (m) {
-          espnCfg.slot = parseInt(m[1], 10);
+          espnCfg.slot = parseInt(m[1] || m[2], 10);
           log("espn", "your slot from the draft banner: " + espnCfg.slot);
         }
       }
@@ -437,7 +462,8 @@
       mine: S.mine.map(function (m) { return { espn_id: m.espn_id === undefined ? null : m.espn_id, name: m.name || null }; }),
       scoring: S.settings.scoring, teams: parseInt(S.settings.teams, 10) || 12,
       rounds: parseInt(S.settings.rounds, 10) || 16, superflex: !!S.settings.superflex,
-      slot: espnCfg.slot || null          // read off the ESPN draft banner; without it the server guesses slot 1
+      slot: parseInt(S.settings.mySlot, 10) || espnCfg.slot || null,   // typed slot wins over the banner
+      espn_scoring_items: espnScoring                                   // the league's real rules, read off ESPN
     };
   }
   function doRequest() {
@@ -705,7 +731,8 @@
       '<label>teams</label><input id="s-teams" type="number" min="2" max="20" style="width:56px">',
       '<label>rounds</label><input id="s-rounds" type="number" min="1" max="30" style="width:56px"></div>',
       '<div class="row"><label><input type="checkbox" id="s-sflex" style="width:auto"> superflex</label>',
-      '<label>my ESPN team id</label><input id="s-team" style="width:56px" placeholder="opt"></div>',
+      '<label>my ESPN team id</label><input id="s-team" style="width:56px" placeholder="opt">',
+      '<label>my slot</label><input id="s-slot" type="number" min="1" max="20" style="width:48px" placeholder="auto"></div>',
       '<div class="row"><label>access code</label><input id="s-code" placeholder="only if the deployment asks for one"></div>',
       '<div class="row"><label>API</label><input id="s-api"></div>',
       '<div class="row"><label><input type="checkbox" id="s-dom" style="width:auto"> DOM scan</label>',
@@ -715,6 +742,7 @@
     var g = function (id) { return els.settings.querySelector("#" + id); };
     g("s-scoring").value = S.settings.scoring;
     g("s-teams").value = S.settings.teams;
+    g("s-slot").value = S.settings.mySlot || "";
     g("s-rounds").value = S.settings.rounds;
     g("s-sflex").checked = !!S.settings.superflex;
     g("s-team").value = S.settings.myTeamId;
@@ -732,6 +760,7 @@
       });
     }
     bind("s-scoring", "scoring"); bind("s-teams", "teams", "int"); bind("s-rounds", "rounds", "int");
+    bind("s-slot", "mySlot");
     bind("s-sflex", "superflex", "bool"); bind("s-team", "myTeamId"); bind("s-api", "api");
     bind("s-code", "accessCode");
     bind("s-dom", "domScan", "bool"); bind("s-gone", "domDisappear", "bool");

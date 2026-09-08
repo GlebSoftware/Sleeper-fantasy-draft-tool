@@ -1293,6 +1293,7 @@ class ExtAdviceReq(BaseModel):
     rounds: int = 16
     superflex: bool = False
     slot: int | None = None                         # my draft slot (1-based); None -> inferred from the picks made
+    espn_scoring_items: list[dict] | None = None    # raw settings.scoringSettings.scoringItems read off the ESPN page
     roster_positions: list[str] | None = None       # Sleeper slot labels; None -> the default lineup
 
 
@@ -1301,6 +1302,17 @@ def ext_league(req: ExtAdviceReq) -> LeagueSettings:
     from ..lean import default_league
 
     league = default_league(req.scoring, req.teams)
+    if req.espn_scoring_items:
+        # the extension read the league's real rules off the ESPN page: translate them exactly
+        # (6-point passing TDs, TE premium, bonuses ...) instead of guessing from a ppr/std label
+        from ..espn.scoring import espn_scoring_to_sleeper
+
+        try:
+            scoring, _unmapped = espn_scoring_to_sleeper(req.espn_scoring_items)
+            if scoring:
+                league.scoring_settings = scoring
+        except Exception as e:  # noqa: BLE001
+            log.warning("extension: could not translate the ESPN scoring items: %s", e)
     if req.roster_positions:
         positions = [str(p).upper() for p in req.roster_positions if str(p).strip()]
     else:
