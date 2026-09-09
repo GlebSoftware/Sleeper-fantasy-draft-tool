@@ -204,7 +204,8 @@ All of them accept `--platform espn --league ID [--season YYYY]` in place of the
 Save your league once under **Settings** — league ID, season and which team is yours, next to the
 ESPN cookies — and the **In-Season** tab works from it directly. No draft session is involved: the
 draft ends, the season does not, and the league is identity rather than a per-draft choice. (A live
-ESPN draft session still wins while one is running.)
+ESPN draft session still wins while one is running.) Starting an ESPN draft with a team selected
+saves the same three values, so drafting through the app configures the season as a side effect.
 
 The tab (ESPN leagues) answers the week in one request: the
 best lineup and what the lineup you have set leaves on the bench, the matchup and your odds of

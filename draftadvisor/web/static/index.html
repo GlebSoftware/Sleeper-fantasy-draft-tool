@@ -373,6 +373,7 @@ button.icon.busy .gl { animation: spin 0.8s linear infinite; }
 .toast { background: var(--bg3); border: 1px solid var(--red); color: var(--fg); padding: 8px 12px; border-radius: var(--radius); box-shadow: var(--shadow); cursor: pointer; font-size: 12px; }
 .toast.ok { border-color: var(--green); }
 .toast.info { border-color: var(--accent); }
+.toast.warn { border-color: var(--amber); }
 kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; }
 
 /* =====================================================================
@@ -946,7 +947,15 @@ function setText(el, text) { text = text == null ? '' : String(text); if (el && 
 function show(el, on) { if (el) el.hidden = !on; }
 function setClass(el, cls) { if (el && el.className !== cls) el.className = cls; }
 function lsGet(k, def) { try { const v = localStorage.getItem(k); return v == null ? def : JSON.parse(v); } catch (e) { return def; } }
-function lsSet(k, v) { try { if (v === undefined || v === null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode / quota */ } }
+/** Returns false when the write did not happen (private browsing, a full quota). Saying "saved" when
+ *  nothing was written is exactly the failure the owner reported feeling, so callers that promise a
+ *  save have to check. */
+function lsSet(k, v) {
+  try {
+    if (v === undefined || v === null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v));
+    return true;
+  } catch (e) { return false; }        // private mode / quota
+}
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 /** Markdown-lite → HTML: paragraphs, "-"/"*"/"•" bullets, "1." lists, **bold**, `code`, ### headings. Input is escaped first. */
@@ -1105,7 +1114,7 @@ const S = {
               espnLeagueId: '', espnSeason: null, espnTeamId: null, espnTeamName: '' },   // model '' = the server's default (chatModel())
   chat: { key: 'none', messages: [], streaming: false, abort: null, draft: '' },   // assistant messages carry usage / cost_usd / model
   notes: {},                          // player_id → legacy research note (GET /api/notes + notes inside cards); read-only
-  board: { rows: null, position: '', top: 100, q: '', loading: false, error: null, loaded: false, leagueId: null },
+  board: { rows: null, position: '', top: 100, q: '', loading: false, again: false, error: null, loaded: false, leagueId: null },
   ui: {
     tab: 'setup', hoverId: null, pinnedId: null, availLimit: 40, availQ: '', availPos: '', availSort: 'score',
     autopilot: false, lookup: null, explain: {}, picking: false, mockBusy: false, needAccess: false, settingsOpen: false,
@@ -1114,8 +1123,9 @@ const S = {
     espnDenied: null,                   // the ESPN 401 detail while live polls are refused (expired cookies); null once a poll succeeds
     refreshing: false, forcedAt: 0,     // the Refresh control: a forced re-capture is in flight / when the last one answered
     settingsEspn: null,                 // the last /api/lookup made from inside Settings (team list for the picker)
+    espnPrefilled: false,               // the Setup league box has been seeded from Settings once
   },
-  season: { data: null, at: 0, loading: false, error: null, key: '' },   // POST /api/inseason, only when the tab is open
+  season: { data: null, at: 0, loading: false, again: false, error: null, key: '' },   // POST /api/inseason, only when the tab is open
   diag: { report: null, at: 0, loading: false, error: null },   // GET /api/espn/diagnose — only when you press the button
   espnSig: { sig: '', since: 0 },       // how long ESPN's answer has been identical (the server is stateless; only the browser can tell)
 };
@@ -1173,7 +1183,12 @@ function loadSettings() {
   let theme = st.theme; try { theme = theme || localStorage.getItem('da.theme'); } catch (e) { /* ignore */ }
   S.settings.theme = theme === 'light' ? 'light' : 'dark';
 }
-function saveSettings() { lsSet('da.settings', S.settings); lsSet('da.theme', S.settings.theme); applyTheme(); }
+function saveSettings() {
+  const ok = lsSet('da.settings', S.settings);
+  lsSet('da.theme', S.settings.theme);
+  applyTheme();
+  return ok;
+}
 function applyTheme() { document.documentElement.dataset.theme = S.settings.theme === 'light' ? 'light' : 'dark'; }
 
 /** Chat transcript is kept per draft (mock drafts share "mock-<seed>" when the seed is fixed, else the start time). */
@@ -1297,7 +1312,11 @@ function renderPlatform() {
   $$('#platform-seg button').forEach((b) => b.classList.toggle('active', b.dataset.platform === p));
   show($('live-form'), p === 'sleeper');
   show($('espn-form'), p === 'espn');
-  if (p === 'espn') {                    // one source of truth: the league saved under Settings
+  // prefill from the league saved under Settings, but only the first time the panel is shown:
+  // renderPlatform() runs on every render, and refilling a box the user is in the middle of clearing
+  // types the old id back in under them
+  if (p === 'espn' && !S.ui.espnPrefilled) {
+    S.ui.espnPrefilled = true;
     if (!$('espn-league').value && S.settings.espnLeagueId) $('espn-league').value = S.settings.espnLeagueId;
     if (!$('espn-season').value && S.settings.espnSeason) $('espn-season').value = String(S.settings.espnSeason);
   }
@@ -1974,7 +1993,7 @@ async function copyDiag() {
 async function loadBoard() {
   const b = S.board;
   if (b.loading) return;
-  b.loading = true; b.error = null; renderBoard();
+  b.loading = true; b.again = false; b.error = null; renderBoard();
   // a live session (Sleeper or ESPN) is sent whole so the board uses the league's scoring; mocks and idle use the default board
   const qs = new URLSearchParams(mode() === 'live' ? sessionQuery() : '');
   const lid = boardKey();
@@ -1987,6 +2006,7 @@ async function loadBoard() {
     b.loaded = true; b.leagueId = lid;
   } catch (e) { b.error = e.message; b.rows = b.rows || []; }
   b.loading = false;
+  if (b.again) { b.again = false; return loadBoard(); }     // the key changed while this was in flight
   renderBoard();
 }
 /** What the loaded board belongs to: the live league (platform + id + season) or nothing. */
@@ -1998,8 +2018,13 @@ function renderBoard() {
   const b = S.board;
   $('board-reload').disabled = b.loading;
   $$('#board-pos button').forEach((x) => x.classList.toggle('active', x.dataset.pos === b.position));
-  const lid = boardKey();
-  setText($('board-info'), b.loading ? 'loading…' : b.error ? 'error: ' + b.error : b.rows ? b.rows.length + ' players' + (lid ? ' • league scoring (' + platformLabel(get(S.session, 'platform', 'sleeper')) + ')' : ' • half-PPR (no league)') : '');
+  // label the rows by what they were actually fetched under, not by the session as it is now: at boot
+  // the first fetch goes out before the session is resumed, and reading boardKey() here would call a
+  // default half-PPR list "league scoring"
+  const lid = b.loaded ? b.leagueId : null;
+  const stale = b.loaded && b.leagueId !== boardKey();
+  setText($('board-info'), b.loading ? 'loading…' : b.error ? 'error: ' + b.error
+    : b.rows ? b.rows.length + ' players' + (lid ? ' • league scoring (' + platformLabel(String(lid).split(':')[0]) + ')' : ' • half-PPR (no league)') + (stale ? ' • reloading…' : '') : '');
   const rows = Array.isArray(b.rows) ? b.rows : [];
   let h = '';
   rows.forEach((c, i) => {
@@ -2261,6 +2286,12 @@ function openSettings(msg, focus) {
   if (focus === 'league' || focus === 'espn' || isEspnAuthError(msg)) target.scrollIntoView({ block: 'nearest' });
   target.focus();
 }
+/** The league id out of whatever was pasted: a bare number, or an ESPN URL carrying leagueId=. */
+function leagueIdIn(raw) {
+  const v = String(raw == null ? '' : raw).trim();
+  const m = /leagueId=(\d+)/i.exec(v);
+  return m ? m[1] : v;
+}
 /** ESPN wants the SWID wrapped in braces, and some browsers show it URL-encoded. */
 function normalizeSwid(raw) {
   let swid = String(raw || '').trim();
@@ -2270,14 +2301,17 @@ function normalizeSwid(raw) {
 }
 /** Fill the Settings team <select>: a fresh look-up when there is one, else the saved team on its own,
  *  so re-opening Settings never shows an empty box for a league that is already configured. */
-function renderSettingsTeams() {
+function renderSettingsTeams(forId) {
   const sel = $('set-espn-team'), lk = S.ui.settingsEspn;
-  const teams = lk && Array.isArray(lk.teams) ? lk.teams : null;
+  const cur = forId != null ? forId : leagueIdIn($('set-espn-league').value);
+  const teams = lk && Array.isArray(lk.teams) && String(lk.forLeague) === String(cur) ? lk.teams : null;
   if (!teams) {
-    sel.innerHTML = S.settings.espnTeamId != null
+    // the saved team belongs to the saved league and to no other: offer it only while they match
+    const keep = S.settings.espnTeamId != null && String(S.settings.espnLeagueId || '') === String(cur);
+    sel.innerHTML = keep
       ? '<option value="' + esc(S.settings.espnTeamId) + '">' + esc(S.settings.espnTeamName || 'Team ' + S.settings.espnTeamId) + '</option>'
       : '<option value="">— load the league to list the teams —</option>';
-    sel.value = S.settings.espnTeamId == null ? '' : String(S.settings.espnTeamId);
+    sel.value = keep ? String(S.settings.espnTeamId) : '';
     return;
   }
   let o = '<option value="">— choose your team —</option>';
@@ -2294,13 +2328,17 @@ function renderSettingsTeams() {
 /** The team list belongs to the league it came from. Editing the id has to drop it, or Save would
  *  store a team from the old league against the new one - a wrong roster, silently. */
 function settingsLeagueChanged() {
-  const raw = $('set-espn-league').value.trim().replace(/^.*leagueId=(\d+).*$/i, '$1');
+  const raw = leagueIdIn($('set-espn-league').value);
   const lk = S.ui.settingsEspn;
-  if (lk && String(lk.forLeague) !== raw) {
-    S.ui.settingsEspn = null;
-    if (raw !== String(S.settings.espnLeagueId)) S.settings.espnTeamId = null;   // saved team is another league's
-    renderSettingsTeams();
-    setText($('set-espn-info'), 'league changed — load the teams again');
+  // Whatever the picker is showing came from exactly one league: the list just loaded, or the saved
+  // pair. Both have to be re-checked against what is typed *now* - keying only off the in-memory
+  // look-up leaves the common path (open Settings on a fresh page, edit the id) unguarded, and a
+  // team from the old league would be saved against the new one: a wrong roster, silently.
+  const from = lk ? String(lk.forLeague) : String(S.settings.espnLeagueId || '');
+  if (from !== raw) {
+    if (lk) S.ui.settingsEspn = null;
+    renderSettingsTeams(raw);
+    setText($('set-espn-info'), raw ? 'league changed — load the teams again' : '');
   }
 }
 /** Look the league up from Settings and list its teams. One ESPN read; nothing metered. */
@@ -2308,10 +2346,14 @@ async function settingsLoadTeams() {
   const raw = $('set-espn-league').value.trim().replace(/^.*leagueId=(\d+).*$/i, '$1');
   if (!raw) { setText($('set-espn-info'), 'enter the league id first'); $('set-espn-league').focus(); return; }
   const season = parseInt($('set-espn-season').value, 10) || num(get(S.status, 'season', null)) || null;
-  // the cookies typed in this dialog have to be sent now, before Save: a private league 401s without them
-  const prev = { s2: S.settings.espnS2, swid: S.settings.espnSwid };
+  // What is typed in this dialog has to be sent now, before Save - a private league 401s without the
+  // cookies, and a server with an access code 401s without that. It is borrowed for this one request
+  // and always put back: an unsaved dialog must not change how the rest of the app authenticates.
+  const prev = { s2: S.settings.espnS2, swid: S.settings.espnSwid, code: S.settings.accessCode, key: S.settings.apiKey };
   S.settings.espnS2 = $('set-espn-s2').value.trim();
-  S.settings.espnSwid = normalizeSwid($('set-espn-swid').value.trim());
+  S.settings.espnSwid = normalizeSwid($('set-espn-swid').value);
+  S.settings.accessCode = $('set-access').value.trim();
+  S.settings.apiKey = $('set-key').value.trim();
   $('set-espn-load').disabled = true;
   setText($('set-espn-info'), 'loading league ' + raw + '…');
   try {
@@ -2324,10 +2366,11 @@ async function settingsLoadTeams() {
       const n = Array.isArray(r.teams) ? r.teams.length : 0;
       setText($('set-espn-info'), n + ' teams' + (r.me ? ' — yours was picked out by your SWID' : ' — choose yours'));
     } else {
-      S.settings.espnS2 = prev.s2; S.settings.espnSwid = prev.swid;      // the look-up failed: do not keep half-typed cookies
       setText($('set-espn-info'), 'could not load that league — check the id, and the cookies above if it is private');
     }
   } finally {
+    S.settings.espnS2 = prev.s2; S.settings.espnSwid = prev.swid;
+    S.settings.accessCode = prev.code; S.settings.apiKey = prev.key;     // Save is the only thing that persists
     $('set-espn-load').disabled = false;
   }
 }
@@ -2475,7 +2518,7 @@ const IDLE_POLL_MS = 30000;
 const DONE_POLL_MS = 300000;
 async function tick() {
   if (mode() === 'live') {
-    if (draftDone() && document.hidden) { schedule(); return; }   // final board, nobody looking
+    if ((draftDone() || pollStalled()) && document.hidden) { schedule(); return; }   // nothing to see, nobody looking
     await loadLiveState();
     if (Date.now() - S.statusAt > 15000) await loadStatus();
   } else if (!document.hidden) {
@@ -2487,10 +2530,13 @@ async function tick() {
  *  serverless invocation every 2 s, for ever, on a board that is already final. The Force refresh
  *  button still re-reads it on demand. */
 function draftDone() { return isLive() && get(S.state, 'draft.is_complete', false) === true; }
+/** A live session that cannot be read - dead cookies, a deleted league - never reports "complete",
+ *  so the back-off above never engages and it would poll every 2 s for ever. Failures back it off. */
+function pollStalled() { return isLive() && S.failures >= 5; }
 function schedule(ms) {
   clearTimeout(_pollTimer);
   if (ms == null) {
-    ms = draftDone() ? DONE_POLL_MS
+    ms = draftDone() || pollStalled() ? DONE_POLL_MS
       : mode() === 'live' ? (S.ui.espnDenied ? 5000 : myTurn() ? 1000 : 2000)   // slower while ESPN says 401
       : isMock() ? 5000 : IDLE_POLL_MS;
   }
@@ -2642,7 +2688,7 @@ function seasonKey() {
 async function loadSeason(week) {
   const key = seasonKey();
   if (!key || S.season.loading) return;
-  S.season.loading = true; S.season.error = null; renderSeason();
+  S.season.loading = true; S.season.again = false; S.season.error = null; renderSeason();
   const lg = seasonLeague();
   const body = {
     session: { mode: 'live', platform: 'espn', league_id: lg.league_id, team_id: lg.team_id,
@@ -2656,8 +2702,10 @@ async function loadSeason(week) {
   } catch (e) {
     S.season.error = e.message; S.season.data = null;
   } finally {
-    S.season.loading = false; renderSeason();
+    S.season.loading = false;
   }
+  if (S.season.again) { S.season.again = false; return loadSeason(week); }   // key changed mid-flight
+  renderSeason();
 }
 function renderSeason() {
   const lg = seasonLeague();
@@ -2692,6 +2740,10 @@ function renderSeason() {
             (lg.from === 'settings' ? ' • league ' + lg.league_id + ' from Settings' : '')) : ''));
   if (!d) { $('se-matchup').innerHTML = ''; return; }
 
+  if (S.season.key && S.season.key !== seasonKey()) {      // fetched for a different league / team
+    setText($('se-when'), 'reloading for the current league…');
+    return;
+  }
   const lu = d.lineup;
   $('se-matchup').innerHTML = lu.win_probability == null
     ? 'No opponent this week.'
@@ -2746,8 +2798,17 @@ function renderSeason() {
  *  fetch the default half-PPR list and call it "league scoring". boot() calls it again once the
  *  session is back; both calls are idempotent, guarded on what is already loaded. */
 function enterTab(name) {
-  if (name === 'board' && (!S.board.loaded || S.board.leagueId !== boardKey()) && !S.board.loading) loadBoard();
-  if (name === 'season' && seasonKey() && S.season.key !== seasonKey() && !S.season.loading) loadSeason();
+  // A fetch already in flight was started for the *old* key (boot enters the tab before the session
+  // is resumed), so it cannot satisfy this one. Ask for a repeat rather than returning early, or the
+  // corrective call after resumeSession() is swallowed and the tab keeps the pre-session answer.
+  if (name === 'board' && (!S.board.loaded || S.board.leagueId !== boardKey())) {
+    if (S.board.loading) S.board.again = true;
+    else loadBoard();
+  }
+  if (name === 'season' && seasonKey() && S.season.key !== seasonKey()) {
+    if (S.season.loading) S.season.again = true;
+    else loadSeason();
+  }
 }
 function showTab(name) {
   if (S.ui.tab !== name) unpinCard();          // a card anchored in another tab must not linger
@@ -2784,24 +2845,35 @@ $('settings-save').addEventListener('click', () => {
   S.settings.accessCode = $('set-access').value.trim();
   S.settings.espnS2 = $('set-espn-s2').value.trim();
   S.settings.espnSwid = normalizeSwid($('set-espn-swid').value);
-  S.settings.espnLeagueId = $('set-espn-league').value.trim().replace(/^.*leagueId=(\d+).*$/i, '$1');
+  const wasLeague = String(S.settings.espnLeagueId || '');
+  const typedLeague = leagueIdIn($('set-espn-league').value);
+  if (typedLeague && !/^\d+$/.test(typedLeague)) {
+    toast('That does not look like an ESPN league id — it is the leagueId= number in the league URL');
+    openSettings('', 'league');
+    return;
+  }
+  S.settings.espnLeagueId = typedLeague;
   S.settings.espnSeason = parseInt($('set-espn-season').value, 10) || null;
   const teamSel = $('set-espn-team');
   const listFor = get(S.ui.settingsEspn, 'forLeague', null);
-  S.settings.espnTeamId = parseInt(teamSel.value, 10) || null;
-  if (listFor != null && String(listFor) !== S.settings.espnLeagueId) {
-    S.settings.espnTeamId = null;                      // the picker was showing another league's teams
-    toast('League id changed — load the teams again and pick yours');
-  }
-  S.settings.espnTeamName = S.settings.espnTeamId == null ? ''
-    : (teamSel.options[teamSel.selectedIndex] || {}).text || '';
+  const picked = parseInt(teamSel.value, 10) || null;
+  // a team is only trustworthy when it came from a list loaded for *this* league, or when the league
+  // did not change and it is the one already saved against it
+  const vouched = picked != null && (listFor != null
+    ? String(listFor) === S.settings.espnLeagueId
+    : wasLeague === S.settings.espnLeagueId);
+  S.settings.espnTeamId = vouched ? picked : null;
+  S.settings.espnTeamName = vouched ? ((teamSel.options[teamSel.selectedIndex] || {}).text || '') : '';
+  if (picked != null && !vouched) toast('League id changed — load the teams again and pick yours');
   if ([S.settings.apiKey, S.settings.accessCode, S.settings.espnS2, S.settings.espnSwid].some((v) => /[^\x20-\x7e]/.test(v))) toast('a value contains characters that cannot go into an HTTP header — check what you pasted');
   S.settings.model = MODELS.includes($('set-model').value) ? $('set-model').value : '';
   S.settings.theme = $('set-theme').value === 'light' ? 'light' : 'dark';
-  saveSettings(); closeSettings();
+  const stored = saveSettings();
+  closeSettings();
   S.ui.espnAuthAsked = false; S.ui.espnDenied = null; S.failures = 0;
   if (S.season.key && S.season.key !== seasonKey()) { S.season.data = null; S.season.key = ''; }   // a different league
-  toast('Settings saved', 'ok', 2000);
+  if (stored) toast('Settings saved', 'ok', 2000);
+  else toast('Settings applied for this tab only — the browser refused to store them (private mode or a full quota)', 'warn', 8000);
   if (S.ui.tab === 'season' && seasonKey() && !S.season.data) loadSeason();
   renderAll(); schedule(10); verifyAccess();
   if (isMock() && S.state) mockAction('sync');
@@ -2858,6 +2930,16 @@ $('espn-form').addEventListener('submit', async (ev) => {
   const slot = parseInt($('espn-slot').value, 10);
   if (tid > 0) session.team_id = tid;
   else if (slot > 0) session.slot = slot;                  // a slot only stands in when no team is chosen
+  // remember the league as identity, not just as this session: the draft ends, the season does not,
+  // and without this anyone who drafts first ends up with no league saved - the original complaint
+  if (tid > 0) {
+    S.settings.espnLeagueId = String(f.league_id);
+    S.settings.espnSeason = f.season || null;
+    S.settings.espnTeamId = tid;
+    const opt = $('espn-team').options[$('espn-team').selectedIndex];
+    S.settings.espnTeamName = (opt && opt.text) || '';
+    saveSettings();
+  }
   // a loaded league for a different id is stale: the server resolves everything from the id anyway
   if (S.ui.espn && String(get(S.ui.espn, 'league.league_id', '')) !== String(f.league_id)) delete session.team_id;
   await startSession(session);
