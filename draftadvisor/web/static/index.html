@@ -2322,7 +2322,9 @@ function renderSettingsTeams(forId) {
   }
   sel.innerHTML = o;
   const me = lk.me && typeof lk.me === 'object' ? lk.me : null;
-  const want = S.settings.espnTeamId != null ? String(S.settings.espnTeamId) : (me && me.team_id != null ? String(me.team_id) : '');
+  const savedHere = S.settings.espnTeamId != null && String(S.settings.espnLeagueId || '') === String(cur);
+  const want = savedHere ? String(S.settings.espnTeamId)
+    : (me && me.team_id != null ? String(me.team_id) : '');
   sel.value = Array.from(sel.options).some((x) => x.value === want) ? want : '';
 }
 /** The team list belongs to the league it came from. Editing the id has to drop it, or Save would
@@ -2374,7 +2376,11 @@ async function settingsLoadTeams() {
     $('set-espn-load').disabled = false;
   }
 }
-function closeSettings() { S.ui.settingsOpen = false; show($('settings-modal'), false); }
+function closeSettings() {
+  S.ui.settingsOpen = false;
+  S.ui.settingsEspn = null;      // a team list is only good for the dialog that loaded it
+  show($('settings-modal'), false);
+}
 
 // ---------------------------------------------------------------- 5. session lifecycle
 /** Apply a render payload (from GET /api/state or POST /api/mock/state). */
