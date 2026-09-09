@@ -33,7 +33,7 @@
     ui: { top: 80, left: null, right: 24, w: 380, h: 620, collapsed: false, posOpen: { QB: 1, RB: 1, WR: 1, TE: 1, K: 0, DEF: 0 } }
   };
   var layer = "manual";        // which detection layer last produced a pick
-  var index = [], byEspn = new Map(), byName = new Map(), indexError = "";
+  var index = [], byEspn = new Map(), byName = new Map(), byLast = new Map(), indexError = "";
   var advice = null, adviceError = "", loading = false, usingLocal = false;
   var debug = [], verbs = Object.create(null), candidates = [];
   var els = {}, root = null;
@@ -137,7 +137,7 @@
 
   // ---------------------------------------------------------------- player index
   function ingestIndex(rows) {
-    index = []; byEspn = new Map(); byName = new Map();
+    index = []; byEspn = new Map(); byName = new Map(); byLast = new Map();
     (rows || []).forEach(function (r) {
       var eid = r.espn_id !== undefined ? r.espn_id : (r.espn !== undefined ? r.espn : (r.ids && r.ids.espn));
       var p = {
@@ -150,6 +150,12 @@
       if (p.espn_id != null) byEspn.set(String(p.espn_id), p);
       var nk = normName(p.name);
       if (nk && !byName.has(nk)) byName.set(nk, p);
+      var parts = nk.split(" ");
+      if (parts.length > 1) {
+        var last = parts[parts.length - 1];
+        if (!byLast.has(last)) byLast.set(last, []);
+        byLast.get(last).push(p);
+      }
     });
     index.sort(function (a, b) { return (b.points || 0) - (a.points || 0); });
   }
@@ -261,6 +267,55 @@
   var HEADSHOT_ID = /\/full\/(\d+)\.png/;
   var espnCfg = { slot: null, teams: null, read: false };
 
+  /** ESPN writes rosters as "C. McCaffrey": match on last name, disambiguated by the first initial
+   *  and, when that is still ambiguous, by the highest projection (the drafted one, in practice). */
+  function matchAbbrev(text) {
+    var t = normName(text);
+    if (!t) return null;
+    var exact = byName.get(t);
+    if (exact) return exact;
+    var parts = t.split(" ");
+    if (parts.length < 2) return null;
+    var last = parts[parts.length - 1], initial = parts[0].charAt(0);
+    var cands = byLast.get(last) || [];
+    if (!cands.length) return null;
+    var narrowed = cands.filter(function (p) { return normName(p.name).charAt(0) === initial; });
+    var pool = narrowed.length ? narrowed : cands;
+    return pool.slice().sort(function (a, b) { return (b.points || 0) - (a.points || 0); })[0];
+  }
+
+  /** My roster, read straight from ESPN's roster panel - ground truth, no slot arithmetic needed. */
+  function espnMyRoster() {
+    var out = [];
+    try {
+      var rows = document.querySelectorAll(".roster tr[data-idx]");
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].querySelector(".player-column__empty")) continue;      // unfilled slot
+        var cell = rows[i].querySelector(".player-column");
+        if (!cell) continue;
+        var name = (cell.getAttribute("title") || cell.textContent || "").trim();
+        if (!name || /^empty$/i.test(name)) continue;
+        var p = matchAbbrev(name);
+        if (p) out.push(p);
+      }
+    } catch (e) { log("espn", "roster read failed: " + e); }
+    return out;
+  }
+
+  /** My slot, from ESPN's live "You're on the clock in: N Picks / Round R, Pick P" banner.
+   *  Snake: an odd round counts forward, an even round backward. Exact, and it works mid-draft. */
+  function espnSlotFromClock() {
+    try {
+      var txt = document.body.innerText || "";
+      var m = txt.match(/round\s*(\d{1,2})\s*,\s*pick\s*(\d{1,2})/i);
+      var teams = espnCfg.teams || parseInt(S.settings.teams, 10) || 12;
+      if (!m) return null;
+      var rnd = parseInt(m[1], 10), idx = parseInt(m[2], 10);
+      if (!rnd || !idx || idx > teams) return null;
+      return (rnd % 2 === 1) ? idx : (teams - idx + 1);
+    } catch (e) { return null; }
+  }
+
   var espnScoring = null;
   /** The league's real scoring rules straight from ESPN (same-origin fetch, the user's own cookies).
    *  ESPN freezes draft PICKS during a draft but settings are served normally, so this is reliable. */
@@ -305,6 +360,19 @@
         if (n >= 4 && n <= 20) {
           espnCfg.teams = n;
           if (S.settings.teams !== n) { S.settings.teams = n; saveState(); log("espn", "league size from the pick train: " + n + " teams"); }
+        }
+      }
+      var live = espnSlotFromClock();
+      if (live && espnCfg.slot !== live) { espnCfg.slot = live; log("espn", "your slot from the live clock: " + live); }
+      // my roster, straight off ESPN's panel - this is what makes "needs" correct
+      var roster = espnMyRoster();
+      for (var r = 0; r < roster.length; r++) {
+        var rp = roster[r];
+        if (!S.mine.some(function (m) { return String(m.espn_id) === String(rp.espn_id) || normName(m.name || "") === normName(rp.name); })) {
+          S.mine.push({ espn_id: rp.espn_id, name: rp.name });
+          addTaken({ espn_id: rp.espn_id, name: rp.name }, "espn", false);
+          log("espn", "your roster: " + rp.name);
+          saveState(); refresh();
         }
       }
       if (espnCfg.slot == null) {
