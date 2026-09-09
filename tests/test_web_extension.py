@@ -210,3 +210,66 @@ def test_projection_cards_carry_espn_id(server):
     rows = httpx.get(server + "/api/projections", params={"position": "RB", "top": 20}, timeout=60).json()
     assert rows and all("espn_id" in c for c in rows)
     assert sum(1 for c in rows if c["espn_id"]) >= len(rows) - 2
+
+
+# ---------------------------------------------------------------------------
+# The board depth is not the number of players we recognised
+#
+# Before this, ``ext_state`` reserved all of my pick numbers and filled only as many as the caller
+# named, so one unreported player left a hole at one of my picks and ``next_pick_no`` walked back to
+# it. A round-1 clock opens every starting slot, which prices every position at its replacement level
+# and hands running backs the ~36-point head start their steeper curve gives them at equal demand.
+# That is the whole of the "it keeps telling me to take another RB with four already" report.
+# ---------------------------------------------------------------------------
+
+def _board(payload: dict) -> tuple:
+    b = payload["board"]
+    return b["on_the_clock"], b["round"]
+
+
+def test_board_depth_survives_an_unreported_roster(server):
+    """Losing my roster must not move the clock: same board, same pick number, same round."""
+    empty = advice(server, {"taken": [], "teams": 12, "rounds": 16, "slot": 3})
+    assert _board(empty) == (1, 1) and empty["warnings"] == []
+
+    pool = empty["by_position"]
+    picks = [c for pos in ("RB", "WR", "TE", "QB", "K") for c in pool[pos]]  # 25 distinct players
+    taken = [{"espn_id": int(c["espn_id"]), "name": c["name"]} for c in picks]
+    mine = [taken[i] for i in (0, 1)]        # slot 3 in a 12-team snake picks #3 and #22: two by now
+    body = {"taken": taken, "teams": 12, "rounds": 16, "slot": 3, "made": len(taken)}
+
+    full = advice(server, dict(body, mine=mine))
+    lost = advice(server, dict(body, mine=[]))                              # the roster read failed
+    assert _board(full) == _board(lost) == (len(taken) + 1, 3)
+    assert full["warnings"] == [] and lost["warnings"], lost["warnings"]
+    assert "not identified" in lost["warnings"][0]
+    # and the failure is on the panel rather than hidden behind plausible-looking advice
+    assert [p["position"] for p in lost["roster"]["players"]] == ["UNK", "UNK"]
+    assert [p["name"] for p in full["roster"]["players"]] == [c["name"] for c in mine]
+
+
+def test_four_running_backs_are_not_told_to_draft_a_fifth(server):
+    """RB, RB and FLEX full: the marginal 5th back is bench depth and must lose to the open slots."""
+    empty = advice(server, {"taken": [], "teams": 12, "rounds": 16, "slot": 1})
+    rbs = empty["by_position"]["RB"][:4]
+    mine = [{"espn_id": int(c["espn_id"]), "name": c["name"]} for c in rbs]
+    # a plausible board around them: four rounds of picks, mine included
+    others = [c for pos in ("WR", "TE", "QB") for c in empty["by_position"][pos]]
+    taken = mine + [{"espn_id": int(c["espn_id"]), "name": c["name"]} for c in others]
+    out = advice(server, {"taken": taken, "mine": mine, "teams": 12, "rounds": 16, "slot": 1,
+                          "made": 4 * 12})
+    assert out["warnings"] == []
+    assert out["roster"]["counts"] == {"RB": 4}
+    assert "RB" not in out["needs"] and "WR" in out["needs"]
+    assert out["suggestion"]["position"] != "RB", out["suggestion"]
+    assert [c["position"] for c in out["overall"]].count("RB") == 0
+
+
+def test_made_fills_the_board_past_the_players_we_could_name(server):
+    """Picks nobody could match still moved the draft on; the clock must reflect them."""
+    empty = advice(server, {"taken": [], "teams": 12, "rounds": 16, "slot": 5})
+    taken = [{"espn_id": int(c["espn_id"]), "name": c["name"]} for c in empty["overall"]]
+    shallow = advice(server, {"taken": taken, "teams": 12, "rounds": 16, "slot": 5})
+    deep = advice(server, {"taken": taken, "teams": 12, "rounds": 16, "slot": 5, "made": 30})
+    assert _board(shallow) == (len(taken) + 1, 1)
+    assert _board(deep) == (31, 3)

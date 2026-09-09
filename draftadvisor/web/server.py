@@ -54,7 +54,8 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, PrivateAttr, ValidationError
 
 from ..config import DEFAULT_SEASON, Settings, home_dir
-from ..models import DraftSettings, DraftState, LeagueSettings, Player, PlayerValue, Projection, Recommendation, ResearchNote
+from ..models import (DraftSettings, DraftState, LeagueSettings, Player, PlayerValue, Projection, Recommendation,
+                      ResearchNote, RosterSpot)
 from ..research.store import NoteStore, make_store
 
 log = logging.getLogger(__name__)
@@ -1293,6 +1294,7 @@ class ExtAdviceReq(BaseModel):
     rounds: int = 16
     superflex: bool = False
     slot: int | None = None                         # my draft slot (1-based); None -> inferred from the picks made
+    made: int | None = None                         # picks on the board, whether or not they were recognised
     espn_scoring_items: list[dict] | None = None    # raw settings.scoringSettings.scoringItems read off the ESPN page
     roster_positions: list[str] | None = None       # Sleeper slot labels; None -> the default lineup
 
@@ -1415,14 +1417,20 @@ def ext_resolve(refs: Sequence[ExtPlayerRef], idx: Mapping[str, Any], ctx: Any) 
 
 
 def ext_state(ctx: Any, league: LeagueSettings, rounds: int, taken: Sequence[str], mine: Sequence[str],
-              slot: int | None = None) -> DraftState:
+              slot: int | None = None, made: int | None = None) -> DraftState:
     """A :class:`DraftState` that holds exactly what the extension reported: every taken player is
     unavailable and my players sit on my slot, so roster needs and lineup value are real.
 
     An explicit ``slot`` wins (the extension reads it off the ESPN draft banner); otherwise it is the
     slot whose share of the picks made so far matches the size of my roster - a guess that lands on
-    slot 1 before any pick exists, which is why the caller should send it. The pick numbers exist only
-    to place the players consistently - none of them is reported back.
+    slot 1 before any pick exists, which is why the caller should send it.
+
+    ``made`` is how deep the board actually is (the highest pick number the extension saw). The clock
+    must not depend on how many players were *recognised*: :attr:`DraftState.next_pick_no` walks up to
+    the first empty pick number, so one unreported player used to rewind the draft to an earlier round,
+    which opens every starting slot, prices every position at its replacement level and hands RBs the
+    36-point head start their steeper curve gives them. Picks 1..``made`` are therefore always filled -
+    with a nameless placeholder where the extension could not say who was taken.
     """
     from ..mock.simulator import MY_USER_ID, make_mock_draft
 
@@ -1430,40 +1438,64 @@ def ext_state(ctx: Any, league: LeagueSettings, rounds: int, taken: Sequence[str
     mine_ids = [p for p in mine]
     mine_set = set(mine_ids)
     others = [p for p in taken if p not in mine_set]
-    made = len(mine_ids) + len(others)
+    reported = len(mine_ids) + len(others)
     if slot is not None and 1 <= int(slot) <= teams:
         my_slot = int(slot)
     else:
         order = make_mock_draft(league, 1, teams, rounds)
         my_slot, best = 1, None
         for s in range(1, teams + 1):
-            d = abs(sum(1 for n in order.picks_for_slot(s) if n <= made) - len(mine_ids))
+            d = abs(sum(1 for n in order.picks_for_slot(s) if n <= reported) - len(mine_ids))
             if best is None or d < best:
                 best, my_slot = d, s
     draft = make_mock_draft(league, my_slot, teams, rounds)
     my_numbers = draft.picks_for_slot(my_slot)
-    mine_numbers = set(my_numbers)
 
-    def _pick(no: int, pid: str) -> Any:
+    # How deep the board is: what the caller measured, never fewer than the players it listed, and
+    # never fewer than my own k-th pick when it says I hold k players.
+    board = max(int(made or 0), reported)
+    if mine_ids and len(mine_ids) <= len(my_numbers):
+        board = max(board, my_numbers[len(mine_ids) - 1])
+    board = min(board, draft.total_picks)
+
+    def _pick(no: int, pid: str | None) -> Any:
         from ..models import Pick
 
-        pl = ctx.players.get(pid)
+        pl = ctx.players.get(pid) if pid else None
         slot = draft.slot_for_pick(no)
-        return Pick(pick_no=no, round=draft.round_of(no), draft_slot=slot, player_id=pid,
-                    roster_id=draft.original_roster_for_slot(slot),
-                    metadata={"position": pl.position if pl else None, "team": pl.team if pl else None,
-                              "first_name": (pl.name.split(" ")[0] if pl and pl.name else None)})
+        # a placeholder keeps the pick number occupied without claiming a player: the strategy engine
+        # counts it as a pick made (recommend.py falls back to the pick's metadata position, here None)
+        # and, on my own slot, as a roster body of unknown position rather than an open starting slot
+        md = {"position": pl.position if pl else None, "team": pl.team if pl else None,
+              "first_name": (pl.name.split(" ")[0] if pl and pl.name else None)}
+        if pid is None:
+            md = {"position": None, "team": None, "first_name": "Unreported", "last_name": "pick"}
+        return Pick(pick_no=no, round=draft.round_of(no), draft_slot=slot,
+                    player_id=pid if pid else f"unreported_{no}",
+                    roster_id=draft.original_roster_for_slot(slot), metadata=md)
 
-    picks = [_pick(n, pid) for pid, n in zip(mine_ids, my_numbers)]
-    free = (n for n in range(1, draft.total_picks + 1) if n not in mine_numbers)
-    for pid in others:
-        n = next(free, None)
-        if n is None:
-            break
-        picks.append(_pick(n, pid))
-    picks.sort(key=lambda p: p.pick_no)
+    # my players go on my own pick numbers, in order; every other reported player fills the earliest
+    # number that is not one of mine, so nobody else's player is ever attributed to my roster
+    taken_by: dict[int, str] = {}
+    my_used = [n for n in my_numbers if n <= board][:len(mine_ids)]
+    for n, pid in zip(my_used, mine_ids):
+        taken_by[n] = pid
+    queue = list(others) + mine_ids[len(my_used):]
+    reserved = set(my_numbers)
+    free = [n for n in range(1, board + 1) if n not in taken_by and n not in reserved]
+    for n, pid in zip(free, queue):
+        taken_by[n] = pid
+    picks = [_pick(n, taken_by.get(n)) for n in range(1, board + 1)]
+    # More players than the board is deep: the surplus is a player we know is gone but cannot place -
+    # a roster spot, which is exactly the "off the board, no pick number" case the model already has.
+    # Inventing pick numbers for them instead would push the clock past the draft's real position.
+    spots = []
+    for pid in queue[len(free):]:
+        pl = ctx.players.get(pid)
+        spots.append(RosterSpot(player_id=pid, name=pl.name if pl else None,
+                                position=pl.position if pl else None))
     return DraftState(draft=draft, picks=picks, league=league, my_user_id=MY_USER_ID, my_slot=my_slot,
-                      rostered_ids=set(taken) | mine_set)
+                      rostered_ids=set(taken) | mine_set, roster_spots=spots)
 
 
 def ext_card(v: PlayerValue) -> dict:
@@ -1473,7 +1505,26 @@ def ext_card(v: PlayerValue) -> dict:
             "vorp": _f(v.vorp), "adp": _f(pl.adp), "tier": v.tier, "why": "; ".join(list(v.reasons)[:2])}
 
 
-def ext_payload(rec: Recommendation, counts: Mapping[str, int], unresolved: Sequence[str], ms: float) -> dict:
+def ext_roster_warnings(st: DraftState, mine: Sequence[str], unresolved: Sequence[str]) -> list[str]:
+    """What the caller should not have to infer from bad advice.
+
+    An advisor that cannot see my roster thinks every starting slot is open and recommends the best
+    player alive, which is why the panel says so out loud instead of quietly answering the wrong
+    question.
+    """
+    out: list[str] = []
+    if st.my_slot is not None:
+        due = [n for n in st.draft.picks_for_slot(st.my_slot) if n < st.next_pick_no]
+        if len(due) > len(mine):
+            out.append(f"{len(due) - len(mine)} of your {len(due)} picks are not identified: "
+                       f"needs and lineup value are incomplete. Set 'my slot' or open your roster panel.")
+    if unresolved:
+        out.append(f"{len(unresolved)} drafted player(s) could not be matched: " + ", ".join(list(unresolved)[:4]))
+    return out
+
+
+def ext_payload(rec: Recommendation, counts: Mapping[str, int], unresolved: Sequence[str], ms: float,
+                warnings: Sequence[str] = (), board: Mapping[str, int] | None = None) -> dict:
     overall = [ext_card(v) for v in rec.best_overall[:EXT_TOP_N]]
     by_position = {pos: [ext_card(v) for v in adv.candidates[:EXT_TOP_N]] for pos, adv in rec.by_position.items()}
     suggestion = None
@@ -1483,8 +1534,13 @@ def ext_payload(rec: Recommendation, counts: Mapping[str, int], unresolved: Sequ
         suggestion = {"player_id": top.player_id, "name": top.player.name, "position": top.player.position,
                       "team": top.player.team, "action": adv.action if adv else "take",
                       "why": (adv.rationale if adv and adv.rationale else "; ".join(list(top.reasons)[:2]))}
+    roster = None
+    if rec.my_roster is not None:
+        roster = {"counts": {k: v for k, v in rec.my_roster.position_counts.items() if v},
+                  "players": [{"name": p.name, "position": p.position} for p in rec.my_roster.players]}
     return {"overall": overall, "by_position": by_position, "suggestion": suggestion,
             "needs": rec.my_roster.needs() if rec.my_roster is not None else [],
+            "roster": roster, "warnings": list(warnings), "board": dict(board or {}),
             "counts": dict(counts), "unresolved": list(unresolved), "ms": int(round(ms))}
 
 
@@ -1699,11 +1755,14 @@ def create_app() -> FastAPI:
         taken, unresolved = ext_resolve(req.taken, idx, ctx)
         mine, unresolved_mine = ext_resolve(req.mine, idx, ctx)
         taken_all = list(dict.fromkeys(list(taken) + list(mine)))
-        st = ext_state(ctx, league, req.rounds, taken_all, mine, req.slot)
+        st = ext_state(ctx, league, req.rounds, taken_all, mine, req.slot, req.made)
         rec = await asyncio.to_thread(ctx.advisor.recommend, st, EXT_TOP_N, EXT_TOP_N)
         counts = {"taken": len(req.taken), "resolved": len(taken_all), "mine": len(mine)}
-        payload = ext_payload(rec, counts, unresolved + [u for u in unresolved_mine if u not in unresolved],
-                              (time.perf_counter() - t0) * 1000.0)
+        board = {"made": st.next_pick_no - 1, "on_the_clock": st.next_pick_no,
+                 "round": st.draft.round_of(st.next_pick_no), "slot": st.my_slot or 0}
+        unmatched = unresolved + [u for u in unresolved_mine if u not in unresolved]
+        payload = ext_payload(rec, counts, unmatched, (time.perf_counter() - t0) * 1000.0,
+                              ext_roster_warnings(st, mine, unmatched), board)
         return Response(json.dumps(payload), media_type="application/json", headers=NO_STORE)
 
     @app.post("/api/chat", dependencies=guarded)

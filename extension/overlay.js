@@ -26,6 +26,7 @@
   var S = {
     taken: [],            // [{espn_id, name, src, ts}] most recent first
     mine: [],             // [{espn_id, name}]
+    made: 0,              // deepest overall pick number seen on the board, recognised or not
     settings: {
       api: API_BASE_DEFAULT, scoring: "ppr", teams: 12, rounds: 16,
       superflex: false, myTeamId: "", mySlot: "", accessCode: "", domScan: true, domDisappear: false
@@ -56,13 +57,23 @@
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
   function posOf(p) { var x = String(p || "").toUpperCase(); return x === "DST" || x === "D/ST" ? "DEF" : x; }
+  /** How deep the board is, which is NOT how many picks we recognised. The server needs this
+   *  separately: a pick we could not name still moved the draft on, and a board it thinks is
+   *  shallower than it is puts the draft back in an earlier round, where every starting slot looks
+   *  open and the best available player (usually a running back) wins every time. */
+  function noteMade(no) {
+    var n = parseInt(no, 10);
+    var cap = (parseInt(S.settings.teams, 10) || 12) * (parseInt(S.settings.rounds, 10) || 16);
+    if (!isFinite(n) || n < 1 || n > cap) return;
+    if (n > S.made) { S.made = n; saveState(); }
+  }
 
   // ---------------------------------------------------------------- storage
   function hasChromeStorage() {
     try { return typeof chrome !== "undefined" && chrome.storage && chrome.storage.local; } catch (e) { return false; }
   }
   function saveState() {
-    var blob = { taken: S.taken, mine: S.mine, settings: S.settings, ui: S.ui };
+    var blob = { taken: S.taken, mine: S.mine, made: S.made, settings: S.settings, ui: S.ui };
     try {
       if (hasChromeStorage()) { var o = {}; o[STORE_KEY] = blob; chrome.storage.local.set(o); return; }
     } catch (e) { /* fall through */ }
@@ -72,6 +83,7 @@
     if (!blob || typeof blob !== "object") return;
     if (Array.isArray(blob.taken)) S.taken = blob.taken;
     if (Array.isArray(blob.mine)) S.mine = blob.mine;
+    if (isFinite(blob.made)) S.made = parseInt(blob.made, 10) || 0;
     if (blob.settings) for (var k in S.settings) if (blob.settings[k] !== undefined) S.settings[k] = blob.settings[k];
     if (blob.ui) for (var j in S.ui) if (blob.ui[j] !== undefined) S.ui[j] = blob.ui[j];
     if (!S.settings.api) S.settings.api = API_BASE_DEFAULT;
@@ -203,6 +215,7 @@
 
     if (PICK_VERBS[verb]) {
       var teamId = parseInt(toks[1], 10), playerId = parseInt(toks[2], 10), overall = parseInt(toks[3], 10);
+      noteMade(overall);
       if (plausibleId(playerId)) {
         var mineToo = !!(S.settings.myTeamId !== "" && String(teamId) === String(S.settings.myTeamId));
         var added = addTaken({ espn_id: playerId }, "websocket", mineToo);
@@ -284,21 +297,44 @@
     return pool.slice().sort(function (a, b) { return (b.points || 0) - (a.points || 0); })[0];
   }
 
-  /** My roster, read straight from ESPN's roster panel - ground truth, no slot arithmetic needed. */
+  /** My roster, read straight from ESPN's roster panel - ground truth, no slot arithmetic needed.
+   *
+   *  This is the single most load-bearing read in the extension: without it the server sees an empty
+   *  roster, treats every starting slot as open and recommends the best player alive. The DOM is
+   *  ESPN's, so it is read through a list of selectors and, inside a row, id-first (the headshot URL
+   *  carries the exact ESPN player id) before falling back to the abbreviated name. */
+  var ROSTER_SELECTORS = [".roster tr[data-idx]", ".roster tbody tr", "[class*='roster'] tbody tr"];
+  function espnRosterRows() {
+    for (var i = 0; i < ROSTER_SELECTORS.length; i++) {
+      try {
+        var rows = document.querySelectorAll(ROSTER_SELECTORS[i]);
+        if (rows && rows.length) return rows;
+      } catch (e) { /* selector unsupported: try the next */ }
+    }
+    return [];
+  }
+  var rosterMiss = 0;
   function espnMyRoster() {
-    var out = [];
+    var out = [], rows = espnRosterRows(), filled = 0;
     try {
-      var rows = document.querySelectorAll(".roster tr[data-idx]");
       for (var i = 0; i < rows.length; i++) {
-        if (rows[i].querySelector(".player-column__empty")) continue;      // unfilled slot
-        var cell = rows[i].querySelector(".player-column");
-        if (!cell) continue;
-        var name = (cell.getAttribute("title") || cell.textContent || "").trim();
-        if (!name || /^empty$/i.test(name)) continue;
-        var p = matchAbbrev(name);
+        var row = rows[i];
+        if (row.querySelector(".player-column__empty")) continue;          // unfilled slot
+        var p = null, m = HEADSHOT_ID.exec(row.innerHTML || "");
+        if (m) p = byEspn.get(String(m[1])) || null;                       // exact: ESPN's own id
+        var cell = row.querySelector(".player-column, .player-name, a[title]");
+        var name = cell ? (cell.getAttribute("title") || cell.textContent || "").trim() : "";
+        if (!p && name && !/^empty$/i.test(name)) p = matchAbbrev(name);
+        if (!p && !m && !name) continue;                                   // header or spacer row
+        filled++;
         if (p) out.push(p);
       }
     } catch (e) { log("espn", "roster read failed: " + e); }
+    // say so once when the panel is there but unreadable: an empty roster is never silently fine
+    if (filled > out.length && rosterMiss !== filled - out.length) {
+      rosterMiss = filled - out.length;
+      log("espn", "roster panel: " + out.length + " of " + filled + " rows matched a player");
+    }
     return out;
   }
 
@@ -425,10 +461,17 @@
       for (var i = 0; i < picks.length; i++) {
         var li = picks[i];
         var p = espnPlayerIn(li);
-        if (!p) continue;                                        // placeholder: team name only
+        if (!p) {                                                // no player we can name ...
+          if (HEADSHOT_ID.test((li.innerHTML || ""))) {          // ... but a headshot means it was made
+            var un = ((li.querySelector(".pick-number") || {}).textContent || "").match(/(\d+)/);
+            noteMade(un ? parseInt(un[1], 10) : null);
+          }
+          continue;
+        }
         var numTxt = (li.querySelector(".pick-number") || {}).textContent || "";
         var nm = numTxt.match(/(\d+)/);
         var no = nm ? parseInt(nm[1], 10) : null;
+        noteMade(no);
         var mine = isMyPickNumber(no);
         if (addTaken({ espn_id: p.espn_id, name: p.name }, "espn", mine)) {
           hits++; layer = "espn"; renderHeader();
@@ -531,6 +574,7 @@
       scoring: S.settings.scoring, teams: parseInt(S.settings.teams, 10) || 12,
       rounds: parseInt(S.settings.rounds, 10) || 16, superflex: !!S.settings.superflex,
       slot: parseInt(S.settings.mySlot, 10) || espnCfg.slot || null,   // typed slot wins over the banner
+      made: S.made || null,                                            // board depth, independent of what we named
       espn_scoring_items: espnScoring                                   // the league's real rules, read off ESPN
     };
   }
@@ -605,6 +649,7 @@
       '<div class="body">',
       '  <div id="msgs"></div>',
       '  <div id="sug"></div>',
+      '  <div id="roster"></div>',
       "  <h3>Top 5 available</h3><div id=\"overall\"></div>",
       '  <div id="bypos"></div>',
       "  <h3>Manual entry (always works)</h3>",
@@ -620,7 +665,7 @@
     root.appendChild(panel);
 
     els.panel = panel;
-    ["dot", "layer", "count", "refresh", "collapse", "msgs", "sug", "overall", "bypos", "q", "mineToggle",
+    ["dot", "layer", "count", "refresh", "collapse", "msgs", "sug", "roster", "overall", "bypos", "q", "mineToggle",
       "results", "taken", "tcount", "settings", "dbgbody", "dbgwrap"].forEach(function (id) {
         els[id] = root.getElementById ? root.getElementById(id) : panel.querySelector("#" + id);
       });
@@ -674,8 +719,10 @@
     if (!els.dot) return;
     els.dot.className = "dot " + layer;
     els.layer.textContent = layer + (loading ? "" : "");
+    var b = (advice && advice.board) || null;
+    var clock = b && b.on_the_clock ? " / pick #" + b.on_the_clock + " (rd " + b.round + ")" : "";
     els.count.innerHTML = (loading ? '<span class="spin"></span> ' : "") +
-      esc(S.taken.length + " taken / " + S.mine.length + " mine" + (index.length ? "" : " / no index"));
+      esc(S.taken.length + " taken / " + S.mine.length + " mine" + clock + (index.length ? "" : " / no index"));
     if (els.tcount) els.tcount.textContent = String(S.taken.length);
   }
   function renderMsgs() {
@@ -690,6 +737,8 @@
       out += '<div class="warn">Player index unavailable (' + esc(indexError) +
         "). WebSocket ids still work; manual search has no names to offer.</div>";
     }
+    var w = (advice && advice.warnings) || [];
+    for (var wi = 0; wi < w.length; wi++) out += '<div class="warn">' + esc(w[wi]) + "</div>";
     if (!S.settings.domScan) out += '<div class="warn">DOM scan is off - only the websocket hook and manual entry are live.</div>';
     els.msgs.innerHTML = out;
     var r = els.msgs.querySelector("#retry");
@@ -722,6 +771,16 @@
         (s.action ? " - " + esc(s.action) : "") + '</div><div class="why">' + esc(s.why || "") + "</div>" +
         ((a.needs && a.needs.length) ? '<div class="meta">needs: ' + esc(a.needs.join(", ")) + "</div>" : "") + "</div>"
       : '<div class="sug empty"><div class="lbl">next pick</div><div class="nm">API returned no suggestion</div></div>';
+    if (els.roster) {
+      var rr = a.roster;
+      if (rr && rr.players && rr.players.length) {
+        var counts = Object.keys(rr.counts || {}).map(function (k) { return k + " " + rr.counts[k]; }).join(", ");
+        els.roster.innerHTML = '<div class="meta">your roster (' + esc(counts) + "): " +
+          esc(rr.players.map(function (x) { return x.name; }).join(", ")) + "</div>";
+      } else {
+        els.roster.innerHTML = '<div class="meta">your roster: empty - every position counts as a need</div>';
+      }
+    }
     els.overall.innerHTML = table(a.overall);
     var bp = a.by_position || {};
     els.bypos.innerHTML = POSITIONS.map(function (pos) {
@@ -833,7 +892,7 @@
     bind("s-code", "accessCode");
     bind("s-dom", "domScan", "bool"); bind("s-gone", "domDisappear", "bool");
     g("s-clear").addEventListener("click", function () {
-      S.taken = []; S.mine = []; domSeen = new Map(); saveState(); renderTaken(); renderHeader(); refresh(true);
+      S.taken = []; S.mine = []; S.made = 0; domSeen = new Map(); saveState(); renderTaken(); renderHeader(); refresh(true);
     });
   }
   function renderDebug() {

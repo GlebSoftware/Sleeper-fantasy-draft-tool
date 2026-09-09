@@ -29,7 +29,20 @@ The coloured dot and the word next to "draftadvisor" say **which layer last prod
 | `dom` (amber) | picks are being read off the page text |
 | `manual` (blue) | nothing automatic has fired yet; you are typing picks in |
 
-Next to it: `N taken / M mine`, a **Refresh** button (re-asks the API), and the collapse toggle.
+Next to it: `N taken / M mine / pick #P (rd R)`, a **Refresh** button (re-asks the API), and the
+collapse toggle. `pick #P` is the pick the *server* thinks is on the clock, so a wrong round is
+visible immediately instead of showing up as strange advice.
+
+Under the suggestion, the panel prints **the roster the advice was computed against**. Check it. An
+advisor that cannot see your four running backs believes every starting slot is open and recommends
+the best player alive - which is another running back. When rows read `UNK` the extension knows a
+pick of yours was made but could not name the player, and the panel says so in a warning; set
+**my slot** in Settings, or open your roster panel on the ESPN page, and it will pick it up.
+
+Board depth is tracked separately from what the extension could name: a pick whose player is
+unrecognised still advances the clock, and the round it produces is what drives replacement levels
+and positional scarcity. Use **Clear this draft** in Settings when you move from a mock to the real
+one, or the old depth carries over.
 
 ## The three detection layers
 

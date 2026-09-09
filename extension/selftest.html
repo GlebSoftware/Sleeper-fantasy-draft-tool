@@ -74,6 +74,11 @@ window.fetch = function (url, opts) {
         team: top[0].team, action: "draft", why: "Best value on the board for your roster needs."
       } : null,
       needs: ["RB", "WR"], counts: { taken: (body.taken || []).length, resolved: (body.taken || []).length, mine: (body.mine || []).length },
+      roster: { counts: { RB: (body.mine || []).length }, players: (body.mine || []).map(function (m) {
+        return { name: m.name || ("espn#" + m.espn_id), position: "RB" }; }) },
+      warnings: (body.made && !(body.mine || []).length) ? ["stub: your roster is not being detected"] : [],
+      board: { made: body.made || (body.taken || []).length, on_the_clock: (body.made || (body.taken || []).length) + 1,
+               round: 1, slot: body.slot || 0 },
       unresolved: [], ms: 7
     };
     return Promise.resolve({ ok: true, status: 200, text: function () { return Promise.resolve(JSON.stringify(resp)); } });
