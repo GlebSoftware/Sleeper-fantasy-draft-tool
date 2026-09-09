@@ -17,6 +17,11 @@ import pytest
 from draftadvisor.models import LeagueSettings, Player, Projection
 from draftadvisor.strategy.trade import consensus_projections, find_trades
 
+
+def find(*a, **kw):
+    """find_trades returns a result object carrying the counts; most tests are about its proposals."""
+    return find_trades(*a, **kw).proposals
+
 SLOTS = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "BN", "BN", "BN"]
 
 
@@ -75,7 +80,7 @@ def test_consensus_uses_the_markets_number_not_ours():
 def test_depth_i_do_not_start_is_offered_for_the_starter_i_am_thin_at():
     """Backs four deep and receivers two deep: the trade goes one way."""
     w = _base_world()
-    out = find_trades(MINE, {"Them": THEIRS}, w.players, w.projections, league(), limit=5)
+    out = find(MINE, {"Them": THEIRS}, w.players, w.projections, league(), limit=5)
     assert out, "a spare back for a starting receiver is the obvious trade here"
     best = out[0]
     assert best.my_gain > 0
@@ -87,7 +92,7 @@ def test_depth_i_do_not_start_is_offered_for_the_starter_i_am_thin_at():
 def test_a_deal_that_reads_as_a_loss_to_them_is_not_proposed():
     """The whole point is a trade they would accept, not one we would like them to."""
     w = _base_world()
-    out = find_trades(MINE, {"Them": THEIRS}, w.players, w.projections, league(), limit=20,
+    out = find(MINE, {"Them": THEIRS}, w.players, w.projections, league(), limit=20,
                       min_their_view=0.0)
     assert out and all(p.their_view >= 0.0 for p in out), [(p.give, p.get, p.their_view) for p in out]
 
@@ -105,7 +110,7 @@ def test_the_perception_gap_decides_which_player_to_target():
     )
     mine = ["myRB1", "myRB2", "myRB3", "myWR1", "myWR2", "myQB", "myTE"]
     theirs = ["thHyped", "thCheap", "thWR3", "thRB1", "thQB", "thTE"]
-    out = find_trades(mine, {"Them": theirs}, w.players, w.projections, league(), limit=6,
+    out = find(mine, {"Them": theirs}, w.players, w.projections, league(), limit=6,
                       min_their_view=0.0)
     assert out, "there is a deal here"
     targets = [p for p in out if "thCheap" in p.get]
@@ -121,7 +126,7 @@ def test_a_player_who_would_sit_on_my_bench_is_never_asked_for():
           mk("thScrub", "WR", 40.0, 40.0), mk("thScrub2", "RB", 30.0, 30.0)]
     )
     mine = ["myRB1", "myRB2", "myRB3", "myWR1", "myWR2", "myQB", "myTE"]
-    out = find_trades(mine, {"Them": ["thScrub", "thScrub2"]}, w.players, w.projections, league())
+    out = find(mine, {"Them": ["thScrub", "thScrub2"]}, w.players, w.projections, league())
     assert out == [], "nothing on that roster would start for me"
 
 
@@ -133,7 +138,7 @@ def test_kickers_and_defences_are_left_out_of_it():
           mk("thWR1", "WR", 280.0, 280.0), mk("thRB1", "RB", 150.0, 150.0), mk("thK", "K", 150.0, 150.0)]
     )
     mine = ["myRB1", "myRB2", "myRB3", "myWR1", "myWR2", "myQB", "myTE", "myK", "myDEF"]
-    out = find_trades(mine, {"Them": ["thWR1", "thRB1", "thK"]}, w.players, w.projections, league(), limit=10)
+    out = find(mine, {"Them": ["thWR1", "thRB1", "thK"]}, w.players, w.projections, league(), limit=10)
     moved = {p for prop in out for p in list(prop.give) + list(prop.get)}
     assert not (moved & {"myK", "myDEF", "thK"}), moved
 
@@ -143,7 +148,7 @@ def test_kickers_and_defences_are_left_out_of_it():
 def test_one_willing_manager_cannot_fill_the_whole_list():
     w = _base_world()
     rosters = {f"Team {i}": list(THEIRS) for i in range(1, 5)}      # four identical, equally willing
-    out = find_trades(MINE, rosters, w.players, w.projections, league(), limit=8, per_team_limit=2)
+    out = find(MINE, rosters, w.players, w.projections, league(), limit=8, per_team_limit=2)
     per = {}
     for p in out:
         per[p.team] = per.get(p.team, 0) + 1
@@ -152,14 +157,14 @@ def test_one_willing_manager_cannot_fill_the_whole_list():
 
 def test_results_are_ordered_by_what_i_gain():
     w = _base_world()
-    out = find_trades(MINE, {"Them": THEIRS}, w.players, w.projections, league(), limit=10)
+    out = find(MINE, {"Them": THEIRS}, w.players, w.projections, league(), limit=10)
     assert out == sorted(out, key=lambda p: (-p.my_gain, -p.their_view))
     assert all(p.my_gain >= 5.0 for p in out), "a deal worth less than the message is not a deal"
 
 
 def test_the_pitch_speaks_from_their_side_of_the_table():
     w = _base_world()
-    out = find_trades(MINE, {"Them": THEIRS}, w.players, w.projections, league(), limit=1)
+    out = find(MINE, {"Them": THEIRS}, w.players, w.projections, league(), limit=1)
     pitch = out[0].pitch(w.players)
     assert all(w.players[p].name in pitch for p in out[0].give + out[0].get)
     assert "consensus" in pitch and f"{out[0].their_view:+.0f}" in pitch
@@ -169,13 +174,13 @@ def test_the_pitch_speaks_from_their_side_of_the_table():
 def test_running_out_of_time_returns_what_was_found():
     w = _base_world()
     rosters = {f"Team {i}": list(THEIRS) for i in range(1, 40)}
-    out = find_trades(MINE, rosters, w.players, w.projections, league(), limit=5, time_budget_s=0.0)
+    out = find(MINE, rosters, w.players, w.projections, league(), limit=5, time_budget_s=0.0)
     assert isinstance(out, list), "a budget of zero returns nothing, never raises"
 
 
 def test_an_empty_or_unknown_roster_is_skipped():
     w = _base_world()
-    out = find_trades(MINE, {"Empty": [], "Ghosts": ["nobody", "nothing"]}, w.players, w.projections, league())
+    out = find(MINE, {"Empty": [], "Ghosts": ["nobody", "nothing"]}, w.players, w.projections, league())
     assert out == []
 
 
@@ -185,7 +190,7 @@ def test_a_player_we_cannot_value_is_never_put_in_a_trade():
     w = _base_world()
     w.players["mystery"] = Player(player_id="mystery", name="mystery", position="WR", team="AAA")
     mine = MINE + ["mystery"]
-    out = find_trades(mine, {"Them": THEIRS}, w.players, w.projections, league(), limit=20)
+    out = find(mine, {"Them": THEIRS}, w.players, w.projections, league(), limit=20)
     assert out, "the rest of the roster still trades"
     assert all("mystery" not in p.give for p in out), [p.give for p in out]
 
@@ -194,5 +199,76 @@ def test_a_player_projected_at_zero_is_not_currency_either():
     w = _base_world()
     zero_pl, zero_pr = mk("bench_zero", "WR", 0.0, 0.0)
     w.players["bench_zero"], w.projections["bench_zero"] = zero_pl, zero_pr
-    out = find_trades(MINE + ["bench_zero"], {"Them": THEIRS}, w.players, w.projections, league(), limit=20)
+    out = find(MINE + ["bench_zero"], {"Them": THEIRS}, w.players, w.projections, league(), limit=20)
     assert all("bench_zero" not in p.give for p in out), [p.give for p in out]
+
+
+# --------------------------------------------------------------------------- the counts behind the list
+
+def test_the_search_says_how_many_deals_it_weighed():
+    """Two proposals reads as a broken search unless you can see what was behind them."""
+    w = _base_world()
+    r = find_trades(MINE, {"A": THEIRS, "B": THEIRS}, w.players, w.projections, league(), limit=3)
+    assert r.considered > 0 and r.teams_searched == 2
+    assert r.helped_me >= len(r.proposals)
+    assert r.rejected_their_view >= 0 and r.timed_out is False
+
+
+def test_a_wider_shape_set_finds_more_than_a_narrow_one():
+    from draftadvisor.strategy.trade import SHAPES_WIDE
+
+    w = _base_world()
+    narrow = find_trades(MINE, {"A": THEIRS}, w.players, w.projections, league(), shapes=((1, 1),), limit=50)
+    wide = find_trades(MINE, {"A": THEIRS}, w.players, w.projections, league(), shapes=SHAPES_WIDE, limit=50)
+    assert wide.considered > narrow.considered, (wide.considered, narrow.considered)
+
+
+def test_one_roster_returns_variety_rather_than_the_same_star_three_ways():
+    w = _base_world()
+    out = find_trades(MINE, {"A": THEIRS}, w.players, w.projections, league(), limit=9, per_team_limit=3)
+    got = [tuple(p.get) for p in out.proposals]
+    if len(got) > 1:
+        assert len({g[0] for g in got}) > 1, got     # not all asking for the same player first
+
+
+# --------------------------------------------------------------------------- judging one specific trade
+
+def test_a_named_trade_is_judged_from_both_sides():
+    from draftadvisor.strategy.trade import evaluate_offer
+
+    w = _base_world()
+    # a back for a receiver: it improves my lineup and reads as roughly even to them
+    v = evaluate_offer(MINE, THEIRS, ["myRB2"], ["thWR2"], w.players, w.projections, league())
+    assert v.my_gain > 0 and v.verdict == "ACCEPT"
+    assert any("our projections" in d for d in v.details)
+    assert any("market consensus" in d for d in v.details)
+    assert v.fair, v.their_view
+    assert "Take it" in v.read() and "starting lineup" in v.read(), v.read()
+
+
+def test_a_bad_offer_is_called_bad():
+    from draftadvisor.strategy.trade import evaluate_offer
+
+    w = _base_world()
+    v = evaluate_offer(MINE, THEIRS, ["myRB1"], ["thRB1"], w.players, w.projections, league())
+    assert v.my_gain < 0 and v.verdict == "REJECT"
+    assert "Turn it down" in v.read()
+
+
+def test_a_lopsided_win_warns_that_they_will_say_no():
+    from draftadvisor.strategy.trade import evaluate_offer
+
+    w = _base_world()
+    v = evaluate_offer(MINE, THEIRS, ["myWR2"], ["thWR1", "thWR2"], w.players, w.projections, league())
+    assert v.my_gain > 0
+    assert not v.fair and "expect a no" in v.read(), (v.their_view, v.read())
+
+
+def test_an_unprojected_player_in_an_offer_is_flagged_not_silently_zero():
+    from draftadvisor.strategy.trade import evaluate_offer
+
+    w = _base_world()
+    w.players["ghost"] = Player(player_id="ghost", name="Ghost", position="WR", team="BBB")
+    v = evaluate_offer(MINE, THEIRS + ["ghost"], ["myRB4"], ["ghost"], w.players, w.projections, league())
+    assert any("No projection for Ghost" in d for d in v.details), v.details
+    assert "caution" in " ".join(v.details)

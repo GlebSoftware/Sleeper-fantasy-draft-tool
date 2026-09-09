@@ -323,6 +323,15 @@ tr.fresh td { animation: slidein 0.5s ease-out both; }
 /* a grid item defaults to min-width:auto, so a wide table inside one pushes the whole page sideways
    on a phone instead of scrolling inside its own panel (.panel already has overflow-x: auto) */
 .league-grid > * { min-width: 0; }
+.tc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+@media (max-width: 640px) { .tc-grid { grid-template-columns: 1fr; } }
+.tc-h { margin: 6px 0 4px; font-size: 12px; }
+.tc-list { max-height: 240px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: 2px; }
+.tc-list .r { display: flex; gap: 6px; align-items: baseline; padding: 3px 6px; cursor: pointer; border-radius: 4px; }
+.tc-list .r:hover { background: var(--bg3); }
+.tc-list .r.on { background: var(--accent-bg); outline: 1px solid var(--accent); }
+.tc-list .r .nm { flex: 1 1 auto; }
+.tc-list .r .pts { color: var(--muted); font-variant-numeric: tabular-nums; }
 @media (max-width: 1000px) { .league-grid { grid-template-columns: 1fr; } }
 .flags li { margin: 2px 0; }
 tr.added td.val { color: var(--green); }
@@ -761,7 +770,28 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
       <div>
         <div class="panel"><h2>Trades worth sending</h2>
           <div class="hint" style="margin:0 0 6px">Your side is priced with our projections; theirs with the market's consensus, because that is what they are looking at. A deal has to help you <em>and</em> not read as a loss to them.</div>
+          <div class="row" style="align-items:flex-end">
+            <label style="flex:0 1 130px">Worth at least <input type="number" id="se-min-gain" step="1" min="-50" max="100" value="5" title="ignore deals worth less than this many points to you"></label>
+            <label style="flex:0 1 150px">They must see <input type="number" id="se-min-their" step="1" min="-60" max="30" value="-2" title="how good the deal has to look to them, by consensus value"></label>
+            <label style="flex:0 1 90px">Show <input type="number" id="se-limit" min="1" max="40" value="8"></label>
+            <label class="inline"><input type="checkbox" id="se-wide" checked> 2-for-2</label>
+            <button id="se-find" class="small">Find trades</button>
+          </div>
+          <div class="hint" id="se-trade-info" style="margin:6px 0 0"></div>
           <div id="se-trades"></div>
+        </div>
+
+        <div class="panel"><h2>Trade calculator</h2>
+          <div class="hint" style="margin:0 0 6px">Judge a trade someone sent you, or build one: pick a manager, then click players on each
+            side. It is scored the same way — your side by our projections, theirs by the market's.</div>
+          <div class="row"><label>With <select id="tc-team"></select></label>
+            <button id="tc-clear" class="small">Clear</button>
+            <button id="tc-eval" class="primary small">Evaluate</button></div>
+          <div class="tc-grid">
+            <div><h3 class="tc-h">You send</h3><div id="tc-mine" class="tc-list"></div></div>
+            <div><h3 class="tc-h">You get</h3><div id="tc-theirs" class="tc-list"></div></div>
+          </div>
+          <div id="tc-out"></div>
         </div>
         <div class="panel"><h2>Standings</h2>
           <table id="se-standings"><thead><tr><th class="n">#</th><th>Team</th><th class="n">W-L</th><th class="n">PF</th><th class="n">ESPN playoff %</th></tr></thead><tbody></tbody></table>
@@ -1126,6 +1156,7 @@ const S = {
     espnPrefilled: false,               // the Setup league box has been seeded from Settings once
   },
   season: { data: null, at: 0, loading: false, again: false, error: null, key: '' },   // POST /api/inseason, only when the tab is open
+  calc: { team: null, give: [], get: [], out: null, loading: false, error: null },     // the trade calculator
   diag: { report: null, at: 0, loading: false, error: null },   // GET /api/espn/diagnose — only when you press the button
   espnSig: { sig: '', since: 0 },       // how long ESPN's answer has been identical (the server is stateless; only the browser can tell)
 };
@@ -2699,7 +2730,10 @@ async function loadSeason(week) {
   const body = {
     session: { mode: 'live', platform: 'espn', league_id: lg.league_id, team_id: lg.team_id,
                season: lg.season || undefined },
-    limit: 8,
+    limit: Math.max(1, Math.min(40, parseInt(($('se-limit') || {}).value, 10) || 8)),
+    min_gain: num(($('se-min-gain') || {}).value) == null ? 5 : num($('se-min-gain').value),
+    min_their_view: num(($('se-min-their') || {}).value) == null ? -2 : num($('se-min-their').value),
+    wide: !($('se-wide') && $('se-wide').checked === false),
   };
   if (week) body.week = week;
   try {
@@ -2713,6 +2747,64 @@ async function loadSeason(week) {
   if (S.season.again) { S.season.again = false; return loadSeason(week); }   // key changed mid-flight
   renderSeason();
 }
+// ---- trade calculator: pick a manager, click players on both sides, evaluate
+function calcRosters() {
+  const d = S.season.data;
+  const rs = (d && d.rosters) || [];
+  return { mine: rs.find((t) => t.is_me) || null, others: rs.filter((t) => !t.is_me) };
+}
+function renderCalc() {
+  const { mine, others } = calcRosters();
+  const sel = $('tc-team');
+  if (!sel) return;
+  if (!mine || !others.length) { sel.innerHTML = '<option value="">— no rosters —</option>'; return; }
+  if (S.calc.team == null || !others.some((t) => t.team_id === S.calc.team)) S.calc.team = others[0].team_id;
+  const opts = others.map((t) => '<option value="' + esc(t.team_id) + '">' + esc(t.name) + '</option>').join('');
+  if (sel.innerHTML !== opts) sel.innerHTML = opts;
+  sel.value = String(S.calc.team);
+  const them = others.find((t) => t.team_id === S.calc.team) || { players: [] };
+  const row = (p, picked) => {
+    const pos = String(p.position || '').toUpperCase().replace(/^D\/?ST$/, 'DEF');
+    return '<div class="r' + (picked ? ' on' : '') + '" data-pid="' + esc(p.player_id) + '">' +
+    '<span class="pos ' + esc(pos) + '">' + esc(pos || '?') + '</span>' +
+    '<span class="nm">' + esc(p.name) + '</span>' +
+    '<span class="pts">' + (p.points == null ? 'no proj' : fmt(p.points, 0)) + '</span></div>';
+  };
+  setHTML($('tc-mine'), (mine.players || []).map((p) => row(p, S.calc.give.includes(p.player_id))).join(''));
+  setHTML($('tc-theirs'), (them.players || []).map((p) => row(p, S.calc.get.includes(p.player_id))).join(''));
+  const o = S.calc.out;
+  setHTML($('tc-out'), S.calc.loading ? '<div class="hint">evaluating…</div>'
+    : S.calc.error ? '<div class="err">' + esc(S.calc.error) + '</div>'
+    : !o ? (S.calc.give.length || S.calc.get.length ? '<div class="hint">Press Evaluate.</div>' : '')
+    : '<div class="sug" style="margin-top:8px"><div class="lbl">' + esc(o.verdict) +
+      (o.fair ? '' : ' — they will likely say no') + '</div>' +
+      '<div class="nm">' + esc(o.read) + '</div>' +
+      '<div class="meta">you ' + (o.my_gain >= 0 ? '+' : '') + fmt(o.my_gain, 1) + ' pts by our projections • ' +
+      'they read it as ' + (o.their_view >= 0 ? '+' : '') + fmt(o.their_view, 1) + ' by consensus</div>' +
+      '<div class="muted small">' + o.details.map((x) => esc(x)).join('<br>') + '</div></div>');
+}
+async function evalTrade() {
+  const lg = seasonLeague();
+  if (!lg || lg.missing) { toast('set your league under Settings first'); return; }
+  if (!S.calc.give.length && !S.calc.get.length) { toast('pick at least one player'); return; }
+  S.calc.loading = true; S.calc.error = null; renderCalc();
+  try {
+    S.calc.out = await api('/api/trade/evaluate', {
+      method: 'POST', timeout: 60000,
+      body: {
+        session: { mode: 'live', platform: 'espn', league_id: lg.league_id, team_id: lg.team_id,
+                   season: lg.season || undefined },
+        partner_team_id: S.calc.team, give: S.calc.give, get: S.calc.get,
+        week: S.season.data ? S.season.data.week : undefined,
+      },
+    });
+  } catch (e) {
+    S.calc.error = e.message; S.calc.out = null;
+  } finally {
+    S.calc.loading = false; renderCalc();
+  }
+}
+
 function renderSeason() {
   const lg = seasonLeague();
   const has = !!seasonKey();
@@ -2777,6 +2869,14 @@ function renderSeason() {
         '</td></tr>').join('')
     : '<tr><td colspan="5" class="muted">Nothing on waivers would start for you.</td></tr>';
 
+  const ts = d.trade_search;
+  setHTML($('se-trade-info'), !ts ? '' :
+    esc(ts.considered.toLocaleString() + ' swaps weighed across ' + ts.teams_searched + ' rosters; ' +
+        ts.helped_me + ' helped you, ' + ts.rejected_their_view + ' of those read as a loss to them' +
+        (ts.timed_out ? ' (search hit its time budget)' : '')) +
+    ((d.trades || []).length ? '' : '<br>Nothing cleared the bars. Lower <b>Worth at least</b> or <b>They must see</b> and search again.'));
+  renderCalc();
+
   $('se-trades').innerHTML = (d.trades || []).length
     ? d.trades.map((t) => {
         const side = (xs) => xs.map((x) => esc(x.name) + ' <span class="muted small">' + esc(x.position || '') + '</span>').join(' + ');
@@ -2826,6 +2926,29 @@ function showTab(name) {
 }
 $$('#tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
 $('se-refresh').addEventListener('click', () => { S.season.key = ''; loadSeason(); });
+$('se-find').addEventListener('click', () => { S.season.key = ''; loadSeason(); });
+for (const id of ['se-min-gain', 'se-min-their', 'se-limit']) {
+  $(id).addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); S.season.key = ''; loadSeason(); } });
+}
+// ---- trade calculator
+$('tc-team').addEventListener('change', () => {
+  S.calc.team = parseInt($('tc-team').value, 10) || null;
+  S.calc.get = []; S.calc.out = null;          // their side belonged to the previous manager
+  renderCalc();
+});
+$('tc-clear').addEventListener('click', () => { S.calc.give = []; S.calc.get = []; S.calc.out = null; renderCalc(); });
+$('tc-eval').addEventListener('click', evalTrade);
+for (const [id, key] of [['tc-mine', 'give'], ['tc-theirs', 'get']]) {
+  $(id).addEventListener('click', (ev) => {
+    const row = ev.target.closest ? ev.target.closest('.r[data-pid]') : null;
+    if (!row) return;
+    const pid = row.getAttribute('data-pid');
+    const at = S.calc[key].indexOf(pid);
+    if (at >= 0) S.calc[key].splice(at, 1); else S.calc[key].push(pid);
+    S.calc.out = null;                          // the answer belonged to the previous selection
+    renderCalc();
+  });
+}
 $('set-espn-load').addEventListener('click', settingsLoadTeams);
 for (const id of ['set-espn-league', 'set-espn-season']) {
   $(id).addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); settingsLoadTeams(); } });

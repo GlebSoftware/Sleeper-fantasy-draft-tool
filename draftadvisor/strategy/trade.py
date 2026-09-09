@@ -22,8 +22,9 @@ from .replacement import replacement_levels
 
 log = logging.getLogger(__name__)
 
-__all__ = ["TradeEvaluation", "TradeProposal", "consensus_projections", "evaluate_trade", "find_trades",
-           "roster_value", "evaluate_pick_choice"]
+__all__ = ["TradeEvaluation", "TradeProposal", "TradeSearchResult", "TradeVerdict", "consensus_projections",
+           "evaluate_offer", "evaluate_trade", "find_trades", "roster_value", "evaluate_pick_choice",
+           "SHAPES_WIDE"]
 
 _ACCEPT_MARGIN = 3.0
 _LOPSIDED_FLOOR = 15.0
@@ -173,6 +174,90 @@ def evaluate_trade(
     return TradeEvaluation(my_b, my_a, th_b, th_a, my_delta, their_delta, verdict, details)
 
 
+@dataclass
+class TradeVerdict:
+    """One specific trade, judged from both sides of the table.
+
+    Same split as the search: my side priced with our projections, theirs with the market's consensus,
+    because that is the number they are looking at. Built for a deal that already exists - one offered
+    to me, or one I am putting together - so it reports rather than filters.
+    """
+
+    my_gain: float                  # our projections: what my roster gains
+    their_gain: float               # our projections: what theirs does
+    my_view: float                  # consensus: what the market thinks I gained
+    their_view: float               # consensus: what they will think they gained
+    verdict: str                    # ACCEPT | REJECT | NEUTRAL, by our numbers, for me
+    fair: bool                      # does it read as roughly even to them?
+    details: list[str] = field(default_factory=list)
+    my_before: float = 0.0
+    my_after: float = 0.0
+
+    @property
+    def edge(self) -> float:
+        """How much of my gain is disagreement with the market rather than lineup fit."""
+        return self.my_gain - self.my_view
+
+    def read(self) -> str:
+        """One line a person can act on."""
+        if self.my_gain <= -_ACCEPT_MARGIN:
+            return f"Turn it down: {self.my_gain:+.1f} points to your starting lineup."
+        if self.my_gain < _ACCEPT_MARGIN:
+            return f"Close to nothing either way ({self.my_gain:+.1f}). Only worth it if you want the roster spot."
+        if self.their_view < -10.0:
+            return (f"Good for you ({self.my_gain:+.1f}), but it reads as {self.their_view:+.0f} to them by "
+                    f"consensus - expect a no without sweetening it.")
+        return f"Take it: {self.my_gain:+.1f} points to your starting lineup, and it reads as {self.their_view:+.1f} to them."
+
+
+def evaluate_offer(
+    my_ids: Sequence[str],
+    their_ids: Sequence[str],
+    give: Sequence[str],
+    get: Sequence[str],
+    players: Mapping[str, Player],
+    projections: Mapping[str, Projection],
+    league: LeagueSettings,
+    *,
+    free_agents: Sequence[str] | None = None,
+    bench_discount: float = 0.35,
+) -> TradeVerdict:
+    """Judge one trade that already exists, ours and theirs.
+
+    ``free_agents`` sets the replacement baseline to who is actually available, which is what makes a
+    bench player worth what he is really worth rather than what the whole projected universe implies.
+    """
+    pool = list(free_agents) if free_agents is not None else None
+    rep = replacement_levels(projections, players, league, available=pool)
+    market = consensus_projections(projections)
+    rep_market = replacement_levels(market, players, league, available=pool)
+
+    ours = _Valuer(players, projections, league, rep, bench_discount)
+    theirs = _Valuer(players, market, league, rep_market, bench_discount)
+    give_s, get_s = set(give), set(get)
+    my_after_ids = [p for p in my_ids if p not in give_s] + list(get)
+    their_after_ids = [p for p in their_ids if p not in get_s] + list(give)
+
+    my_before, my_after = ours.value(my_ids), ours.value(my_after_ids)
+    my_gain = my_after - my_before
+    their_gain = ours.value(their_after_ids) - ours.value(their_ids)
+    my_view = theirs.value(my_after_ids) - theirs.value(my_ids)
+    their_view = theirs.value(their_after_ids) - theirs.value(their_ids)
+
+    ev = evaluate_trade(my_ids, their_ids, give, get, players, projections, league, bench_discount)
+    verdict = "ACCEPT" if my_gain > _ACCEPT_MARGIN else "REJECT" if my_gain < -_ACCEPT_MARGIN else "NEUTRAL"
+    details = [d for d in ev.details if not d.startswith("Me ")]
+    details.append(f"By our projections: you {my_gain:+.1f}, them {their_gain:+.1f}")
+    details.append(f"By market consensus: you {my_view:+.1f}, them {their_view:+.1f}")
+    unvalued = sorted(players[p].name for p in list(give) + list(get)
+                      if p in players and p not in projections)
+    if unvalued:
+        details.append("No projection for " + ", ".join(unvalued) + ": counted as zero, so treat this with caution")
+    return TradeVerdict(my_gain=my_gain, their_gain=their_gain, my_view=my_view, their_view=their_view,
+                        verdict=verdict, fair=their_view >= -10.0, details=details,
+                        my_before=my_before, my_after=my_after)
+
+
 def evaluate_pick_choice(state: DraftState, advisor, player_id: str) -> str:
     """Why (not) take ``player_id`` now versus the advisor's top recommendation."""
     rec = advisor.recommend(state)
@@ -225,6 +310,26 @@ MIN_MY_GAIN = 5.0
 MIN_THEIR_VIEW = -2.0
 #: Candidate players per side per team, best first. Keeps the search inside its time budget.
 CANDIDATES_PER_SIDE = 8
+#: Every shape worth searching. Two-for-two is where most real trades live but it is also the
+#: expensive one (C(n,2) squared), so it comes last and the time budget can cut it off.
+SHAPES_WIDE: tuple[tuple[int, int], ...] = ((1, 1), (2, 1), (1, 2), (2, 2))
+
+
+@dataclass
+class TradeSearchResult:
+    """What the search found, and what it threw away doing it.
+
+    The counts matter: a well-drafted league offers few clear edges, and "2 proposals" reads as a
+    broken search unless it is shown next to "of 1,412 considered, 60 helped me, 58 of those read as
+    a loss to them".
+    """
+
+    proposals: list["TradeProposal"] = field(default_factory=list)
+    considered: int = 0             # swaps actually evaluated
+    helped_me: int = 0              # ... of which cleared min_my_gain
+    rejected_their_view: int = 0    # ... of those, dropped because they read as a loss to them
+    timed_out: bool = False
+    teams_searched: int = 0
 
 
 @dataclass
@@ -327,6 +432,28 @@ def _most_useful_to_get(their_ids: Sequence[str], my_ids: Sequence[str], valuer:
     return [pid for _, pid in rows[:limit]]
 
 
+def _spread(found: Sequence[TradeProposal], limit: int) -> list[TradeProposal]:
+    """The best few from one roster, preferring variety over near-duplicates.
+
+    Ranked purely by my gain, a roster returns the same star asked for three different ways. A first
+    pass takes only deals that ask for someone not already spoken for, then the remainder fills up.
+    """
+    out: list[TradeProposal] = []
+    asked: set[str] = set()
+    for p in found:
+        if len(out) >= limit:
+            break
+        if not (set(p.get) & asked):
+            out.append(p)
+            asked |= set(p.get)
+    for p in found:
+        if len(out) >= limit:
+            break
+        if p not in out:
+            out.append(p)
+    return out
+
+
 class _Valuer:
     """Roster values under one set of projections, with the fixed parts computed once."""
 
@@ -355,9 +482,9 @@ def find_trades(
     min_their_view: float = MIN_THEIR_VIEW,
     bench_discount: float = 0.35,
     candidates_per_side: int = CANDIDATES_PER_SIDE,
-    per_team_limit: int = 2,
+    per_team_limit: int = 3,
     time_budget_s: float = 8.0,
-) -> list[TradeProposal]:
+) -> TradeSearchResult:
     """Deals that help me and that the other manager has a reason to accept.
 
     ``shapes`` are ``(give, get)`` counts: ``(2, 1)`` is consolidation, turning depth into a starter.
@@ -366,8 +493,10 @@ def find_trades(
     ``per_team_limit`` keeps one willing manager from filling the whole list with variations of the
     same deal.
 
-    Returns at most ``limit`` proposals, best for me first. Partial results on a time budget: a search
-    that ran out of time returns what it found rather than nothing.
+    Returns at most ``limit`` proposals, best for me first, with the counts behind them: a league of
+    efficient rosters yields few clear edges, and two proposals only reads as a working search next to
+    how many swaps were weighed to find them. Partial results on a time budget - a search that ran out
+    of time returns what it found, and says so - rather than nothing.
 
     Players we hold no projection for are never offered and never asked for - see :func:`_tradeable`.
     """
@@ -383,11 +512,12 @@ def find_trades(
     my_before, my_before_view = ours.value(mine), theirs_view.value(mine)
 
     give_pool = _cheapest_to_give(_tradeable(mine, players, projections), ours, my_before, candidates_per_side)
-    per_team: dict[str, list[TradeProposal]] = {}
+    result = TradeSearchResult()
     out: list[TradeProposal] = []
 
     for team, roster in their_rosters.items():
         if time.monotonic() - t0 > time_budget_s:
+            result.timed_out = True
             log.info("trade search: stopped at the time budget with %d proposals", len(out))
             break
         theirs = [p for p in roster if p in players]
@@ -398,20 +528,25 @@ def find_trades(
                                        my_before, candidates_per_side)
         if not get_pool:
             continue                                  # nothing on this roster would start for me
+        result.teams_searched += 1
         found: list[TradeProposal] = []
         for n_give, n_get in shapes:
             for give in combinations(give_pool, n_give):
                 for get in combinations(get_pool, n_get):
                     if time.monotonic() - t0 > time_budget_s:
+                        result.timed_out = True
                         break
+                    result.considered += 1
                     give_s, get_s = set(give), set(get)
                     my_after = [p for p in mine if p not in give_s] + list(get)
                     their_after = [p for p in theirs if p not in get_s] + list(give)
                     my_gain = ours.value(my_after) - my_before
                     if my_gain < min_my_gain:
                         continue
+                    result.helped_me += 1
                     their_view = theirs_view.value(their_after) - their_before_view
                     if their_view < min_their_view:
+                        result.rejected_their_view += 1
                         continue                      # they would read this as a loss and say no
                     their_gain = ours.value(their_after) - their_before
                     my_view = theirs_view.value(my_after) - my_before_view
@@ -422,9 +557,9 @@ def find_trades(
                                  f"Their value {their_gain:+.1f} by ours, {their_view:+.1f} by consensus"],
                     ))
         found.sort(key=lambda p: (-p.my_gain, -p.their_view))
-        per_team[str(team)] = found[:per_team_limit]
-        out.extend(per_team[str(team)])
-    # best first, but never all from one roster: a page of eight variations on the same deal with the
-    # same manager is one option, not eight, and he can only say yes once
+        out.extend(_spread(found, per_team_limit))
+    # best first, but never all from one roster: a page of variations on the same deal with the same
+    # manager is one option, not eight, and he can only say yes once
     out.sort(key=lambda p: (-p.my_gain, -p.their_view))
-    return out[:limit]
+    result.proposals = out[:limit]
+    return result

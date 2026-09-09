@@ -229,10 +229,21 @@ believes. A proposal has to clear both bars: it improves your starting lineup by
 does not read as a loss by theirs. Deals we would love but that look bad to them are filtered out —
 they are not trades, they are messages that get ignored.
 
+It searches 1-for-1, 2-for-1, 1-for-2 and 2-for-2, and reports what it weighed — *"1,100 swaps across
+9 rosters; 612 helped you, 553 of those read as a loss to them"* — because two proposals reads as a
+broken search until you can see the bars they had to clear. Both bars are controls (`--min-gain`,
+`--min-their-view`, and the boxes above the list in the app), so widen them when you want more to
+look at.
+
 What the search will not do: offer a player you start, ask for one who would sit on your bench, trade
-kickers or defences, or fill the list with eight variations of the same deal with one manager
-(`--per-team`, default 2). `--min-gain` and `--min-their-view` loosen or tighten both bars;
-`--one-for-one-only` turns off 2-for-1 consolidation.
+kickers or defences, put a player it cannot value into a deal, or fill the list with variations of
+the same deal with one manager (`--per-team`, default 3, preferring variety over near-duplicates).
+
+**Trade calculator.** In the app, under the proposals: pick a manager, click players on each side,
+Evaluate. It answers the two questions the search answers — what it does to your starting lineup by
+our projections, and how it reads to them by the market's — for a deal that already exists, whether
+someone sent it to you or you are putting it together. A one-sided add (nothing back) is a legitimate
+question and is answered as one.
 
 Costs nothing: it is arithmetic over projections already in the bundle. No paid API is involved.
 

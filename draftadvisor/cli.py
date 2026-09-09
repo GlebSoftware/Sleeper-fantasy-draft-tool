@@ -1388,25 +1388,31 @@ def cmd_trades(args: argparse.Namespace) -> int:
         console.print(f"  known teams and managers: {names}")
         return EXIT_USAGE
 
-    from .strategy.trade import find_trades
+    from .strategy.trade import SHAPES_WIDE, find_trades
 
     mine = list(rosters[me]["players"])
     others = {(r["display_name"] or r["name"] or str(rid)): list(r["players"])
               for rid, r in rosters.items() if rid != me}
     rostered = {pid for r in rosters.values() for pid in r["players"]}
     free_agents = [pid for pid in ctx.projections if pid not in rostered]
-    shapes = ((1, 1), (2, 1)) if args.two_for_one else ((1, 1),)
-    proposals = find_trades(mine, others, ctx.players, ctx.projections, ctx.league,
-                            free_agents=free_agents, shapes=shapes, limit=args.limit,
-                            min_my_gain=args.min_gain, min_their_view=args.min_their_view,
-                            per_team_limit=args.per_team, bench_discount=settings.bench_discount)
+    shapes = SHAPES_WIDE if args.two_for_one else ((1, 1),)
+    search = find_trades(mine, others, ctx.players, ctx.projections, ctx.league,
+                         free_agents=free_agents, shapes=shapes, limit=args.limit,
+                         min_my_gain=args.min_gain, min_their_view=args.min_their_view,
+                         per_team_limit=args.per_team, bench_discount=settings.bench_discount)
+    proposals = search.proposals
+    weighed = (f"{search.considered} swaps weighed across {search.teams_searched} rosters; "
+               f"{search.helped_me} helped you, {search.rejected_their_view} of those read as a loss to them"
+               + (" (search hit its time budget)" if search.timed_out else ""))
     if not proposals:
         console.print("[yellow]No trade found that helps you and that the other manager would plausibly take.[/yellow]")
+        console.print(f"  [dim]{weighed}[/dim]")
         console.print("  Try --min-gain 0 to see marginal deals, or --min-their-view -10 to include harder sells.")
         return EXIT_OK
 
     console.print(f"[bold]{len(proposals)} trade(s)[/bold]  "
                   f"[dim]my gain is our projection; their view is the market's consensus[/dim]")
+    console.print(f"[dim]{weighed}[/dim]")
     for i, p in enumerate(proposals, 1):
         gives = ", ".join(ctx.players[x].display() for x in p.give if x in ctx.players)
         gets = ", ".join(ctx.players[x].display() for x in p.get if x in ctx.players)

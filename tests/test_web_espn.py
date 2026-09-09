@@ -564,3 +564,90 @@ def test_inseason_can_skip_the_expensive_halves(espn):
     assert r.status_code == 200
     body = r.json()
     assert body["trades"] == [] and body["waivers"] == [] and body["lineup"]["starters"]
+
+
+def test_inseason_reports_what_the_trade_search_weighed(espn):
+    """"Two proposals" only reads as a working search next to how many swaps were behind it."""
+    base, _ = espn
+    r = httpx.post(base + "/api/inseason", json={"session": _session(team_id=1), "week": 4, "limit": 6},
+                   timeout=180)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    s = body["trade_search"]
+    assert s["considered"] > 0 and s["teams_searched"] > 0
+    assert s["helped_me"] >= len(body["trades"])
+    assert s["min_gain"] == 5.0 and s["min_their_view"] == -2.0
+    # the rosters come back too, so the calculator can build a trade without another round trip
+    rosters = body["rosters"]
+    assert len(rosters) == 10 and sum(1 for t in rosters if t["is_me"]) == 1
+    mine = next(t for t in rosters if t["is_me"])
+    assert mine["team_id"] == 1 and mine["players"]
+    p = mine["players"][0]
+    assert set(p) >= {"player_id", "name", "position", "team", "points"}
+
+
+def test_inseason_can_skip_the_rosters_when_they_are_not_wanted(espn):
+    base, _ = espn
+    r = httpx.post(base + "/api/inseason", json={"session": _session(team_id=1), "week": 4,
+                                                 "rosters": False, "trades": False, "waivers": False}, timeout=120)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["rosters"] is None and body["trade_search"] is None
+
+
+# ---------------------------------------------------------------------------
+# The trade calculator: judge a deal offered to me, or one I am building
+# ---------------------------------------------------------------------------
+
+def _two_rosters(base) -> tuple[dict, dict]:
+    r = httpx.post(base + "/api/inseason", json={"session": _session(team_id=1), "week": 4,
+                                                 "trades": False, "waivers": False}, timeout=120)
+    assert r.status_code == 200, r.text
+    rosters = r.json()["rosters"]
+    mine = next(t for t in rosters if t["is_me"])
+    theirs = next(t for t in rosters if not t["is_me"] and t["players"])
+    return mine, theirs
+
+
+def test_trade_calculator_judges_a_named_deal(espn):
+    base, _ = espn
+    mine, theirs = _two_rosters(base)
+    give, get = mine["players"][0]["player_id"], theirs["players"][0]["player_id"]
+    r = httpx.post(base + "/api/trade/evaluate",
+                   json={"session": _session(team_id=1), "partner_team_id": theirs["team_id"],
+                         "give": [give], "get": [get], "week": 4}, timeout=120)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["partner"] == theirs["name"]
+    assert [p["player_id"] for p in body["give"]] == [give]
+    assert [p["player_id"] for p in body["get"]] == [get]
+    assert body["verdict"] in ("ACCEPT", "REJECT", "NEUTRAL")
+    assert isinstance(body["fair"], bool) and body["read"]
+    assert any("our projections" in d for d in body["details"])
+    assert any("market consensus" in d for d in body["details"])
+    # a one-sided add (nothing back) is a legitimate question too
+    r2 = httpx.post(base + "/api/trade/evaluate",
+                    json={"session": _session(team_id=1), "partner_team_id": theirs["team_id"],
+                          "give": [], "get": [get], "week": 4}, timeout=120)
+    assert r2.status_code == 200 and r2.json()["my_gain"] >= r.json()["my_gain"]
+
+
+def test_trade_calculator_refuses_players_who_are_not_on_those_rosters(espn):
+    base, _ = espn
+    mine, theirs = _two_rosters(base)
+    r = httpx.post(base + "/api/trade/evaluate",
+                   json={"session": _session(team_id=1), "partner_team_id": theirs["team_id"],
+                         "give": [theirs["players"][0]["player_id"]], "get": [], "week": 4}, timeout=120)
+    assert r.status_code == 400 and "not on the stated rosters" in r.text
+
+
+def test_trade_calculator_needs_a_real_partner_and_a_trade(espn):
+    base, _ = espn
+    mine, _theirs = _two_rosters(base)
+    pid = mine["players"][0]["player_id"]
+    r = httpx.post(base + "/api/trade/evaluate",
+                   json={"session": _session(team_id=1), "partner_team_id": 999, "give": [pid]}, timeout=120)
+    assert r.status_code == 400 and "no team 999" in r.text
+    r2 = httpx.post(base + "/api/trade/evaluate",
+                    json={"session": _session(team_id=1), "partner_team_id": 2, "give": [], "get": []}, timeout=120)
+    assert r2.status_code == 400 and "at least one player" in r2.text

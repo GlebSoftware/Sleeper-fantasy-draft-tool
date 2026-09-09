@@ -1248,6 +1248,19 @@ class InSeasonReq(BaseModel):
     limit: int = 8                          # proposals / waiver targets to return
     min_gain: float = 5.0                   # ignore trades worth less than this to me
     min_their_view: float = -2.0            # how good a deal has to look to them, by consensus
+    per_team: int = 3                       # most proposals from any one manager
+    wide: bool = True                       # also search 1-for-2 and 2-for-2, not just 1-for-1 / 2-for-1
+    rosters: bool = True                    # return every roster, so the page can build a trade offline
+
+
+class TradeEvalReq(BaseModel):
+    """One specific trade to judge: offered to me, or one I am putting together."""
+
+    session: Session
+    partner_team_id: int
+    give: list[str] = []                    # my player ids
+    get: list[str] = []                     # theirs
+    week: int | None = None
 
 
 class LookupReq(BaseModel):
@@ -1447,6 +1460,22 @@ def espn_week_rosters(league_json: Mapping[str, Any], ctx: Any) -> tuple[dict[in
     names = {int(k): ((m.team_name or m.display_name) or f"Team {k}")
              for k, m in managers.items() if str(k).isdigit()}
     return rosters, names
+
+
+def inseason_player_payload(pid: str, ctx: Any, tables: Any, week: int, not_playing: Sequence[str]) -> dict:
+    """One roster row: enough to pick him in a trade and to see what he is worth."""
+    from ..projections.inseason import week_mean
+
+    pl, pr = ctx.players.get(pid), ctx.projections.get(pid)
+    out: dict[str, Any] = {"player_id": pid, "name": pl.name if pl else pid,
+                           "position": pl.position if pl else None, "team": pl.team if pl else None}
+    if pr is None:
+        out["points"] = None                        # no projection: say so rather than implying zero
+        return out
+    out["points"] = _f(pr.points)
+    out["market"] = _f(pr.components.get("ecr"))    # what the other manager is looking at
+    out["week"] = _f(0.0 if pid in set(not_playing) else week_mean(pr, pl, tables, week)) if pl else None
+    return out
 
 
 def inseason_lineup_payload(plan: Any) -> dict:
@@ -1843,7 +1872,7 @@ def create_app() -> FastAPI:
         from ..espn.inseason import weekly_player_points
         from ..lean import get_bundle
         from ..projections.inseason import InSeasonTables
-        from ..strategy.trade import find_trades
+        from ..strategy.trade import SHAPES_WIDE, find_trades
         from ..strategy.week import plan_week, waiver_targets
 
         t0 = time.perf_counter()
@@ -1891,12 +1920,15 @@ def create_app() -> FastAPI:
         rostered = {p for ids in rosters.values() for p in ids}
         free_agents = [p for p in ctx.projections if p not in rostered]
         trades: list = []
+        search = None
         if req.trades:
             others = {names.get(tid, f"Team {tid}"): ids for tid, ids in rosters.items() if tid != my_team}
-            trades = await asyncio.to_thread(
+            shapes = SHAPES_WIDE if req.wide else ((1, 1), (2, 1))
+            search = await asyncio.to_thread(
                 find_trades, rosters[my_team], others, ctx.players, ctx.projections, ctx.league,
-                free_agents=free_agents, limit=req.limit, min_my_gain=req.min_gain,
-                min_their_view=req.min_their_view)
+                free_agents=free_agents, shapes=shapes, limit=req.limit, min_my_gain=req.min_gain,
+                min_their_view=req.min_their_view, per_team_limit=req.per_team)
+            trades = search.proposals
         waivers: list = []
         if req.waivers:
             waivers = await asyncio.to_thread(
@@ -1910,6 +1942,14 @@ def create_app() -> FastAPI:
                          "is_playoffs": cal.is_playoffs(week), "weeks_remaining": cal.weeks_remaining(week)},
             "lineup": inseason_lineup_payload(plan),
             "trades": [inseason_trade_payload(p, ctx.players) for p in trades],
+            "trade_search": None if search is None else {
+                "considered": search.considered, "helped_me": search.helped_me,
+                "rejected_their_view": search.rejected_their_view, "teams_searched": search.teams_searched,
+                "timed_out": search.timed_out, "min_gain": req.min_gain, "min_their_view": req.min_their_view},
+            "rosters": None if not req.rosters else [
+                {"team_id": tid, "name": names.get(tid, f"Team {tid}"), "is_me": tid == my_team,
+                 "players": [inseason_player_payload(p, ctx, tables, week, not_playing) for p in ids]}
+                for tid, ids in sorted(rosters.items())],
             "waivers": [{"player_id": t.player_id, "name": t.name, "position": t.position, "team": t.team,
                          "points": t.week_points, "lineup_gain": t.lineup_gain, "replaces": t.replaces}
                         for t in waivers],
@@ -1917,6 +1957,71 @@ def create_app() -> FastAPI:
                            "ties": r.ties, "points_for": _f(r.points_for), "points_against": _f(r.points_against),
                            "seed": r.playoff_seed, "espn_playoff_pct": r.espn_playoff_pct} for r in records],
             "tables_present": tables.present,
+            "ms": int(round((time.perf_counter() - t0) * 1000)),
+        }
+        return Response(json.dumps(payload), media_type="application/json", headers=NO_STORE)
+
+    @app.post("/api/trade/evaluate", dependencies=guarded)
+    async def trade_evaluate(req: TradeEvalReq, request: Request) -> Any:
+        """Judge one specific trade - offered to me, or one I am building - from both sides.
+
+        One ESPN GET for the current rosters, then arithmetic over the bundle. Nothing metered.
+        """
+        from ..espn.inseason import league_calendar
+        from ..strategy.trade import evaluate_offer
+
+        t0 = time.perf_counter()
+        sess = req.session.with_auth(request)
+        if sess.platform != "espn":
+            raise HTTPException(400, "the trade calculator supports ESPN leagues only")
+        if not sess.league_id:
+            raise HTTPException(400, "league_id required")
+        if not req.give and not req.get:
+            raise HTTPException(400, "name at least one player on one side of the trade")
+        lb = await resolve_league(sess)
+        resolve_me(lb, sess)
+        ctx = await league_context(lb, sess)
+
+        league_id = sess.league_id or lb.league.league_id or ""
+        async with espn_client(sess.espn_auth) as client:
+            try:
+                league_json = await client.get_in_season(league_id, lb.season, week=req.week)
+            except Exception as e:  # noqa: BLE001
+                raise espn_http_error(e, league_id, lb.season, sess.espn_auth)
+
+        rosters, names = espn_week_rosters(league_json, ctx)
+        my_team = sess.espn_team_id
+        if my_team is None or int(my_team) not in rosters:
+            raise HTTPException(400, "team_id required: the calculator has to know which team is yours")
+        my_team, partner = int(my_team), int(req.partner_team_id)
+        if partner not in rosters:
+            raise HTTPException(400, f"no team {partner} in this league")
+        mine, theirs = rosters[my_team], rosters[partner]
+        # a trade can only move players who are actually on those rosters
+        stray = ([p for p in req.give if p not in mine] + [p for p in req.get if p not in theirs])
+        if stray:
+            named = ", ".join(ctx.players[p].name if p in ctx.players else p for p in stray[:4])
+            raise HTTPException(400, f"not on the stated rosters: {named}")
+
+        rostered = {p for ids in rosters.values() for p in ids}
+        free_agents = [p for p in ctx.projections if p not in rostered]
+        v = await asyncio.to_thread(evaluate_offer, mine, theirs, req.give, req.get,
+                                    ctx.players, ctx.projections, ctx.league, free_agents=free_agents)
+        cal = league_calendar(league_json)
+
+        def side(ids: Sequence[str]) -> list[dict]:
+            return [{"player_id": p, "name": ctx.players[p].name, "position": ctx.players[p].position,
+                     "team": ctx.players[p].team,
+                     "points": _f(ctx.projections[p].points) if p in ctx.projections else None}
+                    for p in ids if p in ctx.players]
+
+        payload = {
+            "partner": names.get(partner, f"Team {partner}"), "week": cal.current_week,
+            "give": side(req.give), "get": side(req.get),
+            "my_gain": _f(v.my_gain), "their_gain": _f(v.their_gain),
+            "my_view": _f(v.my_view), "their_view": _f(v.their_view), "edge": _f(v.edge),
+            "verdict": v.verdict, "fair": v.fair, "read": v.read(), "details": list(v.details),
+            "my_before": _f(v.my_before), "my_after": _f(v.my_after),
             "ms": int(round((time.perf_counter() - t0) * 1000)),
         }
         return Response(json.dumps(payload), media_type="application/json", headers=NO_STORE)
