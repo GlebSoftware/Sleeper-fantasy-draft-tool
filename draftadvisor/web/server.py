@@ -1240,6 +1240,16 @@ async def resolve(sess: Session, *, mock_action: str = "sync", player_id: str | 
 # ---------------------------------------------------------------------------
 
 
+class InSeasonReq(BaseModel):
+    session: Session
+    week: int | None = None                 # scoring period; None -> the league's current week
+    trades: bool = True
+    waivers: bool = True
+    limit: int = 8                          # proposals / waiver targets to return
+    min_gain: float = 5.0                   # ignore trades worth less than this to me
+    min_their_view: float = -2.0            # how good a deal has to look to them, by consensus
+
+
 class LookupReq(BaseModel):
     platform: str = "sleeper"
     username: str | None = None             # sleeper
@@ -1414,6 +1424,55 @@ def ext_resolve(refs: Sequence[ExtPlayerRef], idx: Mapping[str, Any], ctx: Any) 
             seen.add(pid)
             out.append(pid)
     return out, unresolved
+
+
+def espn_week_rosters(league_json: Mapping[str, Any], ctx: Any) -> tuple[dict[int, list[str]], dict[int, str]]:
+    """``({team id: player ids}, {team id: name})`` from an in-season ESPN payload.
+
+    In-season rosters are read from *this* payload, not from the draft-time capture: waivers and
+    trades have moved players since, and advising on a stale roster is worse than not advising.
+    """
+    from ..espn.capture import espn_rosters
+    from ..espn.parsing import parse_espn_draft, parse_espn_managers
+
+    id_map = getattr(ctx, "id_map", None)
+    if id_map is None:
+        from ..espn.ids import EspnIdMap
+
+        id_map = EspnIdMap.from_players(ctx.players)
+    draft = parse_espn_draft(league_json)
+    managers = parse_espn_managers(league_json, draft)
+    rosters = {int(r["roster_id"]): [str(p) for p in r["players"] if str(p) in ctx.players]
+               for r in espn_rosters(league_json, id_map)}
+    names = {int(k): ((m.team_name or m.display_name) or f"Team {k}")
+             for k, m in managers.items() if str(k).isdigit()}
+    return rosters, names
+
+
+def inseason_lineup_payload(plan: Any) -> dict:
+    def slot(s: Any) -> dict:
+        return {"slot": s.slot, "player_id": s.player_id, "name": s.name, "position": s.position,
+                "team": s.team, "points": s.points}
+
+    return {"team_id": plan.team_id, "team_name": plan.team_name,
+            "starters": [slot(s) for s in plan.starters], "bench": [slot(s) for s in plan.bench],
+            "best_points": plan.best_points, "set_points": plan.set_points, "gap": _f(plan.gap),
+            "start": list(plan.start), "sit": list(plan.sit), "unprojected": list(plan.unprojected),
+            "opponent_id": plan.opponent_id, "opponent_name": plan.opponent_name,
+            "my_points": plan.my_points, "their_points": plan.their_points,
+            "my_sigma": plan.my_sigma, "their_sigma": plan.their_sigma,
+            "win_probability": plan.win_probability, "espn_playoff_pct": plan.espn_playoff_pct}
+
+
+def inseason_trade_payload(p: Any, players: Mapping[str, Player]) -> dict:
+    def side(ids: Sequence[str]) -> list[dict]:
+        return [{"player_id": x, "name": players[x].name, "position": players[x].position,
+                 "team": players[x].team} for x in ids if x in players]
+
+    return {"team": p.team, "give": side(p.give), "get": side(p.get),
+            "my_gain": _f(p.my_gain), "their_gain": _f(p.their_gain),
+            "their_view": _f(p.their_view), "my_view": _f(p.my_view), "edge": _f(p.edge),
+            "pitch": p.pitch(players), "details": list(p.details)}
 
 
 def ext_state(ctx: Any, league: LeagueSettings, rounds: int, taken: Sequence[str], mine: Sequence[str],
@@ -1597,8 +1656,15 @@ def create_app() -> FastAPI:
         bundle: dict = {"present": False, "dir": str(BUNDLE_DIR)}
         try:
             b = get_bundle()
+            ins = b.inseason or {}
+            sched = ins.get("schedule") or {}
+            sigma = (ins.get("sigma") or {}).get("players") or {}
             bundle = {"present": True, "built_at": b.meta.get("built_at"), "season": b.meta.get("season"),
-                      "seasons": b.meta.get("seasons"), "players": len(b.players), "ml_rows": len(b.ml)}
+                      "seasons": b.meta.get("seasons"), "players": len(b.players), "ml_rows": len(b.ml),
+                      # so a deployment can be checked for the in-season tables without guessing from
+                      # the build time: an old bundle answers 0 here rather than looking healthy
+                      "inseason": {"schedule_teams": len(sched), "weekly_sigma_players": len(sigma),
+                                   "dvp_season": ins.get("dvp_season")}}
         except Exception as e:  # noqa: BLE001
             bundle["error"] = str(e)
         from ..research.claude import MODEL_PRICES_USD_PER_MTOK
@@ -1763,6 +1829,96 @@ def create_app() -> FastAPI:
         unmatched = unresolved + [u for u in unresolved_mine if u not in unresolved]
         payload = ext_payload(rec, counts, unmatched, (time.perf_counter() - t0) * 1000.0,
                               ext_roster_warnings(st, mine, unmatched), board)
+        return Response(json.dumps(payload), media_type="application/json", headers=NO_STORE)
+
+    @app.post("/api/inseason", dependencies=guarded)
+    async def inseason(req: InSeasonReq, request: Request) -> Any:
+        """The in-season view of an ESPN league: lineup, matchup odds, trades and waiver targets.
+
+        One ESPN GET serves all of it (the calendar, every roster, the matchups and the set lineups
+        come back in one payload), and everything after that is arithmetic over the bundle. Zero
+        metered calls: nothing here touches Anthropic. Cost of one request: 0 tokens, $0.00.
+        """
+        from ..espn.inseason import current_lineups, league_calendar, matchups, opponent_for, team_records
+        from ..espn.inseason import weekly_player_points
+        from ..lean import get_bundle
+        from ..projections.inseason import InSeasonTables
+        from ..strategy.trade import find_trades
+        from ..strategy.week import plan_week, waiver_targets
+
+        t0 = time.perf_counter()
+        sess = req.session.with_auth(request)
+        if sess.platform != "espn":
+            raise HTTPException(400, "the in-season view supports ESPN leagues only")
+        if not sess.league_id:
+            raise HTTPException(400, "league_id required (the leagueId= number in the league URL)")
+        lb = await resolve_league(sess)
+        resolve_me(lb, sess)
+        ctx = await league_context(lb, sess)
+
+        league_id = sess.league_id or lb.league.league_id or ""
+        async with espn_client(sess.espn_auth) as client:
+            try:
+                league_json = await client.get_in_season(league_id, lb.season, week=req.week)
+            except Exception as e:  # noqa: BLE001
+                raise espn_http_error(e, league_id, lb.season, sess.espn_auth)
+
+        cal = league_calendar(league_json)
+        week = int(req.week or cal.current_week)
+        tables = InSeasonTables.from_dict(get_bundle().inseason)
+        rosters, names = espn_week_rosters(league_json, ctx)
+        my_team = sess.espn_team_id
+        if my_team is None or int(my_team) not in rosters:
+            raise HTTPException(400, "team_id required: the in-season view has to know which team is yours")
+        my_team = int(my_team)
+
+        espn_of = {pid: pl.espn_id for pid, pl in ctx.players.items() if pl.espn_id}
+        weekly = weekly_player_points(league_json)
+        not_playing = [pid for pid, eid in espn_of.items()
+                       if ((weekly.get(str(eid)) or {}).get(week) or {}).get("projected") == 0.0]
+        started = set(current_lineups(league_json).get(my_team, {}).get("starters", []))
+        set_starters = [p for p in rosters[my_team] if str(espn_of.get(p) or "") in started]
+        period = cal.matchup_period_for(week)
+        opp = opponent_for(matchups(league_json, period), my_team, period)
+        records = team_records(league_json)
+        pct = {r.team_id: r.espn_playoff_pct for r in records}
+
+        plan = plan_week(rosters, names, my_team, ctx.players, ctx.projections, ctx.league, tables, week,
+                         set_starters=set_starters, opponent_id=opp, not_playing=not_playing,
+                         espn_playoff_pct=pct.get(my_team), is_playoffs=cal.is_playoffs(week),
+                         weeks_remaining=cal.weeks_remaining(week))
+
+        rostered = {p for ids in rosters.values() for p in ids}
+        free_agents = [p for p in ctx.projections if p not in rostered]
+        trades: list = []
+        if req.trades:
+            others = {names.get(tid, f"Team {tid}"): ids for tid, ids in rosters.items() if tid != my_team}
+            trades = await asyncio.to_thread(
+                find_trades, rosters[my_team], others, ctx.players, ctx.projections, ctx.league,
+                free_agents=free_agents, limit=req.limit, min_my_gain=req.min_gain,
+                min_their_view=req.min_their_view)
+        waivers: list = []
+        if req.waivers:
+            waivers = await asyncio.to_thread(
+                waiver_targets, free_agents, rosters[my_team], ctx.players, ctx.projections, ctx.league,
+                tables, week, limit=req.limit, not_playing=not_playing)
+
+        payload = {
+            "week": week, "matchup_period": period,
+            "calendar": {"current_week": cal.current_week, "regular_season_weeks": cal.regular_season_weeks,
+                         "playoff_week_start": cal.playoff_week_start, "playoff_teams": cal.playoff_teams,
+                         "is_playoffs": cal.is_playoffs(week), "weeks_remaining": cal.weeks_remaining(week)},
+            "lineup": inseason_lineup_payload(plan),
+            "trades": [inseason_trade_payload(p, ctx.players) for p in trades],
+            "waivers": [{"player_id": t.player_id, "name": t.name, "position": t.position, "team": t.team,
+                         "points": t.week_points, "lineup_gain": t.lineup_gain, "replaces": t.replaces}
+                        for t in waivers],
+            "standings": [{"team_id": r.team_id, "name": r.name, "wins": r.wins, "losses": r.losses,
+                           "ties": r.ties, "points_for": _f(r.points_for), "points_against": _f(r.points_against),
+                           "seed": r.playoff_seed, "espn_playoff_pct": r.espn_playoff_pct} for r in records],
+            "tables_present": tables.present,
+            "ms": int(round((time.perf_counter() - t0) * 1000)),
+        }
         return Response(json.dumps(payload), media_type="application/json", headers=NO_STORE)
 
     @app.post("/api/chat", dependencies=guarded)

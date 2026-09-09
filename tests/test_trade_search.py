@@ -177,3 +177,22 @@ def test_an_empty_or_unknown_roster_is_skipped():
     w = _base_world()
     out = find_trades(MINE, {"Empty": [], "Ghosts": ["nobody", "nothing"]}, w.players, w.projections, league())
     assert out == []
+
+
+def test_a_player_we_cannot_value_is_never_put_in_a_trade():
+    """"No number for him" is not "worth nothing". Treating it as zero is how a bot offers a real
+    starter for free and calls it a two-hundred-point win."""
+    w = _base_world()
+    w.players["mystery"] = Player(player_id="mystery", name="mystery", position="WR", team="AAA")
+    mine = MINE + ["mystery"]
+    out = find_trades(mine, {"Them": THEIRS}, w.players, w.projections, league(), limit=20)
+    assert out, "the rest of the roster still trades"
+    assert all("mystery" not in p.give for p in out), [p.give for p in out]
+
+
+def test_a_player_projected_at_zero_is_not_currency_either():
+    w = _base_world()
+    zero_pl, zero_pr = mk("bench_zero", "WR", 0.0, 0.0)
+    w.players["bench_zero"], w.projections["bench_zero"] = zero_pl, zero_pr
+    out = find_trades(MINE + ["bench_zero"], {"Them": THEIRS}, w.players, w.projections, league(), limit=20)
+    assert all("bench_zero" not in p.give for p in out), [p.give for p in out]

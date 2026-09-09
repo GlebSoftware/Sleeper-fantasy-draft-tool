@@ -199,6 +199,17 @@ The report prints once; the snapshot lets trade/analyze commands work offline af
 
 All of them accept `--platform espn --league ID [--season YYYY]` in place of the Sleeper ids.
 
+## In-Season tab
+
+Once the draft is over, the **In-Season** tab (ESPN leagues) answers the week in one request: the
+best lineup and what the lineup you have set leaves on the bench, the matchup and your odds of
+winning it, trades worth sending, waiver targets ranked by what they do to your *starting* lineup,
+and the standings with ESPN's own playoff odds beside them.
+
+One `POST /api/inseason` does all of it — a single ESPN GET plus arithmetic over the bundle — and
+only when the tab is open, so a trade search never rides along with the draft poll. Nothing on this
+tab is metered.
+
 ## Finding trades
 
 `draftadvisor trades --league ID --me "My Team"` searches the other rosters for deals and prints, for

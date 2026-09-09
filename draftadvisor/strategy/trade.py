@@ -278,10 +278,21 @@ def consensus_projections(projections: Mapping[str, Projection]) -> dict[str, Pr
 
 def _tradeable(ids: Sequence[str], players: Mapping[str, Player],
                projections: Mapping[str, Projection]) -> list[str]:
-    """Nobody trades a kicker, a defence or a player with no projection."""
-    return [pid for pid in ids
-            if pid in projections and (players.get(pid) is not None)
-            and players[pid].position not in ("K", "DEF")]
+    """Who can be in a proposal at all: not a kicker, not a defence, and not a player we cannot value.
+
+    "I have no number for him" and "he is worth nothing" are different claims, and only the second
+    justifies putting a player in a trade. Conflating them is how a bot offers a real starter for
+    free and reports a two-hundred-point gain, which is worse than saying nothing.
+    """
+    out = []
+    for pid in ids:
+        pl, pr = players.get(pid), projections.get(pid)
+        if pl is None or pr is None or pl.position in ("K", "DEF"):
+            continue
+        if float(pr.points or 0.0) <= 0.0:
+            continue
+        out.append(pid)
+    return out
 
 
 def _cheapest_to_give(ids: Sequence[str], valuer: "_Valuer", before: float, limit: int) -> list[str]:
@@ -357,6 +368,8 @@ def find_trades(
 
     Returns at most ``limit`` proposals, best for me first. Partial results on a time budget: a search
     that ran out of time returns what it found rather than nothing.
+
+    Players we hold no projection for are never offered and never asked for - see :func:`_tradeable`.
     """
     t0 = time.monotonic()
     mine = [p for p in my_ids if p in players]

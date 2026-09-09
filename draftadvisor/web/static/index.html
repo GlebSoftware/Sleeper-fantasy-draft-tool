@@ -320,6 +320,9 @@ tr.fresh td { animation: slidein 0.5s ease-out both; }
 #espn-facts .kv > span:first-child { min-width: 56px; }
 .unmapped-note { color: var(--amber); }
 .league-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
+/* a grid item defaults to min-width:auto, so a wide table inside one pushes the whole page sideways
+   on a phone instead of scrolling inside its own panel (.panel already has overflow-x: auto) */
+.league-grid > * { min-width: 0; }
 @media (max-width: 1000px) { .league-grid { grid-template-columns: 1fr; } }
 .flags li { margin: 2px 0; }
 tr.added td.val { color: var(--green); }
@@ -449,6 +452,7 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
     <button data-tab="draft">Draft</button>
     <button data-tab="board">Board</button>
     <button data-tab="league">League</button>
+    <button data-tab="season">In-Season</button>
   </nav>
   <div class="topstatus">
     <span id="busy-dot" class="spinner" hidden title="working"></span>
@@ -725,6 +729,40 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
       <div class="panel"><h2>Draft order</h2>
         <table id="lg-order"><thead><tr><th class="n">Slot</th><th>Manager</th><th>Team</th><th class="n">Roster</th><th>First picks</th></tr></thead><tbody></tbody></table>
         <div class="hint" id="lg-mypicks"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== In-Season -->
+<section id="tab-season" class="tab">
+  <div id="season-empty" class="empty">The in-season view needs an ESPN league and the team that is yours — load one on Setup.</div>
+  <div id="season-body" hidden>
+    <div class="panel">
+      <h2>Week <span id="se-week"></span> <span class="muted small" id="se-when"></span>
+        <button id="se-refresh" class="small" title="ask ESPN again">Refresh</button></h2>
+      <div id="se-msg" class="msg" hidden></div>
+      <div id="se-matchup" class="hint"></div>
+    </div>
+    <div class="league-grid">
+      <div>
+        <div class="panel"><h2>Best lineup</h2>
+          <table id="se-lineup"><thead><tr><th>Slot</th><th>Player</th><th>Tm</th><th class="n">Pts</th></tr></thead><tbody></tbody></table>
+          <div class="hint" id="se-swaps"></div>
+        </div>
+        <div class="panel"><h2>Waiver targets</h2>
+          <div class="hint" style="margin:0 0 6px">Ranked by what they do to your <em>starting lineup</em> this week — not by points. A big score on your bench is worth nothing.</div>
+          <table id="se-waivers"><thead><tr><th>Pos</th><th>Player</th><th class="n">Pts</th><th class="n">Lineup</th><th>Instead of</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+      <div>
+        <div class="panel"><h2>Trades worth sending</h2>
+          <div class="hint" style="margin:0 0 6px">Your side is priced with our projections; theirs with the market's consensus, because that is what they are looking at. A deal has to help you <em>and</em> not read as a loss to them.</div>
+          <div id="se-trades"></div>
+        </div>
+        <div class="panel"><h2>Standings</h2>
+          <table id="se-standings"><thead><tr><th class="n">#</th><th>Team</th><th class="n">W-L</th><th class="n">PF</th><th class="n">ESPN playoff %</th></tr></thead><tbody></tbody></table>
+        </div>
       </div>
     </div>
   </div>
@@ -1059,6 +1097,7 @@ const S = {
     espnDenied: null,                   // the ESPN 401 detail while live polls are refused (expired cookies); null once a poll succeeds
     refreshing: false, forcedAt: 0,     // the Refresh control: a forced re-capture is in flight / when the last one answered
   },
+  season: { data: null, at: 0, loading: false, error: null, key: '' },   // POST /api/inseason, only when the tab is open
   diag: { report: null, at: 0, loading: false, error: null },   // GET /api/espn/diagnose — only when you press the button
   espnSig: { sig: '', since: 0 },       // how long ESPN's answer has been identical (the server is stateless; only the browser can tell)
 };
@@ -1157,6 +1196,7 @@ function renderAll() {
   else if (t === 'draft') renderDraft();
   else if (t === 'board') renderBoard();
   else if (t === 'league') renderLeague();
+  else if (t === 'season') renderSeason();
   renderChat();
   renderPop();
 }
@@ -2445,15 +2485,105 @@ function setChatOpen(on) {
 }
 
 // ---------------------------------------------------------------- 7. event wiring
+// ---- In-Season (ESPN): lineup, matchup odds, trades, waivers
+// One POST does the lot, and only when the tab is open: a trade search on every poll would be work
+// nobody asked for. Nothing here is metered - it is arithmetic over data already fetched.
+function seasonKey() {
+  const s = S.session;
+  if (!s || s.platform !== 'espn' || !s.league_id) return '';
+  const team = s.team_id != null ? s.team_id : s.user_id;
+  return team == null ? '' : [s.league_id, s.season || '', team].join(':');
+}
+async function loadSeason(week) {
+  const key = seasonKey();
+  if (!key || S.season.loading) return;
+  S.season.loading = true; S.season.error = null; renderSeason();
+  const body = { session: S.session, limit: 8 };
+  if (week) body.week = week;
+  try {
+    const data = await api('/api/inseason', { method: 'POST', body: body, timeout: 60000 });
+    S.season.data = data; S.season.at = Date.now(); S.season.key = key;
+  } catch (e) {
+    S.season.error = e.message; S.season.data = null;
+  } finally {
+    S.season.loading = false; renderSeason();
+  }
+}
+function renderSeason() {
+  const has = !!seasonKey();
+  const d = S.season.data;
+  show($('season-empty'), !has || (!d && !S.season.loading && !S.season.error));
+  show($('season-body'), has && (!!d || S.season.loading || !!S.season.error));
+  if (!has) return;
+  const msg = $('se-msg');
+  const notes = [];
+  if (S.season.error) notes.push('Could not load the in-season view: ' + esc(S.season.error));
+  if (d && d.tables_present === false) notes.push('The bundle has no in-season tables, so byes and opponents are not adjusted for. Rebuild it.');
+  if (d && d.lineup && d.lineup.unprojected && d.lineup.unprojected.length) {
+    notes.push('No projection for ' + d.lineup.unprojected.join(', ') + ' — they score 0 here and are never started.');
+  }
+  msg.innerHTML = notes.join('<br>'); show(msg, notes.length > 0);
+  setText($('se-week'), d ? String(d.week) : (S.season.loading ? '…' : '—'));
+  setText($('se-when'), S.season.loading ? 'loading…' : (d ? (d.calendar.is_playoffs ? 'playoffs' : d.calendar.weeks_remaining + ' regular-season weeks left') : ''));
+  if (!d) { $('se-matchup').innerHTML = ''; return; }
+
+  const lu = d.lineup;
+  $('se-matchup').innerHTML = lu.win_probability == null
+    ? 'No opponent this week.'
+    : '<b>' + esc(lu.team_name) + '</b> ' + fmt(lu.my_points, 1) + ' vs <b>' + esc(lu.opponent_name) + '</b> ' +
+      fmt(lu.their_points, 1) + ' — <b>' + Math.round(lu.win_probability * 100) + '%</b> to win' +
+      '<div class="muted small">A model estimate: weekly spread ±' + fmt(lu.my_sigma, 0) + ' for you, ±' +
+      fmt(lu.their_sigma, 0) + ' for them, measured on 2019-2025 weekly scores. Players are added independently, ' +
+      'so a stacked lineup swings a little more than this says.' +
+      (lu.espn_playoff_pct != null ? ' ESPN puts your playoff odds at ' + fmt(lu.espn_playoff_pct, 0) + '%.' : '') + '</div>';
+
+  const rows = (lu.starters || []).map((x) =>
+    '<tr><td>' + esc(x.slot) + '</td><td>' + esc(x.name || '') + '</td><td>' + esc(x.team || '') +
+    '</td><td class="n">' + fmt(x.points, 1) + '</td></tr>').join('');
+  $('se-lineup').querySelector('tbody').innerHTML = rows +
+    '<tr><td><b>total</b></td><td></td><td></td><td class="n"><b>' + fmt(lu.best_points, 1) + '</b></td></tr>';
+  $('se-swaps').innerHTML = lu.set_points == null ? ''
+    : (lu.gap > 0
+       ? 'Your lineup as set scores ' + fmt(lu.set_points, 1) + ': <b>' + fmt(lu.gap, 1) + '</b> left on the bench.' +
+         (lu.start.length && lu.sit.length ? '<br>Start ' + esc(lu.start.join(', ')) + '; sit ' + esc(lu.sit.join(', ')) + '.' : '')
+       : 'Your lineup is already the best one.');
+
+  $('se-waivers').querySelector('tbody').innerHTML = (d.waivers || []).length
+    ? d.waivers.map((w) => '<tr><td>' + esc(w.position || '') + '</td><td>' + esc(w.name) + '</td><td class="n">' +
+        fmt(w.points, 1) + '</td><td class="n">+' + fmt(w.lineup_gain, 1) + '</td><td>' + esc(w.replaces || '') +
+        '</td></tr>').join('')
+    : '<tr><td colspan="5" class="muted">Nothing on waivers would start for you.</td></tr>';
+
+  $('se-trades').innerHTML = (d.trades || []).length
+    ? d.trades.map((t) => {
+        const side = (xs) => xs.map((x) => esc(x.name) + ' <span class="muted small">' + esc(x.position || '') + '</span>').join(' + ');
+        return '<div class="panel" style="margin:0 0 8px">' +
+          '<div><b>' + esc(t.team) + '</b></div>' +
+          '<div>send ' + side(t.give) + ' → get ' + side(t.get) + '</div>' +
+          '<div class="muted small">you ' + (t.my_gain >= 0 ? '+' : '') + fmt(t.my_gain, 1) +
+          ' pts • they read it as ' + (t.their_view >= 0 ? '+' : '') + fmt(t.their_view, 1) + '</div>' +
+          '<div class="hint" style="margin:4px 0 0">' + esc(t.pitch) + '</div></div>';
+      }).join('')
+    : '<div class="muted">No trade found that helps you and that the other manager would plausibly take.</div>';
+
+  $('se-standings').querySelector('tbody').innerHTML = (d.standings || [])
+    .slice().sort((a, b) => (a.seed || 99) - (b.seed || 99))
+    .map((r) => '<tr><td class="n">' + (r.seed || '') + '</td><td>' + esc(r.name || '') + '</td><td class="n">' +
+      r.wins + '-' + r.losses + (r.ties ? '-' + r.ties : '') + '</td><td class="n">' + fmt(r.points_for, 0) +
+      '</td><td class="n">' + (r.espn_playoff_pct == null ? '' : fmt(r.espn_playoff_pct, 0) + '%') + '</td></tr>').join('');
+}
+
 function showTab(name) {
   if (S.ui.tab !== name) unpinCard();          // a card anchored in another tab must not linger
   S.ui.tab = name;
   $$('.tab').forEach((s) => s.classList.toggle('active', s.id === 'tab-' + name));
   lsSet('da.tab', name);
   if (name === 'board' && (!S.board.loaded || S.board.leagueId !== boardKey()) && !S.board.loading) loadBoard();
+  if (name === 'season' && seasonKey() && S.season.key !== seasonKey() && !S.season.loading) loadSeason();
   renderAll();
 }
 $$('#tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+$('se-refresh').addEventListener('click', () => { S.season.key = ''; loadSeason(); });
 $('theme-btn').addEventListener('click', () => { S.settings.theme = S.settings.theme === 'light' ? 'dark' : 'light'; saveSettings(); });
 
 // ---- chat drawer

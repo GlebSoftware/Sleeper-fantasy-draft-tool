@@ -78,6 +78,11 @@ def test_status_and_index(server):
     assert body["claude"]["prices"]["claude-opus-5"] == [5.0, 25.0] and body["claude"]["prices"]["claude-sonnet-5"] == [2.0, 10.0]
     assert "research_model" not in body["claude"]
     assert body["notes"]["store"] in ("local", "memory", "blob")
+    # the in-season tables are reported, so a deployment can be checked for them rather than assumed:
+    # a bundle built before they existed answers 0 here instead of just looking healthy
+    ins = body["bundle"]["inseason"]
+    assert ins["schedule_teams"] == 32 and ins["weekly_sigma_players"] > 500
+    assert ins["dvp_season"] and ins["dvp_season"] < body["bundle"]["season"]
     assert httpx.get(server + "/", timeout=5).status_code == 200
 
 

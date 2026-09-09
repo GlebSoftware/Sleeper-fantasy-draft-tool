@@ -499,3 +499,68 @@ def test_force_refresh_recaptures_the_league_and_is_rate_limited(espn):
     # only source here; what matters is that the 17 board picks are read as board picks
     assert st3["draft"]["board_picks"] == 17 and st3["draft"]["picks_source"].startswith("board")
     assert st3["status"]["espn"]["board_picks"] == 17 and st3["status"]["espn"]["source"].startswith("board")
+
+
+# ---------------------------------------------------------------------------
+# In-season: the tab the owner uses once the draft is over
+# ---------------------------------------------------------------------------
+
+def test_inseason_returns_a_lineup_a_matchup_and_trades(espn):
+    """One ESPN GET, and everything the In-Season view needs comes back with it."""
+    base, stub = espn
+    before = len(stub.requests)
+    r = httpx.post(base + "/api/inseason", json={"session": _session(team_id=1), "week": 4, "limit": 5}, timeout=120)
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    assert body["week"] == 4
+    cal = body["calendar"]
+    assert cal["regular_season_weeks"] == 13 and cal["playoff_week_start"] == 14
+    assert cal["is_playoffs"] is False and cal["weeks_remaining"] == 10
+    assert body["tables_present"] is True, "the shipped bundle has to carry the in-season tables"
+
+    lu = body["lineup"]
+    assert lu["team_id"] == 1 and lu["starters"] and lu["best_points"] > 0
+    assert {s["slot"] for s in lu["starters"]} <= set(("QB", "RB", "WR", "TE", "FLEX", "K", "DEF", "SUPER_FLEX"))
+    assert lu["set_points"] is not None, "the lineup ESPN has set is readable"
+    assert lu["gap"] >= 0 and lu["best_points"] >= lu["set_points"]
+    assert lu["opponent_name"] and 0.0 <= lu["win_probability"] <= 1.0
+    assert lu["my_sigma"] > 0 and lu["their_sigma"] > 0, "a win probability needs a spread behind it"
+
+    assert body["standings"] and body["standings"][0]["name"]
+    assert any(t["espn_playoff_pct"] is not None for t in body["standings"]), "ESPN's own odds come through"
+
+    for t in body["trades"]:
+        assert t["give"] and t["get"] and t["my_gain"] >= 5.0
+        assert t["team"] != lu["team_name"], "never propose a trade with myself"
+        assert t["pitch"]
+    for w in body["waivers"]:
+        assert w["lineup_gain"] > 0, "a waiver target has to improve the starting lineup, not just score"
+
+    # the in-season views were asked for, in one request
+    asked = [q for q in stub.requests[before:] if "mMatchupScore" in q["query"].get("view", [])]
+    assert len(asked) == 1 and asked[0]["query"]["scoringPeriodId"] == ["4"]
+
+
+def test_inseason_needs_to_know_which_team_is_mine(espn):
+    base, _ = espn
+    r = httpx.post(base + "/api/inseason", json={"session": _session(), "week": 4}, timeout=120)
+    assert r.status_code == 400 and "which team is yours" in r.text
+
+
+def test_inseason_is_espn_only(espn):
+    base, _ = espn
+    r = httpx.post(base + "/api/inseason", json={"session": {"mode": "live", "platform": "sleeper",
+                                                             "league_id": "1"}}, timeout=60)
+    assert r.status_code == 400 and "ESPN" in r.text
+
+
+def test_inseason_can_skip_the_expensive_halves(espn):
+    """The tab asks for what it is showing; a lineup check should not pay for a trade search."""
+    base, _ = espn
+    r = httpx.post(base + "/api/inseason",
+                   json={"session": _session(team_id=1), "week": 4, "trades": False, "waivers": False},
+                   timeout=120)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["trades"] == [] and body["waivers"] == [] and body["lineup"]["starters"]
