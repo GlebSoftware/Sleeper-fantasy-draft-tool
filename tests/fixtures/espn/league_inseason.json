@@ -1,0 +1,8702 @@
+{
+ "gameId": 1,
+ "id": 368876,
+ "members": [
+  {
+   "displayName": "fergheg",
+   "firstName": "hrthr",
+   "id": "{1234-5678-9101}",
+   "lastName": "nvbn",
+   "notificationSettings": []
+  },
+  {
+   "displayName": "rhr",
+   "firstName": "gfhfgh",
+   "id": "{3456-789-1112}",
+   "lastName": "werw",
+   "notificationSettings": []
+  },
+  {
+   "displayName": "reghnn",
+   "firstName": "ghfnfg",
+   "id": "{79345-777-333}",
+   "lastName": "fghdfh",
+   "notificationSettings": []
+  },
+  {
+   "displayName": "ykuy",
+   "firstName": "jkhk",
+   "id": "{0009-3468-72}",
+   "lastName": "jhkkhj",
+   "notificationSettings": []
+  },
+  {
+   "displayName": "jhkghkg",
+   "firstName": "hfgjfghj",
+   "id": "{45668099-ABCHJJGH-6668}",
+   "lastName": "jghjfg",
+   "notificationSettings": []
+  },
+  {
+   "displayName": "dfhhfgj",
+   "firstName": "fdsgdh",
+   "id": "{rehertjhrhj-32415346}",
+   "lastName": "hjhfgeas",
+   "notificationSettings": []
+  },
+  {
+   "displayName": "hrfghr",
+   "firstName": "sdgfdfghdfh",
+   "id": "{rewylkjgherhgjkwerhjgferjklhg}",
+   "lastName": "gehgfh",
+   "notificationSettings": []
+  },
+  {
+   "displayName": "gerhfdhfg",
+   "firstName": "Andrew",
+   "id": "{55791-3368-10456}",
+   "lastName": "uktyht",
+   "notificationSettings": []
+  },
+  {
+   "displayName": "ijgdgvhhj",
+   "firstName": "T",
+   "id": "{6863-6934-3455}",
+   "lastName": "M",
+   "notificationSettings": []
+  },
+  {
+   "displayName": "dfhfgnb",
+   "firstName": "C",
+   "id": "{4899-74322-677}",
+   "lastName": "D",
+   "notificationSettings": []
+  }
+ ],
+ "schedule": [
+  {
+   "away": {
+    "teamId": 2,
+    "totalPoints": 91.0
+   },
+   "home": {
+    "teamId": 1,
+    "totalPoints": 85.4
+   },
+   "id": 1,
+   "matchupPeriodId": 1,
+   "winner": "AWAY"
+  },
+  {
+   "away": {
+    "teamId": 4,
+    "totalPoints": 149.2
+   },
+   "home": {
+    "teamId": 3,
+    "totalPoints": 102.2
+   },
+   "id": 2,
+   "matchupPeriodId": 1,
+   "winner": "AWAY"
+  },
+  {
+   "away": {
+    "teamId": 7,
+    "totalPoints": 130.6
+   },
+   "home": {
+    "teamId": 5,
+    "totalPoints": 117.4
+   },
+   "id": 3,
+   "matchupPeriodId": 1,
+   "winner": "AWAY"
+  },
+  {
+   "away": {
+    "teamId": 9,
+    "totalPoints": 91.0
+   },
+   "home": {
+    "teamId": 8,
+    "totalPoints": 133.1
+   },
+   "id": 4,
+   "matchupPeriodId": 1,
+   "winner": "HOME"
+  },
+  {
+   "away": {
+    "teamId": 11,
+    "totalPoints": 114.4
+   },
+   "home": {
+    "teamId": 10,
+    "totalPoints": 78.0
+   },
+   "id": 5,
+   "matchupPeriodId": 1,
+   "winner": "AWAY"
+  },
+  {
+   "away": {
+    "teamId": 3,
+    "totalPoints": 99.4
+   },
+   "home": {
+    "teamId": 1,
+    "totalPoints": 145.9
+   },
+   "id": 6,
+   "matchupPeriodId": 2,
+   "winner": "HOME"
+  },
+  {
+   "away": {
+    "teamId": 5,
+    "totalPoints": 72.7
+   },
+   "home": {
+    "teamId": 4,
+    "totalPoints": 127.0
+   },
+   "id": 7,
+   "matchupPeriodId": 2,
+   "winner": "HOME"
+  },
+  {
+   "away": {
+    "teamId": 8,
+    "totalPoints": 108.8
+   },
+   "home": {
+    "teamId": 7,
+    "totalPoints": 147.7
+   },
+   "id": 8,
+   "matchupPeriodId": 2,
+   "winner": "HOME"
+  },
+  {
+   "away": {
+    "teamId": 10,
+    "totalPoints": 91.2
+   },
+   "home": {
+    "teamId": 9,
+    "totalPoints": 122.2
+   },
+   "id": 9,
+   "matchupPeriodId": 2,
+   "winner": "HOME"
+  },
+  {
+   "away": {
+    "teamId": 2,
+    "totalPoints": 133.4
+   },
+   "home": {
+    "teamId": 11,
+    "totalPoints": 86.7
+   },
+   "id": 10,
+   "matchupPeriodId": 2,
+   "winner": "AWAY"
+  },
+  {
+   "away": {
+    "teamId": 4,
+    "totalPoints": 137.3
+   },
+   "home": {
+    "teamId": 1,
+    "totalPoints": 136.1
+   },
+   "id": 11,
+   "matchupPeriodId": 3,
+   "winner": "AWAY"
+  },
+  {
+   "away": {
+    "teamId": 7,
+    "totalPoints": 118.8
+   },
+   "home": {
+    "teamId": 5,
+    "totalPoints": 90.3
+   },
+   "id": 12,
+   "matchupPeriodId": 3,
+   "winner": "AWAY"
+  },
+  {
+   "away": {
+    "teamId": 9,
+    "totalPoints": 130.6
+   },
+   "home": {
+    "teamId": 8,
+    "totalPoints": 84.8
+   },
+   "id": 13,
+   "matchupPeriodId": 3,
+   "winner": "AWAY"
+  },
+  {
+   "away": {
+    "teamId": 11,
+    "totalPoints": 135.4
+   },
+   "home": {
+    "teamId": 10,
+    "totalPoints": 101.2
+   },
+   "id": 14,
+   "matchupPeriodId": 3,
+   "winner": "AWAY"
+  },
+  {
+   "away": {
+    "teamId": 3,
+    "totalPoints": 104.0
+   },
+   "home": {
+    "teamId": 2,
+    "totalPoints": 114.4
+   },
+   "id": 15,
+   "matchupPeriodId": 3,
+   "winner": "HOME"
+  },
+  {
+   "away": {
+    "teamId": 5,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 1,
+    "totalPoints": 0.0
+   },
+   "id": 16,
+   "matchupPeriodId": 4,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 8,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 7,
+    "totalPoints": 0.0
+   },
+   "id": 17,
+   "matchupPeriodId": 4,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 10,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 9,
+    "totalPoints": 0.0
+   },
+   "id": 18,
+   "matchupPeriodId": 4,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 2,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 11,
+    "totalPoints": 0.0
+   },
+   "id": 19,
+   "matchupPeriodId": 4,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 4,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 3,
+    "totalPoints": 0.0
+   },
+   "id": 20,
+   "matchupPeriodId": 4,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 7,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 1,
+    "totalPoints": 0.0
+   },
+   "id": 21,
+   "matchupPeriodId": 5,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 9,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 8,
+    "totalPoints": 0.0
+   },
+   "id": 22,
+   "matchupPeriodId": 5,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 11,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 10,
+    "totalPoints": 0.0
+   },
+   "id": 23,
+   "matchupPeriodId": 5,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 3,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 2,
+    "totalPoints": 0.0
+   },
+   "id": 24,
+   "matchupPeriodId": 5,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 5,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 4,
+    "totalPoints": 0.0
+   },
+   "id": 25,
+   "matchupPeriodId": 5,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 8,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 1,
+    "totalPoints": 0.0
+   },
+   "id": 26,
+   "matchupPeriodId": 6,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 10,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 9,
+    "totalPoints": 0.0
+   },
+   "id": 27,
+   "matchupPeriodId": 6,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 2,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 11,
+    "totalPoints": 0.0
+   },
+   "id": 28,
+   "matchupPeriodId": 6,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 4,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 3,
+    "totalPoints": 0.0
+   },
+   "id": 29,
+   "matchupPeriodId": 6,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 7,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 5,
+    "totalPoints": 0.0
+   },
+   "id": 30,
+   "matchupPeriodId": 6,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 9,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 1,
+    "totalPoints": 0.0
+   },
+   "id": 31,
+   "matchupPeriodId": 7,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 11,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 10,
+    "totalPoints": 0.0
+   },
+   "id": 32,
+   "matchupPeriodId": 7,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 3,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 2,
+    "totalPoints": 0.0
+   },
+   "id": 33,
+   "matchupPeriodId": 7,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 5,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 4,
+    "totalPoints": 0.0
+   },
+   "id": 34,
+   "matchupPeriodId": 7,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 8,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 7,
+    "totalPoints": 0.0
+   },
+   "id": 35,
+   "matchupPeriodId": 7,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 10,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 1,
+    "totalPoints": 0.0
+   },
+   "id": 36,
+   "matchupPeriodId": 8,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 2,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 11,
+    "totalPoints": 0.0
+   },
+   "id": 37,
+   "matchupPeriodId": 8,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 4,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 3,
+    "totalPoints": 0.0
+   },
+   "id": 38,
+   "matchupPeriodId": 8,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 7,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 5,
+    "totalPoints": 0.0
+   },
+   "id": 39,
+   "matchupPeriodId": 8,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 9,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 8,
+    "totalPoints": 0.0
+   },
+   "id": 40,
+   "matchupPeriodId": 8,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 11,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 1,
+    "totalPoints": 0.0
+   },
+   "id": 41,
+   "matchupPeriodId": 9,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 3,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 2,
+    "totalPoints": 0.0
+   },
+   "id": 42,
+   "matchupPeriodId": 9,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 5,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 4,
+    "totalPoints": 0.0
+   },
+   "id": 43,
+   "matchupPeriodId": 9,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 8,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 7,
+    "totalPoints": 0.0
+   },
+   "id": 44,
+   "matchupPeriodId": 9,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 10,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 9,
+    "totalPoints": 0.0
+   },
+   "id": 45,
+   "matchupPeriodId": 9,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 2,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 1,
+    "totalPoints": 0.0
+   },
+   "id": 46,
+   "matchupPeriodId": 10,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 4,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 3,
+    "totalPoints": 0.0
+   },
+   "id": 47,
+   "matchupPeriodId": 10,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 7,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 5,
+    "totalPoints": 0.0
+   },
+   "id": 48,
+   "matchupPeriodId": 10,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 9,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 8,
+    "totalPoints": 0.0
+   },
+   "id": 49,
+   "matchupPeriodId": 10,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 11,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 10,
+    "totalPoints": 0.0
+   },
+   "id": 50,
+   "matchupPeriodId": 10,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 3,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 1,
+    "totalPoints": 0.0
+   },
+   "id": 51,
+   "matchupPeriodId": 11,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 5,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 4,
+    "totalPoints": 0.0
+   },
+   "id": 52,
+   "matchupPeriodId": 11,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 8,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 7,
+    "totalPoints": 0.0
+   },
+   "id": 53,
+   "matchupPeriodId": 11,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 10,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 9,
+    "totalPoints": 0.0
+   },
+   "id": 54,
+   "matchupPeriodId": 11,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 2,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 11,
+    "totalPoints": 0.0
+   },
+   "id": 55,
+   "matchupPeriodId": 11,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 4,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 1,
+    "totalPoints": 0.0
+   },
+   "id": 56,
+   "matchupPeriodId": 12,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 7,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 5,
+    "totalPoints": 0.0
+   },
+   "id": 57,
+   "matchupPeriodId": 12,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 9,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 8,
+    "totalPoints": 0.0
+   },
+   "id": 58,
+   "matchupPeriodId": 12,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 11,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 10,
+    "totalPoints": 0.0
+   },
+   "id": 59,
+   "matchupPeriodId": 12,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 3,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 2,
+    "totalPoints": 0.0
+   },
+   "id": 60,
+   "matchupPeriodId": 12,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 5,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 1,
+    "totalPoints": 0.0
+   },
+   "id": 61,
+   "matchupPeriodId": 13,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 8,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 7,
+    "totalPoints": 0.0
+   },
+   "id": 62,
+   "matchupPeriodId": 13,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 10,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 9,
+    "totalPoints": 0.0
+   },
+   "id": 63,
+   "matchupPeriodId": 13,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 2,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 11,
+    "totalPoints": 0.0
+   },
+   "id": 64,
+   "matchupPeriodId": 13,
+   "winner": "UNDECIDED"
+  },
+  {
+   "away": {
+    "teamId": 4,
+    "totalPoints": 0.0
+   },
+   "home": {
+    "teamId": 3,
+    "totalPoints": 0.0
+   },
+   "id": 65,
+   "matchupPeriodId": 13,
+   "winner": "UNDECIDED"
+  }
+ ],
+ "scoringPeriodId": 4,
+ "seasonId": 2018,
+ "segmentId": 0,
+ "settings": {
+  "acquisitionSettings": {
+   "acquisitionBudget": 100,
+   "acquisitionLimit": -1,
+   "acquisitionType": "WAIVERS_TRADITIONAL",
+   "isUsingAcquisitionBudget": false,
+   "isUsingVickeryRules": false,
+   "matchupAcquisitionLimit": 0.0,
+   "matchupLimitPerScoringPeriod": false,
+   "minimumBid": 1,
+   "waiverHours": 24,
+   "waiverOrderReset": true,
+   "waiverProcessDays": [
+    "MONDAY",
+    "WEDNESDAY",
+    "THURSDAY",
+    "FRIDAY",
+    "SATURDAY",
+    "SUNDAY"
+   ],
+   "waiverProcessHour": 11
+  },
+  "draftSettings": {
+   "auctionBudget": 200,
+   "isTradingEnabled": false,
+   "keeperCount": 0,
+   "keeperCountFuture": 0,
+   "keeperOrderType": "TRADITIONAL",
+   "leagueSubType": "NONE",
+   "orderType": "MANUAL",
+   "pickOrder": [
+    2,
+    8,
+    1,
+    9,
+    4,
+    3,
+    10,
+    5,
+    7,
+    11
+   ],
+   "timePerSelection": 90,
+   "type": "OFFLINE"
+  },
+  "financeSettings": {
+   "entryFee": 0.0,
+   "miscFee": 0.0,
+   "perLoss": 0.0,
+   "perTrade": 0.0,
+   "playerAcquisition": 0.0,
+   "playerDrop": 0.0,
+   "playerMoveToActive": 0.0,
+   "playerMoveToIR": 0.0
+  },
+  "isCustomizable": true,
+  "isPublic": false,
+  "name": "FXBG League",
+  "restrictionType": "NONE",
+  "rosterSettings": {
+   "isBenchUnlimited": true,
+   "isUsingUndroppableList": true,
+   "lineupLocktimeType": "INDIVIDUAL_GAME",
+   "lineupSlotCounts": {
+    "0": 1,
+    "1": 0,
+    "10": 0,
+    "11": 0,
+    "12": 0,
+    "13": 0,
+    "14": 0,
+    "15": 0,
+    "16": 1,
+    "17": 1,
+    "18": 0,
+    "19": 0,
+    "2": 2,
+    "20": 6,
+    "21": 0,
+    "22": 0,
+    "23": 1,
+    "24": 0,
+    "3": 0,
+    "4": 2,
+    "5": 0,
+    "6": 1,
+    "7": 0,
+    "8": 0,
+    "9": 0
+   },
+   "moveLimit": -1,
+   "positionLimits": {
+    "0": 0,
+    "1": 4,
+    "10": 0,
+    "11": 0,
+    "12": 0,
+    "13": 0,
+    "14": 0,
+    "15": 0,
+    "16": 3,
+    "17": -1,
+    "2": 8,
+    "3": 8,
+    "4": 3,
+    "5": 3,
+    "6": 0,
+    "7": 0,
+    "8": 0,
+    "9": 0
+   },
+   "rosterLocktimeType": "INDIVIDUAL_GAME",
+   "universeIds": [
+    0
+   ]
+  },
+  "scheduleSettings": {
+   "divisions": [
+    {
+     "id": 0,
+     "name": "The League",
+     "size": 10
+    }
+   ],
+   "matchupPeriodCount": 13,
+   "matchupPeriodLength": 1,
+   "matchupPeriods": {
+    "1": [
+     1
+    ],
+    "10": [
+     10
+    ],
+    "11": [
+     11
+    ],
+    "12": [
+     12
+    ],
+    "13": [
+     13
+    ],
+    "14": [
+     14
+    ],
+    "15": [
+     15
+    ],
+    "16": [
+     16
+    ],
+    "2": [
+     2
+    ],
+    "3": [
+     3
+    ],
+    "4": [
+     4
+    ],
+    "5": [
+     5
+    ],
+    "6": [
+     6
+    ],
+    "7": [
+     7
+    ],
+    "8": [
+     8
+    ],
+    "9": [
+     9
+    ]
+   },
+   "periodTypeId": 1,
+   "playoffMatchupPeriodLength": 1,
+   "playoffSeedingRule": "TOTAL_POINTS_SCORED",
+   "playoffSeedingRuleBy": 0,
+   "playoffTeamCount": 6
+  },
+  "scoringSettings": {
+   "allowOutOfPositionScoring": false,
+   "homeTeamBonus": 0,
+   "matchupTieRule": "NONE",
+   "matchupTieRuleBy": -1,
+   "playerRankType": "STANDARD",
+   "playoffHomeTeamBonus": 0,
+   "playoffMatchupTieRule": "NONE",
+   "playoffMatchupTieRuleBy": 0,
+   "scoringItems": [
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "pointsOverrides": {
+      "16": 6.0
+     },
+     "statId": 93
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 4.0
+     },
+     "statId": 121
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 2.0
+     },
+     "statId": 122
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 1.0
+     },
+     "statId": 123
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": -2.0
+     },
+     "statId": 125
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 5.0
+     },
+     "statId": 128
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "statId": 25
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 1.0,
+     "pointsOverrides": {
+      "16": 1.0
+     },
+     "statId": 209
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 4.0
+     },
+     "statId": 129
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 3.0
+     },
+     "statId": 130
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 2.0
+     },
+     "statId": 131
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 1.0
+     },
+     "statId": 132
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 1.0,
+     "statId": 53
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": -2.0
+     },
+     "statId": 133
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": -4.0
+     },
+     "statId": 134
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": -6.0
+     },
+     "statId": 135
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": -2.0,
+     "statId": 72
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": -8.0
+     },
+     "statId": 136
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "pointsOverrides": {
+      "16": 6.0
+     },
+     "statId": 101
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "pointsOverrides": {
+      "16": 6.0
+     },
+     "statId": 102
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 2.0,
+     "pointsOverrides": {
+      "16": 2.0
+     },
+     "statId": 206
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "pointsOverrides": {
+      "16": 6.0
+     },
+     "statId": 103
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "pointsOverrides": {
+      "16": 6.0
+     },
+     "statId": 104
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 2.0,
+     "statId": 19
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "statId": 43
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": -2.0,
+     "statId": 20
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.1,
+     "statId": 24
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "statId": 63
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 3.0,
+     "statId": 80
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 10.0
+     },
+     "statId": 89
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 2.0,
+     "statId": 26
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 9.0
+     },
+     "statId": 90
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 8.0
+     },
+     "statId": 91
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 6.0
+     },
+     "statId": 92
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 4.0,
+     "statId": 77
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 2.0
+     },
+     "statId": 95
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 2.0
+     },
+     "statId": 96
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 2.0
+     },
+     "statId": 97
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 2.0
+     },
+     "statId": 98
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "16": 1.0
+     },
+     "statId": 99
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.04,
+     "statId": 3
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": -1.0,
+     "statId": 85
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 1.0,
+     "statId": 86
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.1,
+     "statId": 42
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": -1.0,
+     "statId": 88
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "statId": 4
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 2.0,
+     "statId": 44
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 5.0,
+     "statId": 74
+    }
+   ],
+   "scoringType": "H2H_POINTS"
+  },
+  "size": 10,
+  "tradeSettings": {
+   "allowOutOfUniverse": false,
+   "deadlineDate": 1543395600000,
+   "max": -1,
+   "revisionHours": 24,
+   "vetoVotesRequired": 5
+  }
+ },
+ "status": {
+  "activatedDate": 1526023857070,
+  "createdAsLeagueType": 0,
+  "currentLeagueType": 0,
+  "currentMatchupPeriod": 4,
+  "finalScoringPeriod": 17,
+  "firstScoringPeriod": 1,
+  "isActive": true,
+  "isExpired": false,
+  "isFull": true,
+  "isViewable": false,
+  "latestScoringPeriod": 4,
+  "previousSeasons": [
+   2015,
+   2016,
+   2017
+  ],
+  "teamsJoined": 10
+ },
+ "teams": [
+  {
+   "abbrev": "GHN",
+   "currentSimulationResults": {
+    "playoffPct": 95.0
+   },
+   "divisionId": 0,
+   "id": 1,
+   "isActive": false,
+   "location": "Goin'",
+   "logo": "https://media.tenor.com/images/77f95390793163ddbfb2258d81b95b97/tenor.gif",
+   "logoType": "CUSTOM_VALID",
+   "nickname": "HAM Newton",
+   "owners": [
+    "{6863-6934-3455}"
+   ],
+   "playoffSeed": 1,
+   "primaryOwner": "{6863-6934-3455}",
+   "record": {
+    "overall": {
+     "losses": 0,
+     "pointsAgainst": 300.0,
+     "pointsFor": 440.0,
+     "ties": 0,
+     "wins": 3
+    }
+   },
+   "roster": {
+    "entries": [
+     {
+      "acquisitionDate": 1535222961688,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 13934,
+      "playerPoolEntry": {
+       "id": 13934,
+       "onTeamId": 1,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Antonio Brown",
+        "id": 13934,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 23,
+        "stats": [
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 21.2,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 19.7,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 27.5,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 51.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535222961688,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 15818,
+      "playerPoolEntry": {
+       "id": 15818,
+       "onTeamId": 1,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Keenan Allen",
+        "id": 15818,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 24,
+        "stats": [
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.7,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.5,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.1,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 48.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535222961689,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 13232,
+      "playerPoolEntry": {
+       "id": 13232,
+       "onTeamId": 1,
+       "player": {
+        "defaultPositionId": 4,
+        "eligibleSlots": [
+         5,
+         6,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Jimmy Graham",
+        "id": 13232,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 9,
+        "stats": [
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.2,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 23.5,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 51.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1536741158567,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 16,
+      "playerId": -16003,
+      "playerPoolEntry": {
+       "id": -16003,
+       "onTeamId": 1,
+       "player": {
+        "defaultPositionId": 16,
+        "eligibleSlots": [
+         16,
+         20,
+         21
+        ],
+        "fullName": "Bears D/ST",
+        "id": -16003,
+        "proTeamId": 3,
+        "stats": [
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 2.7,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.4,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 2.7,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1536962684618,
+      "acquisitionType": "TRADE",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 0,
+      "playerId": 13994,
+      "playerPoolEntry": {
+       "id": 13994,
+       "onTeamId": 1,
+       "player": {
+        "defaultPositionId": 1,
+        "eligibleSlots": [
+         0,
+         7,
+         20,
+         21
+        ],
+        "fullName": "Cam Newton",
+        "id": 13994,
+        "injuryStatus": "QUESTIONABLE",
+        "proTeamId": 29,
+        "stats": [
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.7,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.6,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.3,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 36.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1537432309046,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 14874,
+      "playerPoolEntry": {
+       "id": 14874,
+       "onTeamId": 1,
+       "player": {
+        "defaultPositionId": 1,
+        "eligibleSlots": [
+         0,
+         7,
+         20,
+         21
+        ],
+        "fullName": "Andrew Luck",
+        "id": 14874,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 11,
+        "stats": [
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 3.8,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.4,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.8,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 24.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1537950755586,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 3128721,
+      "playerPoolEntry": {
+       "id": 3128721,
+       "onTeamId": 1,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Sony Michel",
+        "id": 3128721,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 17,
+        "stats": [
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.2,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 19.2,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.4,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 51.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1539741662425,
+      "acquisitionType": "TRADE",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 3054850,
+      "playerPoolEntry": {
+       "id": 3054850,
+       "onTeamId": 1,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Alvin Kamara",
+        "id": 3054850,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 18,
+        "stats": [
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.8,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.8,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.3,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 36.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1539741662425,
+      "acquisitionType": "TRADE",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 23,
+      "playerId": 16731,
+      "playerPoolEntry": {
+       "id": 16731,
+       "onTeamId": 1,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Brandin Cooks",
+        "id": 16731,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 14,
+        "stats": [
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.4,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.1,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.1,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 9
+  },
+  {
+   "abbrev": "RWM",
+   "currentSimulationResults": {
+    "playoffPct": 86.0
+   },
+   "divisionId": 0,
+   "id": 2,
+   "isActive": false,
+   "location": "Rollin' With",
+   "logo": "https://i.etsystatic.com/13817491/c/500/397/266/233/il/04d655/1674551237/il_340x270.1674551237_d8w2.jpg",
+   "logoType": "CUSTOM_VALID",
+   "nickname": "Mahomies",
+   "owners": [
+    "{55791-3368-10456}"
+   ],
+   "playoffSeed": 2,
+   "primaryOwner": "{55791-3368-10456}",
+   "record": {
+    "overall": {
+     "losses": 1,
+     "pointsAgainst": 309.0,
+     "pointsFor": 428.0,
+     "ties": 0,
+     "wins": 2
+    }
+   },
+   "roster": {
+    "entries": [
+     {
+      "acquisitionDate": 1535222590494,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 2976316,
+      "playerPoolEntry": {
+       "id": 2976316,
+       "onTeamId": 2,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Michael Thomas",
+        "id": 2976316,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 18,
+        "stats": [
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.6,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 3.8,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.1,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 33.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535222590494,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 3117251,
+      "playerPoolEntry": {
+       "id": 3117251,
+       "onTeamId": 2,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Christian McCaffrey",
+        "id": 3117251,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 29,
+        "stats": [
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 2.5,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.9,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 39.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535222590494,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 16799,
+      "playerPoolEntry": {
+       "id": 16799,
+       "onTeamId": 2,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Allen Robinson",
+        "id": 16799,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 3,
+        "stats": [
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.7,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.1,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 0.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 27.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535222590494,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 23,
+      "playerId": 2979477,
+      "playerPoolEntry": {
+       "id": 2979477,
+       "onTeamId": 2,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Tevin Coleman",
+        "id": 2979477,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 1,
+        "stats": [
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.9,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 3.4,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.8,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 39.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1536177325199,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 0,
+      "playerId": 3139477,
+      "playerPoolEntry": {
+       "id": 3139477,
+       "onTeamId": 2,
+       "player": {
+        "defaultPositionId": 1,
+        "eligibleSlots": [
+         0,
+         7,
+         20,
+         21
+        ],
+        "fullName": "Patrick Mahomes",
+        "id": 3139477,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 12,
+        "stats": [
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.4,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 4.2,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.7,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 27.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1539160361716,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 6,
+      "playerId": 3123076,
+      "playerPoolEntry": {
+       "id": 3123076,
+       "onTeamId": 2,
+       "player": {
+        "defaultPositionId": 4,
+        "eligibleSlots": [
+         5,
+         6,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "David Njoku",
+        "id": 3123076,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 5,
+        "stats": [
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 4.1,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.6,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.4,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 42.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1540974785321,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 2976499,
+      "playerPoolEntry": {
+       "id": 2976499,
+       "onTeamId": 2,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Amari Cooper",
+        "id": 2976499,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 6,
+        "stats": [
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.5,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.5,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.8,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 36.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1541098859093,
+      "acquisitionType": "TRADE",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 14881,
+      "playerPoolEntry": {
+       "id": 14881,
+       "onTeamId": 2,
+       "player": {
+        "defaultPositionId": 1,
+        "eligibleSlots": [
+         0,
+         7,
+         20,
+         21
+        ],
+        "fullName": "Russell Wilson",
+        "id": 14881,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 26,
+        "stats": [
+         {
+          "appliedTotal": 15.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.5,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 2.5,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.3,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 45.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1541098859093,
+      "acquisitionType": "TRADE",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 3139605,
+      "playerPoolEntry": {
+       "id": 3139605,
+       "onTeamId": 2,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Marlon Mack",
+        "id": 3139605,
+        "injuryStatus": "QUESTIONABLE",
+        "proTeamId": 11,
+        "stats": [
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.1,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.4,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 4.3,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 21.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 5
+  },
+  {
+   "abbrev": "FtB",
+   "currentSimulationResults": {
+    "playoffPct": 77.0
+   },
+   "divisionId": 0,
+   "id": 3,
+   "isActive": false,
+   "location": "Feel the ",
+   "logo": "https://i.imgur.com/cWNHf_d.jpg?maxwidth=640&shape=thumb&fidelity=medium",
+   "logoType": "CUSTOM_VALID",
+   "nickname": "Brees",
+   "owners": [
+    "{79345-777-333}"
+   ],
+   "playoffSeed": 3,
+   "primaryOwner": "{79345-777-333}",
+   "record": {
+    "overall": {
+     "losses": 2,
+     "pointsAgainst": 318.0,
+     "pointsFor": 416.0,
+     "ties": 0,
+     "wins": 1
+    }
+   },
+   "roster": {
+    "entries": [
+     {
+      "acquisitionDate": 1535224020871,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 0,
+      "playerId": 2580,
+      "playerPoolEntry": {
+       "id": 2580,
+       "onTeamId": 3,
+       "player": {
+        "defaultPositionId": 1,
+        "eligibleSlots": [
+         0,
+         7,
+         20,
+         21
+        ],
+        "fullName": "Drew Brees",
+        "id": 2580,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 18,
+        "stats": [
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 19.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.7,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.6,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 36.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224020871,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 16,
+      "playerId": -16016,
+      "playerPoolEntry": {
+       "id": -16016,
+       "onTeamId": 3,
+       "player": {
+        "defaultPositionId": 16,
+        "eligibleSlots": [
+         16,
+         20,
+         21
+        ],
+        "fullName": "Vikings D/ST",
+        "id": -16016,
+        "proTeamId": 16,
+        "stats": [
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.4,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 5.2,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.1,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1538531477204,
+      "acquisitionType": "TRADE",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 2508176,
+      "playerPoolEntry": {
+       "id": 2508176,
+       "onTeamId": 3,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "David Johnson",
+        "id": 2508176,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 22,
+        "stats": [
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 5.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.6,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.1,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 42.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1539741662425,
+      "acquisitionType": "TRADE",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 14912,
+      "playerPoolEntry": {
+       "id": 14912,
+       "onTeamId": 3,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Alshon Jeffery",
+        "id": 14912,
+        "injuryStatus": "QUESTIONABLE",
+        "proTeamId": 21,
+        "stats": [
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.4,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.3,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.3,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 21.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1539851515902,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 16974,
+      "playerPoolEntry": {
+       "id": 16974,
+       "onTeamId": 3,
+       "player": {
+        "defaultPositionId": 4,
+        "eligibleSlots": [
+         5,
+         6,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Trey Burton",
+        "id": 16974,
+        "injuryStatus": "QUESTIONABLE",
+        "proTeamId": 3,
+        "stats": [
+         {
+          "appliedTotal": 15.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 19.4,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.6,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 21.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 45.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1542187959593,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 23,
+      "playerId": 3042778,
+      "playerPoolEntry": {
+       "id": 3042778,
+       "onTeamId": 3,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Corey Davis",
+        "id": 3042778,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 10,
+        "stats": [
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.2,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.8,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 32.2,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 51.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1542792755178,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 3932420,
+      "playerPoolEntry": {
+       "id": 3932420,
+       "onTeamId": 3,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Josh Adams",
+        "id": 3932420,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 21,
+        "stats": [
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 25.4,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.6,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.7,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 51.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1542792755180,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 3915416,
+      "playerPoolEntry": {
+       "id": 3915416,
+       "onTeamId": 3,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "DJ Moore",
+        "id": 3915416,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 29,
+        "stats": [
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 39.2,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.5,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.9,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 51.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1544002341934,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 3116721,
+      "playerPoolEntry": {
+       "id": 3116721,
+       "onTeamId": 3,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Jaylen Samuels",
+        "id": 3116721,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 23,
+        "stats": [
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.8,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 20.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 48.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 10
+  },
+  {
+   "abbrev": "SINE",
+   "currentSimulationResults": {
+    "playoffPct": 68.0
+   },
+   "divisionId": 0,
+   "id": 4,
+   "isActive": false,
+   "location": "Its always",
+   "logo": "https://i.imgur.com/8KpTRB0.png",
+   "logoType": "CUSTOM_VALID",
+   "nickname": "Sony in NE",
+   "owners": [
+    "{4899-74322-677}"
+   ],
+   "playoffSeed": 4,
+   "primaryOwner": "{4899-74322-677}",
+   "record": {
+    "overall": {
+     "losses": 3,
+     "pointsAgainst": 327.0,
+     "pointsFor": 404.0,
+     "ties": 0,
+     "wins": 0
+    }
+   },
+   "roster": {
+    "entries": [
+     {
+      "acquisitionDate": 1535223668285,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 3051392,
+      "playerPoolEntry": {
+       "id": 3051392,
+       "onTeamId": 4,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Ezekiel Elliott",
+        "id": 3051392,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 6,
+        "stats": [
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.7,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.8,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 19.6,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 36.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535223668285,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 16460,
+      "playerPoolEntry": {
+       "id": 16460,
+       "onTeamId": 4,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Adam Thielen",
+        "id": 16460,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 16,
+        "stats": [
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.9,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.3,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 1.5,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 24.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535223668286,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 14886,
+      "playerPoolEntry": {
+       "id": 14886,
+       "onTeamId": 4,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Lamar Miller",
+        "id": 14886,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 34,
+        "stats": [
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.4,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 1.1,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.1,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 21.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535223668286,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 12563,
+      "playerPoolEntry": {
+       "id": 12563,
+       "onTeamId": 4,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Michael Crabtree",
+        "id": 12563,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 33,
+        "stats": [
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 0.4,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.3,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 2.7,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 33.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535223668286,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 6,
+      "playerId": 14054,
+      "playerPoolEntry": {
+       "id": 14054,
+       "onTeamId": 4,
+       "player": {
+        "defaultPositionId": 4,
+        "eligibleSlots": [
+         5,
+         6,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Kyle Rudolph",
+        "id": 14054,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 16,
+        "stats": [
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.7,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 3.7,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 21.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1537719144113,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 3045144,
+      "playerPoolEntry": {
+       "id": 3045144,
+       "onTeamId": 4,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Tyler Boyd",
+        "id": 3045144,
+        "injuryStatus": "INJURY_RESERVE",
+        "proTeamId": 4,
+        "stats": [
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 21.3,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 19.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.7,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 51.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1537950755587,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 23,
+      "playerId": 3925357,
+      "playerPoolEntry": {
+       "id": 3925357,
+       "onTeamId": 4,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Calvin Ridley",
+        "id": 3925357,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 1,
+        "stats": [
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.3,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.4,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.4,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 39.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1539808334831,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 17,
+      "playerId": 2985659,
+      "playerPoolEntry": {
+       "id": 2985659,
+       "onTeamId": 4,
+       "player": {
+        "defaultPositionId": 5,
+        "eligibleSlots": [
+         17,
+         20,
+         21
+        ],
+        "fullName": "Wil Lutz",
+        "id": 2985659,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 18,
+        "stats": [
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.2,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.3,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.5,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 21.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1540369962299,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 0,
+      "playerId": 3039707,
+      "playerPoolEntry": {
+       "id": 3039707,
+       "onTeamId": 4,
+       "player": {
+        "defaultPositionId": 1,
+        "eligibleSlots": [
+         0,
+         7,
+         20,
+         21
+        ],
+        "fullName": "Mitchell Trubisky",
+        "id": 3039707,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 3,
+        "stats": [
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.7,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.7,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 19.2,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 42.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 2
+  },
+  {
+   "abbrev": "SAQU",
+   "currentSimulationResults": {
+    "playoffPct": 59.0
+   },
+   "divisionId": 0,
+   "id": 5,
+   "isActive": false,
+   "location": "Watch What ",
+   "logo": "http://g.espncdn.com/s/ffllm/logos/AtTheStadium-RobbHarskamp/At_The_Stadium_01.svg",
+   "logoType": "VECTOR",
+   "nickname": "You Saquon",
+   "owners": [
+    "{1234-5678-9101}"
+   ],
+   "playoffSeed": 5,
+   "primaryOwner": "{1234-5678-9101}",
+   "record": {
+    "overall": {
+     "losses": 0,
+     "pointsAgainst": 336.0,
+     "pointsFor": 392.0,
+     "ties": 0,
+     "wins": 3
+    }
+   },
+   "roster": {
+    "entries": [
+     {
+      "acquisitionDate": 1535224643316,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 3929630,
+      "playerPoolEntry": {
+       "id": 3929630,
+       "onTeamId": 5,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Saquon Barkley",
+        "id": 3929630,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 19,
+        "stats": [
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.5,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 4.6,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 2.3,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 27.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224643316,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 16737,
+      "playerPoolEntry": {
+       "id": 16737,
+       "onTeamId": 5,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Mike Evans",
+        "id": 16737,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 27,
+        "stats": [
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 5.9,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.4,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.5,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 36.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224643316,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 12514,
+      "playerPoolEntry": {
+       "id": 12514,
+       "onTeamId": 5,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "LeSean McCoy",
+        "id": 12514,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 2,
+        "stats": [
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.8,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.1,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.3,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 42.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224643316,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 23,
+      "playerId": 14924,
+      "playerPoolEntry": {
+       "id": 14924,
+       "onTeamId": 5,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "T.Y. Hilton",
+        "id": 14924,
+        "injuryStatus": "QUESTIONABLE",
+        "proTeamId": 11,
+        "stats": [
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.1,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 1.9,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.5,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1536741158568,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 6,
+      "playerId": 3040151,
+      "playerPoolEntry": {
+       "id": 3040151,
+       "onTeamId": 5,
+       "player": {
+        "defaultPositionId": 4,
+        "eligibleSlots": [
+         5,
+         6,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "George Kittle",
+        "id": 3040151,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 25,
+        "stats": [
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 21.5,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.1,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 34.7,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 48.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1538531473588,
+      "acquisitionType": "TRADE",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 3122840,
+      "playerPoolEntry": {
+       "id": 3122840,
+       "onTeamId": 5,
+       "player": {
+        "defaultPositionId": 1,
+        "eligibleSlots": [
+         0,
+         7,
+         20,
+         21
+        ],
+        "fullName": "Deshaun Watson",
+        "id": 3122840,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 34,
+        "stats": [
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.1,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.1,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.1,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 36.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1539293331451,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 17,
+      "playerId": 3055899,
+      "playerPoolEntry": {
+       "id": 3055899,
+       "onTeamId": 5,
+       "player": {
+        "defaultPositionId": 5,
+        "eligibleSlots": [
+         17,
+         20,
+         21
+        ],
+        "fullName": "Harrison Butker",
+        "id": 3055899,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 12,
+        "stats": [
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 5.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.1,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.5,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 24.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1540597512166,
+      "acquisitionType": "TRADE",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 2976212,
+      "playerPoolEntry": {
+       "id": 2976212,
+       "onTeamId": 5,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Stefon Diggs",
+        "id": 2976212,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 16,
+        "stats": [
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 5.4,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.4,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.1,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 33.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1541098859093,
+      "acquisitionType": "TRADE",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 0,
+      "playerId": 8439,
+      "playerPoolEntry": {
+       "id": 8439,
+       "onTeamId": 5,
+       "player": {
+        "defaultPositionId": 1,
+        "eligibleSlots": [
+         0,
+         7,
+         20,
+         21
+        ],
+        "fullName": "Aaron Rodgers",
+        "id": 8439,
+        "injuryStatus": "QUESTIONABLE",
+        "proTeamId": 9,
+        "stats": [
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 4.5,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 5.2,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.5,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 24.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 4
+  },
+  {
+   "abbrev": "TWH",
+   "currentSimulationResults": {
+    "playoffPct": 50.0
+   },
+   "divisionId": 0,
+   "id": 7,
+   "isActive": false,
+   "location": "THE",
+   "logo": "http://g.espncdn.com/lm-static/logo-packs/ffl/SmackTalk-LeoEspinosa/the_damn_ball-11.svg",
+   "logoType": "VECTOR",
+   "nickname": "White House",
+   "owners": [
+    "{3456-789-1112}"
+   ],
+   "playoffSeed": 6,
+   "primaryOwner": "{3456-789-1112}",
+   "record": {
+    "overall": {
+     "losses": 1,
+     "pointsAgainst": 345.0,
+     "pointsFor": 380.0,
+     "ties": 0,
+     "wins": 2
+    }
+   },
+   "roster": {
+    "entries": [
+     {
+      "acquisitionDate": 1535224843566,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 15795,
+      "playerPoolEntry": {
+       "id": 15795,
+       "onTeamId": 7,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "DeAndre Hopkins",
+        "id": 15795,
+        "injuryStatus": "QUESTIONABLE",
+        "proTeamId": 34,
+        "stats": [
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 3.1,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.2,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 4.6,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224843566,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 23,
+      "playerId": 2979843,
+      "playerPoolEntry": {
+       "id": 2979843,
+       "onTeamId": 7,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Kenyan Drake",
+        "id": 2979843,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 15,
+        "stats": [
+         {
+          "appliedTotal": 15.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 20.8,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.5,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.8,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 45.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224843566,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 6,
+      "playerId": 15847,
+      "playerPoolEntry": {
+       "id": 15847,
+       "onTeamId": 7,
+       "player": {
+        "defaultPositionId": 4,
+        "eligibleSlots": [
+         5,
+         6,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Travis Kelce",
+        "id": 15847,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 12,
+        "stats": [
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.3,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.4,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.4,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224843566,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 13217,
+      "playerPoolEntry": {
+       "id": 13217,
+       "onTeamId": 7,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Golden Tate",
+        "id": 13217,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 21,
+        "stats": [
+         {
+          "appliedTotal": 15.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.3,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.6,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 22.2,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 45.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224843566,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 2330,
+      "playerPoolEntry": {
+       "id": 2330,
+       "onTeamId": 7,
+       "player": {
+        "defaultPositionId": 1,
+        "eligibleSlots": [
+         0,
+         7,
+         20,
+         21
+        ],
+        "fullName": "Tom Brady",
+        "id": 2330,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 17,
+        "stats": [
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.7,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 4.8,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 27.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224843566,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 16913,
+      "playerPoolEntry": {
+       "id": 16913,
+       "onTeamId": 7,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "James White",
+        "id": 16913,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 17,
+        "stats": [
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.1,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.7,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.2,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1536780550736,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 3052117,
+      "playerPoolEntry": {
+       "id": 3052117,
+       "onTeamId": 7,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Phillip Lindsay",
+        "id": 3052117,
+        "injuryStatus": "INJURY_RESERVE",
+        "proTeamId": 7,
+        "stats": [
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.3,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 0.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 3.5,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 27.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1536780984029,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 3068267,
+      "playerPoolEntry": {
+       "id": 3068267,
+       "onTeamId": 7,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Austin Ekeler",
+        "id": 3068267,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 24,
+        "stats": [
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.3,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.2,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 39.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1536789298923,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 2577327,
+      "playerPoolEntry": {
+       "id": 2577327,
+       "onTeamId": 7,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Tyler Lockett",
+        "id": 2577327,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 26,
+        "stats": [
+         {
+          "appliedTotal": 18.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 5.4,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 19.5,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 54.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 1
+  },
+  {
+   "abbrev": "LUTZ",
+   "currentSimulationResults": {
+    "playoffPct": 41.0
+   },
+   "divisionId": 0,
+   "id": 8,
+   "isActive": false,
+   "location": "Lutz Get",
+   "logo": "https://pbs.twimg.com/profile_images/874438262055718912/BWj7M6_4.jpg",
+   "logoType": "CUSTOM_VALID",
+   "nickname": "Weird",
+   "owners": [
+    "{0009-3468-72}"
+   ],
+   "playoffSeed": 7,
+   "primaryOwner": "{0009-3468-72}",
+   "record": {
+    "overall": {
+     "losses": 2,
+     "pointsAgainst": 354.0,
+     "pointsFor": 368.0,
+     "ties": 0,
+     "wins": 1
+    }
+   },
+   "roster": {
+    "entries": [
+     {
+      "acquisitionDate": 1535222535328,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 2977644,
+      "playerPoolEntry": {
+       "id": 2977644,
+       "onTeamId": 8,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Todd Gurley II",
+        "id": 2977644,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 14,
+        "stats": [
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.4,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.9,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.3,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 39.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535222535328,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 6,
+      "playerId": 13229,
+      "playerPoolEntry": {
+       "id": 13229,
+       "onTeamId": 8,
+       "player": {
+        "defaultPositionId": 4,
+        "eligibleSlots": [
+         5,
+         6,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Rob Gronkowski",
+        "id": 13229,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 17,
+        "stats": [
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.5,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 4.8,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 1.9,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 42.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535222535329,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 14880,
+      "playerPoolEntry": {
+       "id": 14880,
+       "onTeamId": 8,
+       "player": {
+        "defaultPositionId": 1,
+        "eligibleSlots": [
+         0,
+         7,
+         20,
+         21
+        ],
+        "fullName": "Kirk Cousins",
+        "id": 14880,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 16,
+        "stats": [
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 3.8,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 22.8,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 3.1,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 42.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1539977757970,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 3128720,
+      "playerPoolEntry": {
+       "id": 3128720,
+       "onTeamId": 8,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Nick Chubb",
+        "id": 3128720,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 5,
+        "stats": [
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 1.7,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 24.3,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 4.1,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 48.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1540974785322,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 3128429,
+      "playerPoolEntry": {
+       "id": 3128429,
+       "onTeamId": 8,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Courtland Sutton",
+        "id": 3128429,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 7,
+        "stats": [
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.8,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.1,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.3,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 33.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1541098864896,
+      "acquisitionType": "TRADE",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 2974858,
+      "playerPoolEntry": {
+       "id": 2974858,
+       "onTeamId": 8,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Kenny Golladay",
+        "id": 2974858,
+        "injuryStatus": "QUESTIONABLE",
+        "proTeamId": 8,
+        "stats": [
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.6,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.6,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.7,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 27.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1541755900804,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 3043275,
+      "playerPoolEntry": {
+       "id": 3043275,
+       "onTeamId": 8,
+       "player": {
+        "defaultPositionId": 4,
+        "eligibleSlots": [
+         5,
+         6,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Austin Hooper",
+        "id": 3043275,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 1,
+        "stats": [
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 4.7,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.6,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.7,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 21.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1542792755180,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 17,
+      "playerId": 4333,
+      "playerPoolEntry": {
+       "id": 4333,
+       "onTeamId": 8,
+       "player": {
+        "defaultPositionId": 5,
+        "eligibleSlots": [
+         17,
+         20,
+         21
+        ],
+        "fullName": "Matt Bryant",
+        "id": 4333,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 1,
+        "stats": [
+         {
+          "appliedTotal": 10.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.5,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.1,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.2,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 30.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1544002341937,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 16,
+      "playerId": -16006,
+      "playerPoolEntry": {
+       "id": -16006,
+       "onTeamId": 8,
+       "player": {
+        "defaultPositionId": 16,
+        "eligibleSlots": [
+         16,
+         20,
+         21
+        ],
+        "fullName": "Cowboys D/ST",
+        "id": -16006,
+        "proTeamId": 6,
+        "stats": [
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.9,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.4,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 19.3,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 48.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 8
+  },
+  {
+   "abbrev": "LEAG",
+   "currentSimulationResults": {
+    "playoffPct": 32.0
+   },
+   "divisionId": 0,
+   "id": 9,
+   "isActive": false,
+   "location": "Misunderstood ",
+   "logo": "http://g.espncdn.com/lm-static/logo-packs/ffl/MickeyAndDonald-Disney/Disney-08.svg",
+   "logoType": "VECTOR",
+   "nickname": "Mistfits ",
+   "owners": [
+    "{4C6935DA-0CBA-4AF9-BB08-06E583265D96}"
+   ],
+   "playoffSeed": 8,
+   "primaryOwner": "{4C6935DA-0CBA-4AF9-BB08-06E583265D96}",
+   "record": {
+    "overall": {
+     "losses": 3,
+     "pointsAgainst": 363.0,
+     "pointsFor": 356.0,
+     "ties": 0,
+     "wins": 0
+    }
+   },
+   "roster": {
+    "entries": [
+     {
+      "acquisitionDate": 1535223373958,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 3115364,
+      "playerPoolEntry": {
+       "id": 3115364,
+       "onTeamId": 9,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Leonard Fournette",
+        "id": 3115364,
+        "injuryStatus": "QUESTIONABLE",
+        "proTeamId": 30,
+        "stats": [
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.2,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.7,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 2.6,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 33.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535223373958,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 16800,
+      "playerPoolEntry": {
+       "id": 16800,
+       "onTeamId": 9,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Davante Adams",
+        "id": 16800,
+        "injuryStatus": "QUESTIONABLE",
+        "proTeamId": 9,
+        "stats": [
+         {
+          "appliedTotal": 10.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 2.6,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.4,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 20.8,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 30.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535223373958,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 16790,
+      "playerPoolEntry": {
+       "id": 16790,
+       "onTeamId": 9,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Jarvis Landry",
+        "id": 16790,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 5,
+        "stats": [
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.9,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 15.9,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 21.9,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 39.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535223373958,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 3120348,
+      "playerPoolEntry": {
+       "id": 3120348,
+       "onTeamId": 9,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "JuJu Smith-Schuster",
+        "id": 3120348,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 23,
+        "stats": [
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.4,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 21.8,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 25.1,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 48.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535223373958,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 23,
+      "playerId": 15880,
+      "playerPoolEntry": {
+       "id": 15880,
+       "onTeamId": 9,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Robert Woods",
+        "id": 15880,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 14,
+        "stats": [
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.8,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 19.9,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 4.1,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 39.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535223373958,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 0,
+      "playerId": 5536,
+      "playerPoolEntry": {
+       "id": 5536,
+       "onTeamId": 9,
+       "player": {
+        "defaultPositionId": 1,
+        "eligibleSlots": [
+         0,
+         7,
+         20,
+         21
+        ],
+        "fullName": "Ben Roethlisberger",
+        "id": 5536,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 23,
+        "stats": [
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 1.5,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 0.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 24.3,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 51.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535223373958,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 11237,
+      "playerPoolEntry": {
+       "id": 11237,
+       "onTeamId": 9,
+       "player": {
+        "defaultPositionId": 1,
+        "eligibleSlots": [
+         0,
+         7,
+         20,
+         21
+        ],
+        "fullName": "Matt Ryan",
+        "id": 11237,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 1,
+        "stats": [
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.4,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 4.5,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.8,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 33.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1538230512637,
+      "acquisitionType": "TRADE",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 15826,
+      "playerPoolEntry": {
+       "id": 15826,
+       "onTeamId": 9,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Giovani Bernard",
+        "id": 15826,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 4,
+        "stats": [
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.5,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 4.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.1,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 33.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1538682484953,
+      "acquisitionType": "TRADE",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 6,
+      "playerId": 16732,
+      "playerPoolEntry": {
+       "id": 16732,
+       "onTeamId": 9,
+       "player": {
+        "defaultPositionId": 4,
+        "eligibleSlots": [
+         5,
+         6,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Eric Ebron",
+        "id": 16732,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 11,
+        "stats": [
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 4.2,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.8,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.6,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 21.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 3
+  },
+  {
+   "abbrev": "TheD",
+   "currentSimulationResults": {
+    "playoffPct": 23.0
+   },
+   "divisionId": 0,
+   "id": 10,
+   "isActive": false,
+   "location": "Jacking Goff ",
+   "logo": "http://g.espncdn.com/s/ffllm/logos/SmackTalk-LeoEspinosa/u_mad_bro-09.svg",
+   "logoType": "VECTOR",
+   "nickname": "On Sundays",
+   "owners": [
+    "{3FAC78F0-4AA2-4982-AC78-F04AA2798222}"
+   ],
+   "playoffSeed": 9,
+   "primaryOwner": "{3FAC78F0-4AA2-4982-AC78-F04AA2798222}",
+   "record": {
+    "overall": {
+     "losses": 0,
+     "pointsAgainst": 372.0,
+     "pointsFor": 344.0,
+     "ties": 0,
+     "wins": 3
+    }
+   },
+   "roster": {
+    "entries": [
+     {
+      "acquisitionDate": 1535224433376,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 3116593,
+      "playerPoolEntry": {
+       "id": 3116593,
+       "onTeamId": 10,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Dalvin Cook",
+        "id": 3116593,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 16,
+        "stats": [
+         {
+          "appliedTotal": 18.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.4,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.6,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 22.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 54.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224433376,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 13216,
+      "playerPoolEntry": {
+       "id": 13216,
+       "onTeamId": 10,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Demaryius Thomas",
+        "id": 13216,
+        "injuryStatus": "INJURY_RESERVE",
+        "proTeamId": 34,
+        "stats": [
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 30.6,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 25.8,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 42.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224433376,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 14198,
+      "playerPoolEntry": {
+       "id": 14198,
+       "onTeamId": 10,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Dion Lewis",
+        "id": 14198,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 10,
+        "stats": [
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.4,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 1.2,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 24.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224433376,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 0,
+      "playerId": 3046779,
+      "playerPoolEntry": {
+       "id": 3046779,
+       "onTeamId": 10,
+       "player": {
+        "defaultPositionId": 1,
+        "eligibleSlots": [
+         0,
+         7,
+         20,
+         21
+        ],
+        "fullName": "Jared Goff",
+        "id": 3046779,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 14,
+        "stats": [
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 22.8,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.1,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 42.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224433376,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 16,
+      "playerId": -16014,
+      "playerPoolEntry": {
+       "id": -16014,
+       "onTeamId": 10,
+       "player": {
+        "defaultPositionId": 16,
+        "eligibleSlots": [
+         16,
+         20,
+         21
+        ],
+        "fullName": "Rams D/ST",
+        "id": -16014,
+        "proTeamId": 14,
+        "stats": [
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.4,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.8,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.6,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 24.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1538037105344,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 6,
+      "playerId": 12537,
+      "playerPoolEntry": {
+       "id": 12537,
+       "onTeamId": 10,
+       "player": {
+        "defaultPositionId": 4,
+        "eligibleSlots": [
+         5,
+         6,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Jared Cook",
+        "id": 12537,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 13,
+        "stats": [
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.3,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 0.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.3,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 33.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1538531477204,
+      "acquisitionType": "TRADE",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 16733,
+      "playerPoolEntry": {
+       "id": 16733,
+       "onTeamId": 10,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Odell Beckham Jr.",
+        "id": 16733,
+        "injuryStatus": "QUESTIONABLE",
+        "proTeamId": 19,
+        "stats": [
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.9,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.2,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 4.7,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 24.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1539765174424,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 15920,
+      "playerPoolEntry": {
+       "id": 15920,
+       "onTeamId": 10,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Latavius Murray",
+        "id": 15920,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 16,
+        "stats": [
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.5,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 5.5,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.4,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 42.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1540597512166,
+      "acquisitionType": "TRADE",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 2976516,
+      "playerPoolEntry": {
+       "id": 2976516,
+       "onTeamId": 10,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "T.J. Yeldon",
+        "id": 2976516,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 30,
+        "stats": [
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.5,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 19.2,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.5,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 48.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 6
+  },
+  {
+   "abbrev": "HARR",
+   "currentSimulationResults": {
+    "playoffPct": 14.0
+   },
+   "divisionId": 0,
+   "id": 11,
+   "isActive": false,
+   "location": "Perscription",
+   "logo": "https://images.livemixtapes.com/artists/nodj/gucci_mane_zaytoven-lean/cover.jpg",
+   "logoType": "CUSTOM_VALID",
+   "nickname": "Mixon",
+   "owners": [
+    "{61E5E7DB-8FF9-413B-BC45-10AB6DDA15D6}"
+   ],
+   "playoffSeed": 10,
+   "primaryOwner": "{61E5E7DB-8FF9-413B-BC45-10AB6DDA15D6}",
+   "record": {
+    "overall": {
+     "losses": 1,
+     "pointsAgainst": 381.0,
+     "pointsFor": 332.0,
+     "ties": 0,
+     "wins": 2
+    }
+   },
+   "roster": {
+    "entries": [
+     {
+      "acquisitionDate": 1535224994882,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 2576434,
+      "playerPoolEntry": {
+       "id": 2576434,
+       "onTeamId": 11,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Melvin Gordon",
+        "id": 2576434,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 24,
+        "stats": [
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.1,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.2,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 5.8,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 27.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224994882,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 4,
+      "playerId": 13982,
+      "playerPoolEntry": {
+       "id": 13982,
+       "onTeamId": 11,
+       "player": {
+        "defaultPositionId": 3,
+        "eligibleSlots": [
+         3,
+         4,
+         5,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Julio Jones",
+        "id": 13982,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 1,
+        "stats": [
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 19.5,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.5,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 39.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224994883,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 2,
+      "playerId": 3116385,
+      "playerPoolEntry": {
+       "id": 3116385,
+       "onTeamId": 11,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Joe Mixon",
+        "id": 3116385,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 4,
+        "stats": [
+         {
+          "appliedTotal": 18.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.9,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.8,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 18.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 54.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224994883,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 6,
+      "playerId": 15835,
+      "playerPoolEntry": {
+       "id": 15835,
+       "onTeamId": 11,
+       "player": {
+        "defaultPositionId": 4,
+        "eligibleSlots": [
+         5,
+         6,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Zach Ertz",
+        "id": 15835,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 21,
+        "stats": [
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 6.1,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 5.6,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 5.2,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 21.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224994883,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 20,
+      "playerId": 13981,
+      "playerPoolEntry": {
+       "id": 13981,
+       "onTeamId": 11,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Mark Ingram II",
+        "id": 13981,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 18,
+        "stats": [
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 17.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 5.7,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 19.5,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 12.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 36.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224994883,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 16,
+      "playerId": -16034,
+      "playerPoolEntry": {
+       "id": -16034,
+       "onTeamId": 11,
+       "player": {
+        "defaultPositionId": 16,
+        "eligibleSlots": [
+         16,
+         20,
+         21
+        ],
+        "fullName": "Texans D/ST",
+        "id": -16034,
+        "proTeamId": 34,
+        "stats": [
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 22.6,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 20.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 14.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 42.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1535224994883,
+      "acquisitionType": "DRAFT",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 17,
+      "playerId": 1097,
+      "playerPoolEntry": {
+       "id": 1097,
+       "onTeamId": 11,
+       "player": {
+        "defaultPositionId": 5,
+        "eligibleSlots": [
+         17,
+         20,
+         21
+        ],
+        "fullName": "Adam Vinatieri",
+        "id": 1097,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 11,
+        "stats": [
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 16.5,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.1,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 8.6,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 33.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1536020001459,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 0,
+      "playerId": 5529,
+      "playerPoolEntry": {
+       "id": 5529,
+       "onTeamId": 11,
+       "player": {
+        "defaultPositionId": 1,
+        "eligibleSlots": [
+         0,
+         7,
+         20,
+         21
+        ],
+        "fullName": "Philip Rivers",
+        "id": 5529,
+        "injuryStatus": "QUESTIONABLE",
+        "proTeamId": 24,
+        "stats": [
+         {
+          "appliedTotal": 10.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 13.3,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 1.1,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 2.3,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 30.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     },
+     {
+      "acquisitionDate": 1538555561481,
+      "acquisitionType": "ADD",
+      "injuryStatus": "NORMAL",
+      "lineupSlotId": 23,
+      "playerId": 3066158,
+      "playerPoolEntry": {
+       "id": 3066158,
+       "onTeamId": 11,
+       "player": {
+        "defaultPositionId": 2,
+        "eligibleSlots": [
+         2,
+         3,
+         7,
+         20,
+         21,
+         23
+        ],
+        "fullName": "Tarik Cohen",
+        "id": 3066158,
+        "injuryStatus": "ACTIVE",
+        "proTeamId": 3,
+        "stats": [
+         {
+          "appliedTotal": 10.0,
+          "scoringPeriodId": 1,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 11.9,
+          "scoringPeriodId": 1,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.0,
+          "scoringPeriodId": 2,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 7.6,
+          "scoringPeriodId": 2,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.0,
+          "scoringPeriodId": 3,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 9.9,
+          "scoringPeriodId": 3,
+          "statSourceId": 0,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 10.0,
+          "scoringPeriodId": 4,
+          "statSourceId": 1,
+          "statSplitTypeId": 1
+         },
+         {
+          "appliedTotal": 30.0,
+          "statSourceId": 0,
+          "statSplitTypeId": 0
+         }
+        ]
+       }
+      },
+      "status": "NORMAL"
+     }
+    ]
+   },
+   "waiverRank": 7
+  }
+ ]
+}

@@ -38,6 +38,7 @@ import argparse
 import copy
 import json
 import os
+import random
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -242,12 +243,88 @@ def build(source: Path, dest: Path) -> None:
     _dump(dest / "league_modern.json", modern)
 
 
+def build_inseason(dest: Path) -> None:
+    """``league_inseason.json``: the in-season shape, derived from ``league_settings_teams.json``.
+
+    SYNTHETIC, and needs saying: nobody here has watched a live ESPN league mid-season, so the numbers
+    are made up. What is *not* made up is the shape - ``schedule[]`` with per-side ``totalPoints``,
+    ``teams[].record.overall``, ``currentSimulationResults.playoffPct`` and per-week player ``stats``
+    blocks with ``statSourceId`` 0/1 and ``appliedTotal`` - which is documented and stable across the
+    v3 API. It exercises the parsers; it is not evidence about live behaviour. Whether ESPN publishes
+    scores that *move during games* is a separate, unmeasured question.
+
+    Deterministic (a fixed seed), so regenerating it produces the same file.
+    """
+    base = json.loads((dest / "league_settings_teams.json").read_text(encoding="utf-8"))
+    rnd = random.Random(20260909)
+    week = 4                                                        # three weeks played, week 4 live
+    data = copy.deepcopy(base)
+    data["scoringPeriodId"] = week
+    data["status"] = dict(data.get("status") or {}, currentMatchupPeriod=week, latestScoringPeriod=week,
+                          firstScoringPeriod=1, finalScoringPeriod=17, isActive=True)
+    data["settings"]["scheduleSettings"] = dict(data["settings"].get("scheduleSettings") or {},
+                                                matchupPeriodCount=13, matchupPeriodLength=1,
+                                                playoffTeamCount=6, playoffSeedingRule="TOTAL_POINTS_SCORED")
+
+    teams = data.get("teams") or []
+    for i, team in enumerate(teams):
+        wins = max(0, 3 - (i % 4))
+        team["record"] = {"overall": {"wins": wins, "losses": 3 - wins, "ties": 0,
+                                      "pointsFor": round(320.0 + 12.0 * (len(teams) - i), 1),
+                                      "pointsAgainst": round(300.0 + 9.0 * i, 1)}}
+        team["playoffSeed"] = i + 1
+        team["currentSimulationResults"] = {"playoffPct": round(max(1.0, 95.0 - 9.0 * i), 1)}
+        roster = team.get("roster") or {}
+        roster["entries"] = (roster.get("entries") or [])[:9]       # a full lineup, under the size cap
+        for entry in roster["entries"]:
+            pool = entry.get("playerPoolEntry") or {}
+            full = pool.get("player") or {}
+            # only what in-season parsing reads, so the weekly stat blocks fit under the size cap
+            player = {k: full[k] for k in ("id", "fullName", "defaultPositionId", "eligibleSlots",
+                                           "proTeamId", "injuryStatus") if k in full}
+            pool["player"] = player
+            base_ppg = 6.0 + (player.get("id", 0) % 13)
+            stats = []
+            for w in range(1, week + 1):
+                proj = round(base_ppg, 1)
+                stats.append({"scoringPeriodId": w, "statSourceId": 1, "statSplitTypeId": 1, "appliedTotal": proj})
+                if w < week:                                        # week 4 has not been played yet
+                    actual = round(max(0.0, rnd.gauss(base_ppg, 0.5 * base_ppg)), 1)
+                    stats.append({"scoringPeriodId": w, "statSourceId": 0, "statSplitTypeId": 1,
+                                  "appliedTotal": actual})
+            stats.append({"statSourceId": 0, "statSplitTypeId": 0, "appliedTotal": round(base_ppg * 3, 1)})
+            player["stats"] = stats
+
+    schedule = []
+    ids = [t["id"] for t in teams]
+    for w in range(1, 14):
+        rotation = ids[:1] + ids[1:][(w - 1) % max(1, len(ids) - 1):] + ids[1:][:(w - 1) % max(1, len(ids) - 1)]
+        for a, b in zip(rotation[::2], rotation[1::2]):
+            game = {"id": len(schedule) + 1, "matchupPeriodId": w,
+                    "home": {"teamId": a, "totalPoints": 0.0}, "away": {"teamId": b, "totalPoints": 0.0}}
+            if w < week:
+                hp, ap = round(rnd.uniform(70, 150), 1), round(rnd.uniform(70, 150), 1)
+                game["home"]["totalPoints"], game["away"]["totalPoints"] = hp, ap
+                game["winner"] = "HOME" if hp > ap else ("AWAY" if ap > hp else "TIE")
+            else:
+                game["winner"] = "UNDECIDED"
+            schedule.append(game)
+    data["schedule"] = schedule
+    _dump(dest / "league_inseason.json", data)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--source", default=DEFAULT_SOURCE, help="directory with the espn-api test JSON files")
     ap.add_argument("--dest", default=str(HERE))
+    ap.add_argument("--inseason-only", action="store_true",
+                    help="regenerate only league_inseason.json (needs no external source)")
     args = ap.parse_args()
+    if args.inseason_only:
+        build_inseason(Path(args.dest))
+        return
     build(Path(args.source), Path(args.dest))
+    build_inseason(Path(args.dest))
 
 
 if __name__ == "__main__":

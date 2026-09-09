@@ -5,5 +5,10 @@
  "players": 874,
  "espn_ids": 856,
  "ml_rows": 874,
- "season_totals": 4797
+ "season_totals": 4797,
+ "inseason": {
+  "sigma_players": 1119,
+  "dvp_season": 2025,
+  "schedule_teams": 32
+ }
 }

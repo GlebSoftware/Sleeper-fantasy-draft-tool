@@ -82,6 +82,9 @@ class Bundle:
     ml: dict[str, dict]                        # player_id -> {"pred_<key>": v, "pred_games", "ppg_std_ppr", "rookie_flag", "position"}
     season_totals: list[dict]                  # {"season","position","player_id","games","stats":{key: v}}
     byes: dict[str, int]
+    #: NFL schedule, defence-vs-position multipliers and measured weekly spread (see
+    #: draftadvisor/data/inseason.py). Empty in a bundle built before in-season support.
+    inseason: dict = field(default_factory=dict)
     meta: dict = field(default_factory=dict)
     gsis_to_pid: dict[str, str] = field(default_factory=dict)
 
@@ -96,8 +99,9 @@ class Bundle:
         totals = json.loads((d / "season_totals.json").read_text(encoding="utf-8")) if (d / "season_totals.json").exists() else []
         byes = json.loads((d / "byes.json").read_text(encoding="utf-8")) if (d / "byes.json").exists() else {}
         meta = json.loads((d / "meta.json").read_text(encoding="utf-8")) if (d / "meta.json").exists() else {}
+        ins = json.loads((d / "inseason.json").read_text(encoding="utf-8")) if (d / "inseason.json").exists() else {}
         b = cls(players=players, ml={str(k): v for k, v in ml.items()}, season_totals=totals,
-                byes={k: int(v) for k, v in byes.items()}, meta=meta)
+                byes={k: int(v) for k, v in byes.items()}, inseason=ins, meta=meta)
         b.gsis_to_pid = {pl.gsis_id: pid for pid, pl in players.items() if pl.gsis_id}
         return b
 

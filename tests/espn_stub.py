@@ -222,6 +222,14 @@ class EspnStub:
         d.get("settings", {}).pop("rosterSettings", None)      # lineup slots come from the league view (see module doc)
         return self._apply_overrides(d)
 
+    def inseason_payload(self) -> dict:
+        """``league_inseason.json``: the shape views mMatchupScore / mScoreboard add to mTeam + mRoster.
+
+        Its numbers are synthetic (see ``fixtures/espn/make_fixtures.py``); the stub serves it so the
+        in-season code paths have something faithful to parse without a live league.
+        """
+        return self.fixture("league_inseason.json")
+
     def players_payload(self) -> dict:
         return self.fixture("players_kona.json")
 
@@ -298,6 +306,8 @@ class EspnStub:
         views = query.get("view", [])
         if "kona_player_info" in views:
             payload: Any = self.players_payload()
+        elif any(v in views for v in ("mMatchupScore", "mScoreboard")):
+            payload = self.inseason_payload()
         elif "mDraftDetail" in views:
             payload = self.draft_payload()
             if any(v in views for v in ("mTeam", "mRoster")):

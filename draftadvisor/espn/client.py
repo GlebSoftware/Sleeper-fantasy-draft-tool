@@ -42,6 +42,7 @@ __all__ = [
     "LEAGUE_VIEWS",
     "DRAFT_VIEWS",
     "POLL_VIEWS",
+    "IN_SEASON_VIEWS",
 ]
 
 _USER_AGENT = "draftadvisor/0.1 (+https://github.com/draftadvisor)"
@@ -64,6 +65,9 @@ DRAFT_VIEWS: tuple[str, ...] = ("mDraftDetail", "mSettings")
 #: shows up under ``teams[].roster.entries`` even when ``draftDetail.picks`` stays empty (which is what
 #: ESPN's REST API does for the whole duration of a live draft).
 POLL_VIEWS: tuple[str, ...] = ("mDraftDetail", "mSettings", "mTeam", "mRoster")
+#: Views of the in-season fetch: the league calendar and scoring rules, every team with its record and
+#: roster, the matchup schedule with scores, and the scoreboard. One GET answers all of it.
+IN_SEASON_VIEWS: tuple[str, ...] = ("mSettings", "mTeam", "mRoster", "mMatchupScore", "mScoreboard")
 #: Response headers worth reporting: they say whether a CDN answered instead of ESPN.
 CACHE_HEADERS: tuple[str, ...] = ("age", "x-cache", "cache-control", "date", "server")
 #: Warn once per process when a poll payload is bigger than this (the roster views grow with every pick).
@@ -380,6 +384,20 @@ class EspnClient:
         params = [("scoringPeriodId", 0)] if rosters else None
         headers = {"Cache-Control": "no-cache", "Pragma": "no-cache"} if no_cache else None
         return await self.get_league(league_id, season, views, headers=headers, params=params, info=info)
+
+    async def get_in_season(self, league_id: str | int, season: int, week: int | None = None,
+                            *, no_cache: bool = False, info: dict[str, Any] | None = None) -> dict:
+        """One GET for an in-season view of the league: calendar, standings, rosters, matchups, scores.
+
+        ``week`` sets ``scoringPeriodId`` so the roster entries come back with that week's stats. Leave
+        it unset for the current week - ESPN's default. Whether the scores it returns *move while games
+        are being played* has not been measured here; nothing in this client assumes they do.
+
+        Zero metered cost: this is ESPN, not a paid API.
+        """
+        params = [("scoringPeriodId", int(week))] if week is not None else None
+        headers = {"Cache-Control": "no-cache", "Pragma": "no-cache"} if no_cache else None
+        return await self.get_league(league_id, season, IN_SEASON_VIEWS, headers=headers, params=params, info=info)
 
     async def get_players(self, league_id: str | int, season: int, limit: int = 600,
                           rank_type: str = "PPR") -> list[dict]:

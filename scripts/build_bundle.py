@@ -2,7 +2,7 @@
 """Build web_bundle/ for the stateless web app (local + Vercel).
 
 Needs the full dependency set (pandas, scikit-learn) and data/raw (run `draftadvisor prep` first).
-Outputs (JSON): players.json, ml.json, season_totals.json, byes.json, meta.json.
+Outputs (JSON): players.json, ml.json, season_totals.json, byes.json, inseason.json, meta.json.
 """
 from __future__ import annotations
 
@@ -97,8 +97,18 @@ def main(argv=None) -> int:
     (out / "season_totals.json").write_text(json.dumps(rows), encoding="utf-8")
     print(f"  {len(rows)} player-seasons")
 
+    print("• in-season tables (weekly spread, schedule, defence vs position)")
+    from draftadvisor.data.inseason import build_inseason_tables
+
+    tables = build_inseason_tables(can, nv.load_schedule(), season)
+    (out / "inseason.json").write_text(json.dumps(tables), encoding="utf-8")
+    print(f"  weekly spread for {len(tables['sigma']['players'])} players, "
+          f"{len(tables['schedule'])} team schedules, defence-vs-position from {tables['dvp_season']}")
+
     meta = {"built_at": time.time(), "season": season, "seasons": f"{lo}-{hi}", "players": len(players),
-            "espn_ids": espn_n, "ml_rows": len(ml), "season_totals": len(rows)}
+            "espn_ids": espn_n, "ml_rows": len(ml), "season_totals": len(rows),
+            "inseason": {"sigma_players": len(tables["sigma"]["players"]), "dvp_season": tables["dvp_season"],
+                         "schedule_teams": len(tables["schedule"])}}
     (out / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
     sizes = {p.name: round(p.stat().st_size / 1e6, 2) for p in out.glob("*.json")}
     print(f"done in {time.time() - t0:.0f}s: {sizes} MB")

@@ -10,6 +10,7 @@ from __future__ import annotations
 from .capture import capture_espn_league, espn_adp, espn_names, espn_projections, espn_rosters, unmapped_flags
 from .client import (
     DRAFT_VIEWS,
+    IN_SEASON_VIEWS,
     LEAGUE_VIEWS,
     EspnAccessDenied,
     EspnAPIError,
@@ -52,7 +53,8 @@ from .poller import EspnDraftPoller
 from .scoring import espn_scoring_to_sleeper, espn_stats_to_sleeper, projected_points, projected_season_stats
 
 __all__ = [
-    "DEFAULT_POSITION_MAP", "DRAFT_VIEWS", "ESPN_BASE_URL", "ESPN_STAT_TO_SLEEPER", "FAN_API_URL", "LEAGUE_VIEWS",
+    "DEFAULT_POSITION_MAP", "DRAFT_VIEWS", "ESPN_BASE_URL", "ESPN_STAT_TO_SLEEPER", "FAN_API_URL",
+    "IN_SEASON_VIEWS", "LEAGUE_VIEWS",
     "POSITION_SLOT_MAP", "PRO_TEAM_MAP", "SCORING_LABELS",
     "EspnAPIError", "EspnAccessDenied", "EspnClient", "EspnDraftPoller", "EspnIdMap", "EspnNotFound",
     "capture_espn_league", "draft_status", "espn_adp", "espn_base_url", "espn_names", "espn_player_fields",

@@ -30,6 +30,7 @@ from ..config import DEFAULT_SEASON
 from ..models import DraftSettings, DraftState, LeagueSettings, Manager, Pick, RosterSpot
 from .constants import IR_SLOT_ID, ROSTER_SLOT_ORDER, slot_label
 from .ids import EspnIdMap, espn_player_fields, is_real_player_id
+from .inseason import league_calendar
 from .scoring import espn_scoring_to_sleeper
 
 log = logging.getLogger(__name__)
@@ -243,6 +244,17 @@ def parse_espn_league(league_json: Mapping[str, Any], draft_detail_json: Mapping
         "pick_order": pick_order,
         "lineup_slot_counts": dict(counts),
     }
+    # the league's own calendar, so nothing downstream has to assume a 14-week season and week-15
+    # playoffs (cli.py did): scheduleSettings says how long the regular season is and who makes it
+    cal = league_calendar(lj)
+    settings.update({
+        "regular_season_weeks": cal.regular_season_weeks,
+        "playoff_week_start": cal.playoff_week_start,
+        "playoff_teams": cal.playoff_teams,
+        "playoff_seeding_rule": cal.seeding_rule,
+        "matchup_period_length": cal.matchup_period_length,
+        "current_week": cal.current_week,
+    })
     detail = draft_detail_of(draft_detail_json, lj)
     return LeagueSettings(
         league_id=league_id,
