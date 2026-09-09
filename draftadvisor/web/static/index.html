@@ -529,6 +529,8 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
         <div class="hint">The server captures the league (settings, teams, draft, ESPN's ADP and projections), scores everything under your
           league's rules, then this page follows the draft with one ESPN request every 2 s. ESPN publishes no pick timestamps, so the
           clock shown is the pick length plus an estimate counted from the moment this page saw the last pick.</div>
+        <div class="hint"><b>Draft already over?</b> You do not need a session for the season. Save your league under
+          <b>Settings</b> and use the <b>In-Season</b> tab: lineup, matchup odds, trades and waivers.</div>
       </form>
       <form id="live-form" autocomplete="off">
         <div class="row">
@@ -809,6 +811,20 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
       <div class="hint howto">How to find them: on <span class="mono">espn.com</span>, logged in, open the browser dev tools → Application (Chrome / Edge) or Storage (Firefox / Safari) → Cookies →
         <span class="mono">espn.com</span> and copy the values of <span class="mono">espn_s2</span> and <span class="mono">SWID</span> (braces included).
         Public leagues need neither; the SWID also tells the page which team is yours. Cookies expire — paste fresh ones when ESPN starts answering 401.</div>
+
+      <h3>My ESPN league</h3>
+      <div class="row">
+        <label>League ID <input id="set-espn-league" inputmode="numeric" placeholder="e.g. 368876" autocomplete="off"></label>
+        <label style="flex:0 1 120px">Season <input type="number" id="set-espn-season" min="2010" max="2100" placeholder="current" autocomplete="off"></label>
+      </div>
+      <div class="actions" style="margin-top:0">
+        <button type="button" id="set-espn-load">Load teams</button>
+        <span id="set-espn-info" class="muted small"></span>
+      </div>
+      <label>My team <select id="set-espn-team"><option value="">— load the league to list the teams —</option></select></label>
+      <div class="hint">Which league is yours, kept here rather than in the draft form so it outlives the draft. The
+        <b>In-Season</b> tab uses it directly — lineup, matchup odds, trades and waivers, no draft session needed. The
+        League ID is the <span class="mono">leagueId=</span> number in your league URL; pasting the whole URL works too.</div>
     </div>
     <div class="actions"><button id="settings-save" class="primary">Save</button>
       <span class="hint" style="margin:0">Sent as <span class="mono">X-Anthropic-Key</span> / <span class="mono">X-Access-Code</span> (and <span class="mono">X-ESPN-S2</span> / <span class="mono">X-ESPN-SWID</span>)
@@ -837,7 +853,7 @@ kbd { font-family: var(--mono); font-size: 11px; background: var(--bg4); border:
 const $ = (id) => document.getElementById(id);
 const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
 const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
-const TABS = ['setup', 'draft', 'board', 'league'];
+const TABS = ['setup', 'draft', 'board', 'league', 'season'];
 const MODELS = ['claude-opus-5', 'claude-sonnet-5'];
 const QUICK_PROMPTS = ['Why this pick?', 'Compare #1 vs #2', 'Best WR instead of the recommendation?', 'Any red flags on my top 3?', 'What do I need most?'];
 
@@ -1085,7 +1101,8 @@ const S = {
   state: null, stateAt: 0,            // last render payload
   failures: 0,                        // consecutive polling failures
   lastPickNo: null, pickSeen: null,   // ESPN clock: the next_pick_no of the previous poll, and {no, at} when this page saw it change
-  settings: { apiKey: '', accessCode: '', espnS2: '', espnSwid: '', model: '', theme: 'dark' },   // model '' = the server's default (chatModel())
+  settings: { apiKey: '', accessCode: '', espnS2: '', espnSwid: '', model: '', theme: 'dark',
+              espnLeagueId: '', espnSeason: null, espnTeamId: null, espnTeamName: '' },   // model '' = the server's default (chatModel())
   chat: { key: 'none', messages: [], streaming: false, abort: null, draft: '' },   // assistant messages carry usage / cost_usd / model
   notes: {},                          // player_id → legacy research note (GET /api/notes + notes inside cards); read-only
   board: { rows: null, position: '', top: 100, q: '', loading: false, error: null, loaded: false, leagueId: null },
@@ -1096,6 +1113,7 @@ const S = {
     platform: 'sleeper', espn: null, espnLoading: false, espnAuthAsked: false, seasonFilled: false,   // Setup: platform switch + the last ESPN league look-up
     espnDenied: null,                   // the ESPN 401 detail while live polls are refused (expired cookies); null once a poll succeeds
     refreshing: false, forcedAt: 0,     // the Refresh control: a forced re-capture is in flight / when the last one answered
+    settingsEspn: null,                 // the last /api/lookup made from inside Settings (team list for the picker)
   },
   season: { data: null, at: 0, loading: false, error: null, key: '' },   // POST /api/inseason, only when the tab is open
   diag: { report: null, at: 0, loading: false, error: null },   // GET /api/espn/diagnose — only when you press the button
@@ -1146,6 +1164,11 @@ function loadSettings() {
   S.settings.accessCode = typeof st.accessCode === 'string' ? st.accessCode : '';
   S.settings.espnS2 = typeof st.espnS2 === 'string' ? st.espnS2 : '';
   S.settings.espnSwid = typeof st.espnSwid === 'string' ? st.espnSwid : '';
+  // the league is identity, not a draft setting: it has to survive the draft that created it
+  S.settings.espnLeagueId = typeof st.espnLeagueId === 'string' ? st.espnLeagueId : '';
+  S.settings.espnSeason = num(st.espnSeason);
+  S.settings.espnTeamId = num(st.espnTeamId);
+  S.settings.espnTeamName = typeof st.espnTeamName === 'string' ? st.espnTeamName : '';
   S.settings.model = MODELS.includes(st.model) ? st.model : '';
   let theme = st.theme; try { theme = theme || localStorage.getItem('da.theme'); } catch (e) { /* ignore */ }
   S.settings.theme = theme === 'light' ? 'light' : 'dark';
@@ -1274,6 +1297,10 @@ function renderPlatform() {
   $$('#platform-seg button').forEach((b) => b.classList.toggle('active', b.dataset.platform === p));
   show($('live-form'), p === 'sleeper');
   show($('espn-form'), p === 'espn');
+  if (p === 'espn') {                    // one source of truth: the league saved under Settings
+    if (!$('espn-league').value && S.settings.espnLeagueId) $('espn-league').value = S.settings.espnLeagueId;
+    if (!$('espn-season').value && S.settings.espnSeason) $('espn-season').value = String(S.settings.espnSeason);
+  }
   setText($('platform-hint'), p === 'espn' ? 'enter the league id from the ESPN URL, load it, pick your team' : 'look up your Sleeper username, then pick the league or draft');
 }
 /** Fill the ESPN league facts + team <select> from a /api/lookup response (platform espn). */
@@ -1397,7 +1424,12 @@ function renderDraft() {
   setText($('dh-next'), mine.join(' '));
 
   const banner = $('turn-banner');
-  if (d.is_complete) { show(banner, true); setClass(banner, 'banner done'); setText(banner, 'DRAFT COMPLETE'); }
+  if (d.is_complete) {
+    show(banner, true); setClass(banner, 'banner done');
+    // setText like its siblings: setHTML keeps its own cache, and mixing the two on one element can
+    // leave a stale write skipped
+    setText(banner, 'DRAFT COMPLETE — the season is on the In-Season tab: lineup, odds, trades, waivers');
+  }
   else if (d.status === 'paused') { show(banner, true); setClass(banner, 'banner paused'); setText(banner, 'PAUSED'); }   // even on my pick: nothing is ticking
   else if (d.is_my_turn) { show(banner, true); setClass(banner, 'banner'); setText(banner, 'YOUR PICK'); }
   else show(banner, false);
@@ -2211,6 +2243,9 @@ function openSettings(msg, focus) {
   $('set-access').value = S.settings.accessCode;
   $('set-espn-s2').value = S.settings.espnS2;
   $('set-espn-swid').value = S.settings.espnSwid;
+  $('set-espn-league').value = S.settings.espnLeagueId;
+  $('set-espn-season').value = S.settings.espnSeason == null ? '' : String(S.settings.espnSeason);
+  renderSettingsTeams();
   $('set-model').value = S.settings.model;
   $('set-model').options[0].text = 'server default (' + get(S.status, 'claude.chat_model', 'claude-opus-5') + ')';
   $('set-theme').value = S.settings.theme;
@@ -2220,9 +2255,81 @@ function openSettings(msg, focus) {
   setText($('settings-msg'), msg || '');
   show($('settings-msg'), !!msg);
   show($('settings-modal'), true);
-  const target = focus === 'espn' || isEspnAuthError(msg) ? (S.settings.espnS2 ? $('set-espn-swid') : $('set-espn-s2')) : msg && /access/i.test(msg) ? $('set-access') : $('set-key');
-  if (focus === 'espn' || isEspnAuthError(msg)) target.scrollIntoView({ block: 'nearest' });
+  const target = focus === 'league' ? $('set-espn-league')
+    : focus === 'espn' || isEspnAuthError(msg) ? (S.settings.espnS2 ? $('set-espn-swid') : $('set-espn-s2'))
+    : msg && /access/i.test(msg) ? $('set-access') : $('set-key');
+  if (focus === 'league' || focus === 'espn' || isEspnAuthError(msg)) target.scrollIntoView({ block: 'nearest' });
   target.focus();
+}
+/** ESPN wants the SWID wrapped in braces, and some browsers show it URL-encoded. */
+function normalizeSwid(raw) {
+  let swid = String(raw || '').trim();
+  try { swid = decodeURIComponent(swid); } catch (e) { /* not URL-encoded */ }
+  if (swid && !/^\{.*\}$/.test(swid)) swid = '{' + swid.replace(/^\{|\}$/g, '') + '}';
+  return swid;
+}
+/** Fill the Settings team <select>: a fresh look-up when there is one, else the saved team on its own,
+ *  so re-opening Settings never shows an empty box for a league that is already configured. */
+function renderSettingsTeams() {
+  const sel = $('set-espn-team'), lk = S.ui.settingsEspn;
+  const teams = lk && Array.isArray(lk.teams) ? lk.teams : null;
+  if (!teams) {
+    sel.innerHTML = S.settings.espnTeamId != null
+      ? '<option value="' + esc(S.settings.espnTeamId) + '">' + esc(S.settings.espnTeamName || 'Team ' + S.settings.espnTeamId) + '</option>'
+      : '<option value="">— load the league to list the teams —</option>';
+    sel.value = S.settings.espnTeamId == null ? '' : String(S.settings.espnTeamId);
+    return;
+  }
+  let o = '<option value="">— choose your team —</option>';
+  for (const t of teams) {
+    const owners = Array.isArray(t.owners) && t.owners.length ? ' — ' + t.owners.join(', ') : '';
+    o += '<option value="' + esc(t.team_id) + '">' + esc(t.name || 'Team ' + t.team_id) +
+      (t.abbrev ? ' (' + esc(t.abbrev) + ')' : '') + esc(owners) + (t.is_me ? ' (you)' : '') + '</option>';
+  }
+  sel.innerHTML = o;
+  const me = lk.me && typeof lk.me === 'object' ? lk.me : null;
+  const want = S.settings.espnTeamId != null ? String(S.settings.espnTeamId) : (me && me.team_id != null ? String(me.team_id) : '');
+  sel.value = Array.from(sel.options).some((x) => x.value === want) ? want : '';
+}
+/** The team list belongs to the league it came from. Editing the id has to drop it, or Save would
+ *  store a team from the old league against the new one - a wrong roster, silently. */
+function settingsLeagueChanged() {
+  const raw = $('set-espn-league').value.trim().replace(/^.*leagueId=(\d+).*$/i, '$1');
+  const lk = S.ui.settingsEspn;
+  if (lk && String(lk.forLeague) !== raw) {
+    S.ui.settingsEspn = null;
+    if (raw !== String(S.settings.espnLeagueId)) S.settings.espnTeamId = null;   // saved team is another league's
+    renderSettingsTeams();
+    setText($('set-espn-info'), 'league changed — load the teams again');
+  }
+}
+/** Look the league up from Settings and list its teams. One ESPN read; nothing metered. */
+async function settingsLoadTeams() {
+  const raw = $('set-espn-league').value.trim().replace(/^.*leagueId=(\d+).*$/i, '$1');
+  if (!raw) { setText($('set-espn-info'), 'enter the league id first'); $('set-espn-league').focus(); return; }
+  const season = parseInt($('set-espn-season').value, 10) || num(get(S.status, 'season', null)) || null;
+  // the cookies typed in this dialog have to be sent now, before Save: a private league 401s without them
+  const prev = { s2: S.settings.espnS2, swid: S.settings.espnSwid };
+  S.settings.espnS2 = $('set-espn-s2').value.trim();
+  S.settings.espnSwid = normalizeSwid($('set-espn-swid').value.trim());
+  $('set-espn-load').disabled = true;
+  setText($('set-espn-info'), 'loading league ' + raw + '…');
+  try {
+    const r = await post('/api/lookup', { platform: 'espn', league_id: raw, season: season }, 'ESPN league', 60000);
+    if (r && r.platform === 'espn') {
+      S.ui.settingsEspn = Object.assign({}, r, { forLeague: raw });
+      $('set-espn-league').value = raw;
+      if (!$('set-espn-season').value && get(r, 'league.season', null)) $('set-espn-season').value = String(r.league.season);
+      renderSettingsTeams();
+      const n = Array.isArray(r.teams) ? r.teams.length : 0;
+      setText($('set-espn-info'), n + ' teams' + (r.me ? ' — yours was picked out by your SWID' : ' — choose yours'));
+    } else {
+      S.settings.espnS2 = prev.s2; S.settings.espnSwid = prev.swid;      // the look-up failed: do not keep half-typed cookies
+      setText($('set-espn-info'), 'could not load that league — check the id, and the cookies above if it is private');
+    }
+  } finally {
+    $('set-espn-load').disabled = false;
+  }
 }
 function closeSettings() { S.ui.settingsOpen = false; show($('settings-modal'), false); }
 
@@ -2357,20 +2464,41 @@ async function forceRefresh() {
     if (isLive()) schedule();
   }
 }
+/** How often a page with no draft re-checks /api/status.
+ *
+ *  It used to be 2 s, which is the live-draft rate: a tab left open on Setup, doing nothing, made
+ *  ~1800 requests an hour, and on the deployed app every one of those is a billed serverless
+ *  invocation. Nothing on that screen changes that fast. While the tab is hidden an idle page does
+ *  not poll at all; a live draft is left alone, because that one you are watching. */
+const IDLE_POLL_MS = 30000;
+/** A completed live draft: keep the session, stop chasing it. */
+const DONE_POLL_MS = 300000;
 async function tick() {
   if (mode() === 'live') {
+    if (draftDone() && document.hidden) { schedule(); return; }   // final board, nobody looking
     await loadLiveState();
     if (Date.now() - S.statusAt > 15000) await loadStatus();
-  } else {
-    if (Date.now() - S.statusAt > (isMock() ? 15000 : 2000)) await loadStatus();
+  } else if (!document.hidden) {
+    if (Date.now() - S.statusAt > (isMock() ? 15000 : IDLE_POLL_MS)) await loadStatus();
   }
   schedule();
 }
+/** A finished draft cannot change, so following it is pure waste: one ESPN GET plus one billed
+ *  serverless invocation every 2 s, for ever, on a board that is already final. The Force refresh
+ *  button still re-reads it on demand. */
+function draftDone() { return isLive() && get(S.state, 'draft.is_complete', false) === true; }
 function schedule(ms) {
   clearTimeout(_pollTimer);
-  if (ms == null) ms = mode() === 'live' ? (S.ui.espnDenied ? 5000 : myTurn() ? 1000 : 2000) : isMock() ? 5000 : 2000;   // slower while ESPN says 401
+  if (ms == null) {
+    ms = draftDone() ? DONE_POLL_MS
+      : mode() === 'live' ? (S.ui.espnDenied ? 5000 : myTurn() ? 1000 : 2000)   // slower while ESPN says 401
+      : isMock() ? 5000 : IDLE_POLL_MS;
+  }
   _pollTimer = setTimeout(tick, ms);
 }
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && mode() !== 'live') schedule(200);      // came back: check once, promptly
+});
 setInterval(() => {
   if (S.ui.tab !== 'draft') return;
   renderCountdown();
@@ -2488,17 +2616,39 @@ function setChatOpen(on) {
 // ---- In-Season (ESPN): lineup, matchup odds, trades, waivers
 // One POST does the lot, and only when the tab is open: a trade search on every poll would be work
 // nobody asked for. Nothing here is metered - it is arithmetic over data already fetched.
-function seasonKey() {
+/** Which ESPN league the In-Season tab is about, and where that came from.
+ *
+ *  A live session wins when it names a team, because it is what the owner is looking at right now.
+ *  Otherwise the league saved in Settings is used: the draft ends but the season does not, and
+ *  requiring "Start live draft" to see a week 6 lineup is asking for a session for a draft that is
+ *  over. Returns null with a `missing` reason so the empty state can say what to do rather than
+ *  "load one on Setup". */
+function seasonLeague() {
   const s = S.session;
-  if (!s || s.platform !== 'espn' || !s.league_id) return '';
-  const team = s.team_id != null ? s.team_id : s.user_id;
-  return team == null ? '' : [s.league_id, s.season || '', team].join(':');
+  if (s && s.platform === 'espn' && s.league_id) {
+    const raw = s.team_id != null ? s.team_id : s.user_id;
+    const team = parseInt(raw, 10);
+    if (team > 0) return { league_id: String(s.league_id), season: s.season || null, team_id: team, from: 'session' };
+  }
+  const st = S.settings;
+  if (!st.espnLeagueId) return { missing: 'league' };
+  if (st.espnTeamId == null) return { missing: 'team' };
+  return { league_id: String(st.espnLeagueId), season: st.espnSeason || null, team_id: Number(st.espnTeamId), from: 'settings' };
+}
+function seasonKey() {
+  const lg = seasonLeague();
+  return lg && !lg.missing ? [lg.league_id, lg.season || '', lg.team_id].join(':') : '';
 }
 async function loadSeason(week) {
   const key = seasonKey();
   if (!key || S.season.loading) return;
   S.season.loading = true; S.season.error = null; renderSeason();
-  const body = { session: S.session, limit: 8 };
+  const lg = seasonLeague();
+  const body = {
+    session: { mode: 'live', platform: 'espn', league_id: lg.league_id, team_id: lg.team_id,
+               season: lg.season || undefined },
+    limit: 8,
+  };
   if (week) body.week = week;
   try {
     const data = await api('/api/inseason', { method: 'POST', body: body, timeout: 60000 });
@@ -2510,8 +2660,21 @@ async function loadSeason(week) {
   }
 }
 function renderSeason() {
+  const lg = seasonLeague();
   const has = !!seasonKey();
   const d = S.season.data;
+  if (!has) {
+    const why = lg && lg.missing === 'team'
+      ? 'Your ESPN league is set, but not which team is yours.'
+      : 'The in-season view needs your ESPN league.';
+    setHTML($('season-empty'), esc(why) + ' Put it under <b>Settings</b> — it is kept there rather than in the ' +
+      'draft form, so it outlives the draft.<br><button id="se-settings" class="primary" style="margin-top:8px">Open Settings</button>');
+    const btn = $('se-settings');
+    if (btn && !btn.dataset.wired) {          // setHTML skips an unchanged write, so the button can outlive the render
+      btn.dataset.wired = '1';
+      btn.addEventListener('click', () => openSettings('', 'league'));
+    }
+  }
   show($('season-empty'), !has || (!d && !S.season.loading && !S.season.error));
   show($('season-body'), has && (!!d || S.season.loading || !!S.season.error));
   if (!has) return;
@@ -2524,7 +2687,9 @@ function renderSeason() {
   }
   msg.innerHTML = notes.join('<br>'); show(msg, notes.length > 0);
   setText($('se-week'), d ? String(d.week) : (S.season.loading ? '…' : '—'));
-  setText($('se-when'), S.season.loading ? 'loading…' : (d ? (d.calendar.is_playoffs ? 'playoffs' : d.calendar.weeks_remaining + ' regular-season weeks left') : ''));
+  setText($('se-when'), S.season.loading ? 'loading…'
+    : (d ? ((d.calendar.is_playoffs ? 'playoffs' : d.calendar.weeks_remaining + ' regular-season weeks left') +
+            (lg.from === 'settings' ? ' • league ' + lg.league_id + ' from Settings' : '')) : ''));
   if (!d) { $('se-matchup').innerHTML = ''; return; }
 
   const lu = d.lineup;
@@ -2573,17 +2738,32 @@ function renderSeason() {
       '</td><td class="n">' + (r.espn_playoff_pct == null ? '' : fmt(r.espn_playoff_pct, 0) + '%') + '</td></tr>').join('');
 }
 
+/** What entering a tab kicks off.
+ *
+ *  Separate from showTab() because boot() restores the remembered tab *before* it resumes the
+ *  session, so this first runs with S.session === null. A tab that needs the session would sit on
+ *  its empty state (In-Season) or, worse, load the wrong thing and mislabel it: the Board would
+ *  fetch the default half-PPR list and call it "league scoring". boot() calls it again once the
+ *  session is back; both calls are idempotent, guarded on what is already loaded. */
+function enterTab(name) {
+  if (name === 'board' && (!S.board.loaded || S.board.leagueId !== boardKey()) && !S.board.loading) loadBoard();
+  if (name === 'season' && seasonKey() && S.season.key !== seasonKey() && !S.season.loading) loadSeason();
+}
 function showTab(name) {
   if (S.ui.tab !== name) unpinCard();          // a card anchored in another tab must not linger
   S.ui.tab = name;
   $$('.tab').forEach((s) => s.classList.toggle('active', s.id === 'tab-' + name));
   lsSet('da.tab', name);
-  if (name === 'board' && (!S.board.loaded || S.board.leagueId !== boardKey()) && !S.board.loading) loadBoard();
-  if (name === 'season' && seasonKey() && S.season.key !== seasonKey() && !S.season.loading) loadSeason();
+  enterTab(name);
   renderAll();
 }
 $$('#tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
 $('se-refresh').addEventListener('click', () => { S.season.key = ''; loadSeason(); });
+$('set-espn-load').addEventListener('click', settingsLoadTeams);
+for (const id of ['set-espn-league', 'set-espn-season']) {
+  $(id).addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); settingsLoadTeams(); } });
+}
+$('set-espn-league').addEventListener('input', settingsLeagueChanged);
 $('theme-btn').addEventListener('click', () => { S.settings.theme = S.settings.theme === 'light' ? 'dark' : 'light'; saveSettings(); });
 
 // ---- chat drawer
@@ -2603,16 +2783,26 @@ $('settings-save').addEventListener('click', () => {
   S.settings.apiKey = $('set-key').value.trim();
   S.settings.accessCode = $('set-access').value.trim();
   S.settings.espnS2 = $('set-espn-s2').value.trim();
-  let swid = $('set-espn-swid').value.trim();
-  try { swid = decodeURIComponent(swid); } catch (e) { /* not URL-encoded */ }                   // some browsers show %7B...%7D
-  if (swid && !/^\{.*\}$/.test(swid)) swid = '{' + swid.replace(/^\{|\}$/g, '') + '}';    // ESPN wants the braces
-  S.settings.espnSwid = swid;
+  S.settings.espnSwid = normalizeSwid($('set-espn-swid').value);
+  S.settings.espnLeagueId = $('set-espn-league').value.trim().replace(/^.*leagueId=(\d+).*$/i, '$1');
+  S.settings.espnSeason = parseInt($('set-espn-season').value, 10) || null;
+  const teamSel = $('set-espn-team');
+  const listFor = get(S.ui.settingsEspn, 'forLeague', null);
+  S.settings.espnTeamId = parseInt(teamSel.value, 10) || null;
+  if (listFor != null && String(listFor) !== S.settings.espnLeagueId) {
+    S.settings.espnTeamId = null;                      // the picker was showing another league's teams
+    toast('League id changed — load the teams again and pick yours');
+  }
+  S.settings.espnTeamName = S.settings.espnTeamId == null ? ''
+    : (teamSel.options[teamSel.selectedIndex] || {}).text || '';
   if ([S.settings.apiKey, S.settings.accessCode, S.settings.espnS2, S.settings.espnSwid].some((v) => /[^\x20-\x7e]/.test(v))) toast('a value contains characters that cannot go into an HTTP header — check what you pasted');
   S.settings.model = MODELS.includes($('set-model').value) ? $('set-model').value : '';
   S.settings.theme = $('set-theme').value === 'light' ? 'light' : 'dark';
   saveSettings(); closeSettings();
   S.ui.espnAuthAsked = false; S.ui.espnDenied = null; S.failures = 0;
+  if (S.season.key && S.season.key !== seasonKey()) { S.season.data = null; S.season.key = ''; }   // a different league
   toast('Settings saved', 'ok', 2000);
+  if (S.ui.tab === 'season' && seasonKey() && !S.season.data) loadSeason();
   renderAll(); schedule(10); verifyAccess();
   if (isMock() && S.state) mockAction('sync');
 });
@@ -2758,7 +2948,7 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Enter') { if (tag !== 'button' && S.ui.tab === 'draft') { ev.preventDefault(); takeRecommended(); } return; }   // Enter on a focused button keeps its default
   if (ev.key === 'c' || ev.key === 'C') { setChatOpen(!S.ui.chatOpen); return; }
   if ((ev.key === 'r' || ev.key === 'R') && !ev.ctrlKey && !ev.metaKey && !ev.altKey) { forceRefresh(); return; }   // Ctrl/Cmd+R stays the browser's reload
-  if (/^[1-4]$/.test(ev.key)) showTab(TABS[parseInt(ev.key, 10) - 1]);
+  if (/^[1-5]$/.test(ev.key)) showTab(TABS[parseInt(ev.key, 10) - 1]);
 });
 
 // ---- Board actions
@@ -2790,6 +2980,7 @@ $('diag-panel').querySelector('h2').addEventListener('click', () => {           
   await loadStatus();
   verifyAccess();
   await resumeSession();
+  enterTab(S.ui.tab);        // the tab was restored before the session existed: let it act on it now
   renderAll();
   schedule(10);
 })();
