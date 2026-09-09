@@ -9,7 +9,9 @@ both sides; the details name lineup-slot changes and bye-week effects.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+import time
+from dataclasses import dataclass, field, replace
+from itertools import combinations
 from typing import Mapping, Sequence
 
 from ..config import NON_STARTING_SLOTS
@@ -20,7 +22,8 @@ from .replacement import replacement_levels
 
 log = logging.getLogger(__name__)
 
-__all__ = ["TradeEvaluation", "evaluate_trade", "roster_value", "evaluate_pick_choice"]
+__all__ = ["TradeEvaluation", "TradeProposal", "consensus_projections", "evaluate_trade", "find_trades",
+           "roster_value", "evaluate_pick_choice"]
 
 _ACCEPT_MARGIN = 3.0
 _LOPSIDED_FLOOR = 15.0
@@ -197,3 +200,218 @@ def evaluate_pick_choice(state: DraftState, advisor, player_id: str) -> str:
     if v.warnings:
         lines.append("Warnings: " + "; ".join(v.warnings) + ".")
     return " ".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Trade search
+#
+# The evaluator above answers "is this trade good for me". Finding one is the harder half, and the
+# thing that makes a proposal *useful* is not that it is good for me - it is that the other manager
+# would say yes. Those are different questions, and answering both with our own projections is how a
+# trade bot ends up proposing deals nobody accepts.
+#
+# So the two sides are valued differently on purpose:
+#   * my gain      - our blended projection, which is what we actually believe
+#   * their gain   - the same swap priced with the *consensus* number (the market's rank-implied
+#                    points, already carried on every Projection as its "ecr" component)
+# The edge is the gap between the two. We target players our model likes more than the market does,
+# and offer players the market likes more than our model does. Both sides read the deal as a win;
+# only one of them is using our numbers.
+# ---------------------------------------------------------------------------
+
+#: Below this the deal is not worth the message.
+MIN_MY_GAIN = 5.0
+#: How good the deal has to look to them before we will propose it (their consensus value change).
+MIN_THEIR_VIEW = -2.0
+#: Candidate players per side per team, best first. Keeps the search inside its time budget.
+CANDIDATES_PER_SIDE = 8
+
+
+@dataclass
+class TradeProposal:
+    """One deal worth sending, with both readings of it."""
+
+    team: str                       # who to ask
+    give: list[str]                 # my players
+    get: list[str]                  # theirs
+    my_gain: float                  # our projections: change in my roster value
+    their_gain: float               # our projections: change in theirs (usually negative - that is the edge)
+    their_view: float               # consensus projections: change in theirs, i.e. what they see
+    my_view: float                  # consensus projections: change in mine, i.e. what they see me getting
+    details: list[str] = field(default_factory=list)
+
+    @property
+    def edge(self) -> float:
+        """How much of my gain comes from disagreeing with the market rather than from the lineup."""
+        return self.my_gain - self.my_view
+
+    def describe(self, players: Mapping[str, Player]) -> str:
+        def names(ids: Sequence[str]) -> str:
+            return " + ".join(players[p].display() if p in players else p for p in ids)
+        return f"{names(self.give)} -> {self.team} for {names(self.get)}"
+
+    def pitch(self, players: Mapping[str, Player]) -> str:
+        """One line to paste into the league chat - written from *their* side of the table."""
+        def names(ids: Sequence[str]) -> str:
+            return " + ".join(players[p].name if p in players else p for p in ids)
+        verb = "upgrade" if self.their_view > 0 else "even out"
+        return (f"Want to {verb} your roster? I'll send {names(self.give)} for {names(self.get)}. "
+                f"By consensus value you come out {self.their_view:+.0f} points.")
+
+
+def consensus_projections(projections: Mapping[str, Projection]) -> dict[str, Projection]:
+    """The same players, valued the way the market values them.
+
+    Every :class:`Projection` already carries its rank-implied consensus figure in
+    ``components["ecr"]`` - the number the blend mixes with the model. Pulling it back out costs
+    nothing and is exactly "what the other manager thinks this player is worth". Players the market
+    does not rank keep our number: no opinion is not the same as a low opinion.
+    """
+    out: dict[str, Projection] = {}
+    for pid, pr in projections.items():
+        market = pr.components.get("ecr")
+        pts = float(market) if market is not None else float(pr.points)
+        games = pr.games or 1.0
+        out[pid] = replace(pr, points=pts, ppg=(pts / games if games else pr.ppg), components={}, weights={})
+    return out
+
+
+def _tradeable(ids: Sequence[str], players: Mapping[str, Player],
+               projections: Mapping[str, Projection]) -> list[str]:
+    """Nobody trades a kicker, a defence or a player with no projection."""
+    return [pid for pid in ids
+            if pid in projections and (players.get(pid) is not None)
+            and players[pid].position not in ("K", "DEF")]
+
+
+def _cheapest_to_give(ids: Sequence[str], valuer: "_Valuer", before: float, limit: int) -> list[str]:
+    """My players ranked by how little my roster loses without them.
+
+    Counting positions ("I hold four backs, so a back is spare") gets this wrong: it cannot see that
+    the fourth back is the one starting at FLEX, and it prices a backup quarterback the same as a
+    starting one. Re-optimising the lineup without each player answers the actual question - what
+    would this cost me - and the FLEX takes care of itself.
+    """
+    rows = []
+    for pid in ids:
+        loss = before - valuer.value([p for p in ids if p != pid])
+        rows.append((loss, pid))
+    rows.sort()
+    return [pid for _, pid in rows[:limit]]
+
+
+def _most_useful_to_get(their_ids: Sequence[str], my_ids: Sequence[str], valuer: "_Valuer",
+                        before: float, limit: int) -> list[str]:
+    """Their players ranked by what adding one would do for my starting lineup, best first.
+
+    Only players who would actually improve it are kept: a trade for someone who lands on my bench is
+    a trade I do not want, however good he looks in the abstract.
+    """
+    rows = []
+    for pid in their_ids:
+        gain = valuer.value(list(my_ids) + [pid]) - before
+        if gain > 0:
+            rows.append((-gain, pid))
+    rows.sort()
+    return [pid for _, pid in rows[:limit]]
+
+
+class _Valuer:
+    """Roster values under one set of projections, with the fixed parts computed once."""
+
+    def __init__(self, players: Mapping[str, Player], projections: Mapping[str, Projection],
+                 league: LeagueSettings, replacement: Mapping[str, float], bench_discount: float):
+        self.players, self.projections, self.league = players, projections, league
+        self.replacement, self.bench_discount = replacement, bench_discount
+
+    def value(self, ids: Sequence[str]) -> float:
+        v, _, _ = roster_value(ids, self.players, self.projections, self.league,
+                               self.bench_discount, self.replacement)
+        return v
+
+
+def find_trades(
+    my_ids: Sequence[str],
+    their_rosters: Mapping[str, Sequence[str]],
+    players: Mapping[str, Player],
+    projections: Mapping[str, Projection],
+    league: LeagueSettings,
+    *,
+    free_agents: Sequence[str] | None = None,
+    shapes: Sequence[tuple[int, int]] = ((1, 1), (2, 1)),
+    limit: int = 10,
+    min_my_gain: float = MIN_MY_GAIN,
+    min_their_view: float = MIN_THEIR_VIEW,
+    bench_discount: float = 0.35,
+    candidates_per_side: int = CANDIDATES_PER_SIDE,
+    per_team_limit: int = 2,
+    time_budget_s: float = 8.0,
+) -> list[TradeProposal]:
+    """Deals that help me and that the other manager has a reason to accept.
+
+    ``shapes`` are ``(give, get)`` counts: ``(2, 1)`` is consolidation, turning depth into a starter.
+    ``free_agents``, when given, sets the replacement baseline to players who are actually available -
+    the whole projected universe is not, and using it prices every bench player far too generously.
+    ``per_team_limit`` keeps one willing manager from filling the whole list with variations of the
+    same deal.
+
+    Returns at most ``limit`` proposals, best for me first. Partial results on a time budget: a search
+    that ran out of time returns what it found rather than nothing.
+    """
+    t0 = time.monotonic()
+    mine = [p for p in my_ids if p in players]
+    pool = list(free_agents) if free_agents is not None else None
+    rep = replacement_levels(projections, players, league, available=pool)
+    market = consensus_projections(projections)
+    rep_market = replacement_levels(market, players, league, available=pool)
+
+    ours = _Valuer(players, projections, league, rep, bench_discount)
+    theirs_view = _Valuer(players, market, league, rep_market, bench_discount)
+    my_before, my_before_view = ours.value(mine), theirs_view.value(mine)
+
+    give_pool = _cheapest_to_give(_tradeable(mine, players, projections), ours, my_before, candidates_per_side)
+    per_team: dict[str, list[TradeProposal]] = {}
+    out: list[TradeProposal] = []
+
+    for team, roster in their_rosters.items():
+        if time.monotonic() - t0 > time_budget_s:
+            log.info("trade search: stopped at the time budget with %d proposals", len(out))
+            break
+        theirs = [p for p in roster if p in players]
+        if not theirs:
+            continue
+        their_before, their_before_view = ours.value(theirs), theirs_view.value(theirs)
+        get_pool = _most_useful_to_get(_tradeable(theirs, players, projections), mine, ours,
+                                       my_before, candidates_per_side)
+        if not get_pool:
+            continue                                  # nothing on this roster would start for me
+        found: list[TradeProposal] = []
+        for n_give, n_get in shapes:
+            for give in combinations(give_pool, n_give):
+                for get in combinations(get_pool, n_get):
+                    if time.monotonic() - t0 > time_budget_s:
+                        break
+                    give_s, get_s = set(give), set(get)
+                    my_after = [p for p in mine if p not in give_s] + list(get)
+                    their_after = [p for p in theirs if p not in get_s] + list(give)
+                    my_gain = ours.value(my_after) - my_before
+                    if my_gain < min_my_gain:
+                        continue
+                    their_view = theirs_view.value(their_after) - their_before_view
+                    if their_view < min_their_view:
+                        continue                      # they would read this as a loss and say no
+                    their_gain = ours.value(their_after) - their_before
+                    my_view = theirs_view.value(my_after) - my_before_view
+                    found.append(TradeProposal(
+                        team=str(team), give=list(give), get=list(get),
+                        my_gain=my_gain, their_gain=their_gain, their_view=their_view, my_view=my_view,
+                        details=[f"My value {my_gain:+.1f} by our projections, {my_view:+.1f} by consensus",
+                                 f"Their value {their_gain:+.1f} by ours, {their_view:+.1f} by consensus"],
+                    ))
+        found.sort(key=lambda p: (-p.my_gain, -p.their_view))
+        per_team[str(team)] = found[:per_team_limit]
+        out.extend(per_team[str(team)])
+    # best first, but never all from one roster: a page of eight variations on the same deal with the
+    # same manager is one option, not eight, and he can only say yes once
+    out.sort(key=lambda p: (-p.my_gain, -p.their_view))
+    return out[:limit]

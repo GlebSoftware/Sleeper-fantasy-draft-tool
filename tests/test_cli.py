@@ -934,3 +934,56 @@ async def test_loop_records_observed_pick_changes_only():
     await loop.handle(make_state(5))
     assert loop.status["last_pick_seen_at"] == pytest.approx(time.time(), abs=0.5)
     assert loop.status["platform"] == "espn"
+
+
+def test_trades_espn_via_the_stub(espn_stub, espn_context_env, capsys):
+    """The trade finder over the wire: real rosters in, proposals out, no paid call anywhere."""
+    espn = ["--platform", "espn", "--league", LEAGUE_ID, "--season", str(SEASON), "--no-model"]
+    rc = main(["trades", *espn, "--me", "Goin' HAM Newton", "--limit", "4", "--min-gain", "0"])
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    if "No trade found" in out:
+        return                                    # a legitimate answer; the flags below still must work
+    assert "send" in out and "they read it as" in out
+    assert "Goin' HAM Newton" not in out.split("trade(s)")[-1], "never propose a trade with myself"
+    assert "consensus" in out, "the pitch has to be written in their currency"
+
+
+def test_trades_reports_a_bad_manager_name_instead_of_guessing(espn_stub, espn_context_env, capsys):
+    rc = main(["trades", "--platform", "espn", "--league", LEAGUE_ID, "--season", str(SEASON),
+               "--no-model", "--me", "Nobody At All"])
+    out = capsys.readouterr().out
+    assert rc == cli.EXIT_USAGE and "could not find" in out and "Goin' HAM Newton" in out
+
+
+def test_trades_needs_a_league(capsys):
+    assert main(["trades", "--me", "someone"]) == cli.EXIT_USAGE
+    assert "needs --league" in capsys.readouterr().out
+
+
+def test_lineup_espn_via_the_stub(espn_stub, espn_context_env, capsys):
+    """Start/sit for one week, the gap against the lineup as set, and the matchup odds."""
+    rc = main(["lineup", "--platform", "espn", "--league", LEAGUE_ID, "--season", str(SEASON),
+               "--no-model", "--me", "Goin' HAM Newton", "--week", "4"])
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert "Week 4 — Goin' HAM Newton" in out
+    assert "regular-season weeks left" in out or "playoffs" in out
+    assert "to win" in out and "%" in out, "the matchup odds are the point of the command"
+    assert "model estimate" in out, "a win probability has to say it is a model, not a price"
+    assert "vs " in out, "it has to name the opponent"
+    # a player we cannot project is named, not silently scored zero and benched
+    if "No projection for" in out:
+        assert "will never be started" in out
+
+
+def test_lineup_is_espn_only_and_says_so(capsys):
+    assert main(["lineup", "--league", "123", "--me", "x"]) == cli.EXIT_USAGE
+    assert "ESPN leagues only" in capsys.readouterr().out
+
+
+def test_lineup_names_the_teams_when_it_cannot_tell_which_is_mine(espn_stub, espn_context_env, capsys):
+    rc = main(["lineup", "--platform", "espn", "--league", LEAGUE_ID, "--season", str(SEASON),
+               "--no-model", "--me", "Not A Team Here"])
+    out = capsys.readouterr().out
+    assert rc == cli.EXIT_USAGE and "could not tell which team is yours" in out and "Goin' HAM Newton" in out

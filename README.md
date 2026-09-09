@@ -190,12 +190,50 @@ The report prints once; the snapshot lets trade/analyze commands work offline af
 | command | what it does |
 |---|---|
 | `draftadvisor projections --position RB --top 40 --league ID` | projection table (points, floor/ceiling, ADP, ECR) in your league's scoring |
-| `draftadvisor trade --league ID --me me --them rival --give "Player A" --get "Player B, Player C"` | lineup-aware trade evaluation |
+| `draftadvisor trade --league ID --me me --them rival --give "Player A" --get "Player B, Player C"` | lineup-aware evaluation of one trade |
+| `draftadvisor trades --league ID --me me` | **search** every other roster for trades worth sending (see below) |
+| `draftadvisor lineup --platform espn --league ID --me me [--week N]` | best start/sit for the week, what your set lineup leaves on the bench, and the matchup win probability |
 | `draftadvisor analyze --league ID` | post-draft strengths/weaknesses for every team, waiver targets |
 | `draftadvisor ask "Should I take a TE in round 3?" --draft ID` | free-form question with full draft context — the only CLI command that calls Claude (one request); prints the answer, then tokens and estimated cost (or "cost unknown" for a model outside the price table) |
 | `draftadvisor train --seasons 2019-2025` | retrain the projection model and print the backtest |
 
 All of them accept `--platform espn --league ID [--season YYYY]` in place of the Sleeper ids.
+
+## Finding trades
+
+`draftadvisor trades --league ID --me "My Team"` searches the other rosters for deals and prints, for
+each: who to ask, what to send, what you gain, how the deal reads to *them*, and a line to paste into
+the league chat.
+
+The two sides are priced differently, on purpose. **Your** side uses our blended projection — what the
+model actually believes. **Their** side uses the market's consensus value (the FantasyPros
+rank-implied number every projection already carries), because that is what the other manager
+believes. A proposal has to clear both bars: it improves your starting lineup by our numbers, and it
+does not read as a loss by theirs. Deals we would love but that look bad to them are filtered out —
+they are not trades, they are messages that get ignored.
+
+What the search will not do: offer a player you start, ask for one who would sit on your bench, trade
+kickers or defences, or fill the list with eight variations of the same deal with one manager
+(`--per-team`, default 2). `--min-gain` and `--min-their-view` loosen or tighten both bars;
+`--one-for-one-only` turns off 2-for-1 consolidation.
+
+Costs nothing: it is arithmetic over projections already in the bundle. No paid API is involved.
+
+## In-season data
+
+The bundle ships three small tables (~84 KB) that the draft never needed:
+
+* **Weekly spread**, measured within season on 2019–2025 actuals. This is *not* `Projection.std`
+  (season-total uncertainty) or `ppg_std_ppr` (the error of the season ppg forecast). A starter's real
+  week-to-week swing is about 1.3× the latter, and 2.3× for a good receiver; a matchup win probability
+  built on the smaller number reports confidence it has not earned.
+* **NFL schedule** by team and week, so a weekly projection knows the opponent and a bye is a zero.
+* **Defence versus position**, shrunk by sample size and clipped to ±20%: a nudge, never a start/sit
+  decision on its own.
+
+For an ESPN league the app also reads the league's own calendar (`matchupPeriodCount` decides when the
+playoffs start — it was assuming week 15), standings, matchups and per-week player scores. Those
+scores come back **already scored under your league's rules**, so custom scoring needs no re-derivation.
 
 ## How the recommendations work
 

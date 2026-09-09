@@ -25,6 +25,7 @@ import argparse
 import asyncio
 import difflib
 import logging
+import math
 import os
 import sys
 import time
@@ -183,6 +184,28 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--get", required=True, help='players I get: "Name, Name"')
     s.add_argument("--no-model", action="store_true")
     s.set_defaults(func=cmd_trade)
+
+    s = sub.add_parser("trades", help="find trades that help me and that the other manager would accept")
+    _add_league_args(s, draft=False)
+    s.add_argument("--me", required=True, help="my manager / team name")
+    s.add_argument("--limit", type=int, default=10, help="how many proposals to print (default 10)")
+    s.add_argument("--per-team", type=int, default=2, help="most proposals from any one manager (default 2)")
+    s.add_argument("--min-gain", type=float, default=5.0, help="ignore deals worth less than this to me")
+    s.add_argument("--min-their-view", type=float, default=-2.0,
+                   help="how good the deal must look to them, by consensus value (default -2)")
+    s.add_argument("--two-for-one", dest="two_for_one", action="store_true", default=True,
+                   help="also search 2-for-1 consolidations (default on)")
+    s.add_argument("--one-for-one-only", dest="two_for_one", action="store_false",
+                   help="only straight swaps")
+    s.add_argument("--no-model", action="store_true")
+    s.set_defaults(func=cmd_trades)
+
+    s = sub.add_parser("lineup", help="best starting lineup for a week, and this week's matchup odds (ESPN)")
+    _add_league_args(s, draft=False)
+    s.add_argument("--me", default=None, help="my team / manager name (default: the --team-id team)")
+    s.add_argument("--week", type=int, default=None, help="scoring period (default: the league's current week)")
+    s.add_argument("--no-model", action="store_true")
+    s.set_defaults(func=cmd_lineup)
 
     s = sub.add_parser("analyze", help="post-draft roster analysis for every team")
     _add_league_args(s, draft=False)
@@ -1340,6 +1363,219 @@ def cmd_trade(args: argparse.Namespace) -> int:
                   f" • them {ev.their_before:.0f} -> {ev.their_after:.0f} ({ev.their_delta:+.1f})")
     for line in ev.details:
         console.print(f"  • {line}")
+    return EXIT_OK
+
+
+def cmd_trades(args: argparse.Namespace) -> int:
+    """Search every other roster for a deal that helps me and reads as fair to them.
+
+    Costs nothing: this is arithmetic over projections already in the bundle. No paid API is called.
+    """
+    console = Console()
+    settings = _settings_from_args(args)
+    if not settings.league_id:
+        console.print("[red]trades needs --league ID[/red]")
+        return EXIT_USAGE
+    ctx = _build(settings, args, quiet=True)
+    rosters = _rosters_for_league(settings, args, console, ctx)
+    if not rosters:
+        return EXIT_NETWORK
+    me = _find_roster(rosters, args.me)
+    if me is None:
+        # both names, because ESPN's member display name is often nothing a human would type
+        names = ", ".join(sorted({n for r in rosters.values() for n in (r["name"], r["display_name"]) if n}))
+        console.print(f"[red]could not find --me {args.me!r}[/red]")
+        console.print(f"  known teams and managers: {names}")
+        return EXIT_USAGE
+
+    from .strategy.trade import find_trades
+
+    mine = list(rosters[me]["players"])
+    others = {(r["display_name"] or r["name"] or str(rid)): list(r["players"])
+              for rid, r in rosters.items() if rid != me}
+    rostered = {pid for r in rosters.values() for pid in r["players"]}
+    free_agents = [pid for pid in ctx.projections if pid not in rostered]
+    shapes = ((1, 1), (2, 1)) if args.two_for_one else ((1, 1),)
+    proposals = find_trades(mine, others, ctx.players, ctx.projections, ctx.league,
+                            free_agents=free_agents, shapes=shapes, limit=args.limit,
+                            min_my_gain=args.min_gain, min_their_view=args.min_their_view,
+                            per_team_limit=args.per_team, bench_discount=settings.bench_discount)
+    if not proposals:
+        console.print("[yellow]No trade found that helps you and that the other manager would plausibly take.[/yellow]")
+        console.print("  Try --min-gain 0 to see marginal deals, or --min-their-view -10 to include harder sells.")
+        return EXIT_OK
+
+    console.print(f"[bold]{len(proposals)} trade(s)[/bold]  "
+                  f"[dim]my gain is our projection; their view is the market's consensus[/dim]")
+    for i, p in enumerate(proposals, 1):
+        gives = ", ".join(ctx.players[x].display() for x in p.give if x in ctx.players)
+        gets = ", ".join(ctx.players[x].display() for x in p.get if x in ctx.players)
+        console.print(f"\n[bold cyan]{i}. {p.team}[/bold cyan]  send [red]{gives}[/red] for [green]{gets}[/green]")
+        console.print(f"   me [bold]{p.my_gain:+.1f}[/bold] pts • they read it as [bold]{p.their_view:+.1f}[/bold] "
+                      f"• {p.edge:+.1f} of my gain is the market disagreeing with us")
+        console.print(f"   [dim]{p.pitch(ctx.players)}[/dim]")
+    return EXIT_OK
+
+
+def _inseason_tables(console: Console):
+    """The bundle's in-season tables, or an empty set with a warning saying what is degraded."""
+    from .projections.inseason import InSeasonTables
+
+    try:
+        from .lean import get_bundle
+
+        tables = InSeasonTables.from_dict(get_bundle().inseason)
+    except Exception as e:  # noqa: BLE001
+        log.warning("no web bundle: %s", e)
+        tables = InSeasonTables()
+    if not tables.present:
+        console.print("[yellow]No in-season tables in the bundle (run scripts/build_bundle.py).[/yellow]")
+        console.print("  Weekly spread falls back to a position curve and no opponent adjustment is applied;"
+                      " byes come from ESPN's own weekly projection instead of the schedule.")
+    return tables
+
+
+def cmd_lineup(args: argparse.Namespace) -> int:
+    """Optimal start/sit for one week, the gap against the lineup that is set, and the matchup odds.
+
+    ESPN only for now: the lineup that is *set* and the week's opponent both come from ESPN's payload.
+    Costs nothing - one ESPN request, no paid API.
+    """
+    console = Console()
+    settings = _settings_from_args(args)
+    if settings.platform != "espn":
+        console.print("[red]lineup currently supports ESPN leagues only (--platform espn)[/red]")
+        return EXIT_USAGE
+    if not settings.league_id:
+        console.print("[red]lineup needs --league ID[/red]")
+        return EXIT_USAGE
+    ctx = _build(settings, args, quiet=True)
+
+    from .espn.capture import espn_rosters
+    from .espn.ids import EspnIdMap
+    from .espn.inseason import (current_lineups, league_calendar, matchups, opponent_for, team_records,
+                                weekly_player_points)
+    from .espn.parsing import parse_espn_draft, parse_espn_managers
+    from .projections.inseason import week_mean, week_sigma, win_probability
+    from .strategy.lineup import optimal_lineup
+
+    async def go():
+        async with _espn_client(settings) as client:
+            return await client.get_in_season(settings.league_id, settings.season, week=args.week)
+
+    try:
+        league_json = _run(go())
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[red]ESPN unreachable: {e}[/red]")
+        return EXIT_NETWORK
+
+    cal = league_calendar(league_json)
+    week = int(args.week or cal.current_week)
+    tables = _inseason_tables(console)
+    id_map = EspnIdMap.from_players(ctx.players)
+    _add_roster_placeholders(league_json, id_map, ctx.players)
+    draft = parse_espn_draft(league_json)
+    managers = parse_espn_managers(league_json, draft)
+    rosters = {int(r["roster_id"]): [str(p) for p in r["players"]] for r in espn_rosters(league_json, id_map)}
+    names = {int(k): ((m.team_name or m.display_name) or f"Team {k}") for k, m in
+             ((int(k), m) for k, m in managers.items() if str(k).isdigit())}
+
+    want = (args.me or "").strip().lower()
+    my_team = None
+    if want:
+        for tid, name in names.items():
+            if want in (name.lower(), (managers.get(str(tid)).display_name or "").lower()):
+                my_team = tid
+                break
+    if my_team is None and settings.team_id:
+        my_team = int(settings.team_id)
+    if my_team is None or my_team not in rosters:
+        console.print(f"[red]could not tell which team is yours[/red] (--me or --team-id); "
+                      f"teams: {', '.join(sorted(names.values()))}")
+        return EXIT_USAGE
+
+    # ESPN's own weekly projection knows byes and inactives; our model is the better points estimate.
+    # Use ours for the number and theirs only to decide who is not playing at all.
+    espn_weekly = weekly_player_points(league_json)
+    espn_of = {pid: pl.espn_id for pid, pl in ctx.players.items() if pl.espn_id}
+
+    def playing(pid: str) -> bool:
+        block = (espn_weekly.get(str(espn_of.get(pid) or "")) or {}).get(week) or {}
+        proj = block.get("projected")
+        return not (proj is not None and proj <= 0.0)
+
+    def value(pid: str) -> float:
+        pl, pr = ctx.players.get(pid), ctx.projections.get(pid)
+        if pl is None or pr is None or not playing(pid):
+            return 0.0
+        return week_mean(pr, pl, tables, week)
+
+    def stats(ids) -> tuple[float, float]:
+        """``(mean, sigma)`` of a lineup's week, from the same numbers the table above prints.
+
+        A player who is not playing contributes neither points nor uncertainty; the rest are added
+        independently, which understates a stacked lineup a little.
+        """
+        mean = sum(value(p) for p in ids)
+        var = 0.0
+        for p in ids:
+            if p in ctx.players and p in ctx.projections and value(p) > 0:
+                var += week_sigma(ctx.projections[p], ctx.players[p], tables, week) ** 2
+        return mean, math.sqrt(var)
+
+    mine = rosters[my_team]
+    # A player we cannot project scores 0 and is benched by the optimiser without a word, which is
+    # indistinguishable from "he is bad". Say it instead: it is usually an id that did not cross-walk,
+    # or someone signed after the bundle was built.
+    unprojected = [p for p in mine if p in ctx.players and p not in ctx.projections]
+    if unprojected:
+        who = ", ".join(sorted(ctx.players[p].name for p in unprojected))
+        console.print(f"[yellow]No projection for {len(unprojected)} player(s) on your roster: {who}[/yellow]")
+        console.print("  They score 0 here and will never be started. Rebuild the bundle if they are real.")
+    assignment, best_points, bench = optimal_lineup([(ctx.players[p], value(p)) for p in mine if p in ctx.players],
+                                                    ctx.league.starting_slots)
+    slots = list(ctx.league.starting_slots)
+    console.print(f"[bold]Week {week} — {names.get(my_team, my_team)}[/bold]  "
+                  f"[dim]{'playoffs' if cal.is_playoffs(week) else f'{cal.weeks_remaining(week)} regular-season weeks left'}[/dim]")
+    for i, slot in enumerate(slots):
+        pid = assignment.get(i)
+        if pid is None:
+            continue
+        pl = ctx.players[pid]
+        console.print(f"  {slot:<10} {pl.name:<24} {pl.team or '':<4} {value(pid):6.1f}")
+    console.print(f"  [bold]{'total':<10} {'':<24} {'':<4} {best_points:6.1f}[/bold]")
+
+    started = set(current_lineups(league_json).get(my_team, {}).get("starters", []))
+    set_ids = [p for p in mine if str(espn_of.get(p) or "") in started]
+    if set_ids:
+        set_points = sum(value(p) for p in set_ids)
+        gap = best_points - set_points
+        if gap > 0.5:
+            swap_in = [ctx.players[p].name for p in assignment.values() if p not in set(set_ids)]
+            swap_out = [ctx.players[p].name for p in set_ids if p not in set(assignment.values())]
+            console.print(f"\n[yellow]Your lineup as set scores {set_points:.1f}: {gap:+.1f} left on the bench.[/yellow]")
+            if swap_in and swap_out:
+                console.print(f"  start {', '.join(swap_in)}; sit {', '.join(swap_out)}")
+        else:
+            console.print("\n[green]Your lineup is already the best one.[/green]")
+
+    opp = opponent_for(matchups(league_json, cal.matchup_period_for(week)), my_team, cal.matchup_period_for(week))
+    if opp is None or opp not in rosters:
+        console.print("\n[dim]No opponent this week (bye or unpublished schedule).[/dim]")
+        return EXIT_OK
+    their_assign, their_points, _ = optimal_lineup(
+        [(ctx.players[p], value(p)) for p in rosters[opp] if p in ctx.players], ctx.league.starting_slots)
+    my_stats = stats(list(assignment.values()))
+    their_stats = stats(list(their_assign.values()))
+    p_win = win_probability(my_stats, their_stats)
+    console.print(f"\n[bold]vs {names.get(opp, opp)}[/bold]  {best_points:.1f} to {their_points:.1f}  "
+                  f"→ [bold]{p_win:.0%}[/bold] to win")
+    console.print(f"  [dim]model estimate: weekly spread ±{my_stats[1]:.0f} for you, ±{their_stats[1]:.0f} for them, "
+                  f"measured on 2019-2025 weekly scores; players added independently, so a stacked lineup "
+                  f"swings a little more than this says[/dim]")
+    espn_pct = {r.team_id: r.espn_playoff_pct for r in team_records(league_json)}
+    if espn_pct.get(my_team) is not None:
+        console.print(f"  [dim]ESPN's own playoff odds for you: {espn_pct[my_team]:.0f}%[/dim]")
     return EXIT_OK
 
 
